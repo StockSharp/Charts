@@ -11,9 +11,7 @@ self-contained demo.
 `setData` / `update`, `timeScale`, series markers, price lines, crosshair),
 published as the `SSChart` global.
 
-**▶ Live demo: https://stocksharp.github.io/Charts/demo/** — built and published on
-every push to `main` by [`.github/workflows/pages.yml`](.github/workflows/pages.yml)
-(enable Pages with *Source: GitHub Actions* in the repo settings).
+**▶ Live demo: https://stocksharp.github.io/Charts/demo/**
 
 ## What's here
 
