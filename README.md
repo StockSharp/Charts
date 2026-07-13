@@ -4,6 +4,8 @@ In-house, dependency-free canvas trading-chart engine (**sschart**) plus the ful
 StockSharp web-terminal chart stack, packaged as a standalone library with a
 self-contained demo.
 
+![StockSharp JS Trading Charts — candlesticks with Bollinger Bands, volume and an RSI sub-pane](sample.jpg)
+
 `sschart` renders candlestick / OHLC, study and footprint charts on a plain
 `<canvas>` through a small declarative API (`createChart`, `addSeries`,
 `setData` / `update`, `timeScale`, series markers, price lines, crosshair),
