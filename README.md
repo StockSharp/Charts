@@ -51,6 +51,58 @@ loads it as the `SSChart` global, then the chart-stack bundle on top.
 - **Light / dark** theme toggle re-colours the whole stack, and a play/pause
   **Realtime** feed streams new bars with live indicator recompute.
 
+## Usage
+
+Load the engine bundle (it publishes `window.SSChart`) and drive it with a small
+declarative API — `time` is UNIX **seconds**:
+
+```html
+<div id="chart" style="width:800px;height:400px"></div>
+<script src="dist/sschart.js"></script>
+<script>
+  const chart = SSChart.createChart(document.getElementById('chart'), {
+    layout: { background: { type: 'solid', color: '#131820' }, textColor: '#8b97a7' },
+    grid:   { vertLines: { color: '#1e2633' }, horzLines: { color: '#1e2633' } },
+    rightPriceScale: { borderColor: '#1e2633' },
+    timeScale: { borderColor: '#1e2633', timeVisible: true },
+    crosshair: { mode: SSChart.CrosshairMode.Normal },
+  });
+
+  // candlesticks
+  const candles = chart.addSeries(SSChart.CandlestickSeries, {
+    upColor: '#00c853', downColor: '#ff3d57', borderVisible: false,
+  });
+  candles.setData([
+    { time: 1704153600, open: 120, high: 122, low: 119, close: 121 },
+    { time: 1704240000, open: 121, high: 124, low: 120, close: 123 },
+  ]);
+
+  // an overlay line (e.g. a moving average) on the same pane
+  const ma = chart.addSeries(SSChart.LineSeries, { color: '#f0b90b', lineWidth: 2 });
+  ma.setData([{ time: 1704153600, value: 120.5 }, { time: 1704240000, value: 122.0 }]);
+
+  // trade markers + a price line
+  SSChart.createSeriesMarkers(candles, [
+    { time: 1704240000, position: 'belowBar', color: '#00c853', shape: 'arrowUp', text: 'BUY' },
+  ]);
+  candles.createPriceLine({ price: 123, color: '#4a9eff', lineStyle: SSChart.LineStyle.Dashed, title: 'entry' });
+
+  // realtime: same time replaces the last bar, a newer time appends a new one
+  candles.update({ time: 1704326400, open: 123, high: 123.5, low: 122.8, close: 123.2 });
+
+  chart.timeScale().fitContent();
+</script>
+```
+
+Series types: `CandlestickSeries`, `BarSeries`, `LineSeries`, `AreaSeries`,
+`HistogramSeries`, `RenkoSeries`, `PointFigureSeries`, `VolumeProfileSeries`,
+`ClusterSeries`, `BoxSeries2`. In a TypeScript build you can instead
+`import { createChart, CandlestickSeries } from './src/sschart'` and bundle it.
+
+For the **full terminal experience** — indicator engine over the whole catalog,
+crosshair legend, oscillator sub-panes, right-click menu and the picker dialog —
+wire up the `src/chart` modules the way [`src/chart/app.ts`](src/chart/app.ts) does.
+
 ## Build & view
 
 ```
