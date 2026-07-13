@@ -1,0 +1,59 @@
+/* Demo page chrome + the modal base that Bootstrap used to provide (removed).
+   Everything inside the chart panel / legend / sub-panes / indicator modal is
+   styled by chart-stack.css (the terminal's own terminal.css). */
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+    background: var(--t-bg, #0b0e11);
+    color: var(--t-text, #c7d0dc);
+    font: 13px/1.4 'IBM Plex Mono', 'Consolas', monospace;
+    overflow: hidden;
+}
+
+.demo-header {
+    display: flex; align-items: center; gap: 12px; height: 52px; padding: 0 16px;
+    background: var(--t-header, #131820); border-bottom: 1px solid var(--t-border, #1e2633);
+}
+.demo-header .brand { font-weight: 700; font-size: 15px; color: var(--t-text-bright, #fff); }
+.demo-header .sub { color: var(--t-text-dim, #6b7a8d); font-size: 12px; }
+.demo-header .spacer { flex: 1; }
+.tbtn {
+    background: transparent; color: var(--t-text, #c7d0dc); border: 1px solid var(--t-border, #1e2633);
+    border-radius: 6px; padding: 6px 12px; cursor: pointer; font: inherit; font-size: 12px;
+    display: inline-flex; align-items: center; gap: 6px;
+}
+.tbtn:hover { border-color: var(--t-accent, #4a9eff); color: var(--t-accent, #4a9eff); }
+.tbtn.primary, .tbtn.on { background: var(--t-accent, #4a9eff); color: #fff; border-color: var(--t-accent, #4a9eff); }
+.tbtn .dot { width: 8px; height: 8px; border-radius: 50%; background: #ff3d57; opacity: .4; }
+.tbtn.on .dot { opacity: 1; animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.5); opacity: .35; } }
+
+.chart-panel { position: relative; height: calc(100vh - 52px); background: var(--t-panel, #131820); overflow: hidden; }
+#chartContainer { width: 100%; height: 100%; }
+
+/* ---- modal base (Bootstrap replaced by the dep-free IndicatorDialog shim) ---- */
+.modal { position: fixed; inset: 0; z-index: 1050; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.6); }
+.modal.show { display: flex; }
+.modal-dialog { width: 100%; max-width: 820px; margin: 20px; }
+.modal-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--t-border, #1e2633); }
+.modal-title { margin: 0; font-size: 14px; color: var(--t-text-bright, #fff); }
+.btn-close { background: transparent; border: none; color: var(--t-text-dim, #6b7a8d); font-size: 22px; line-height: 1; cursor: pointer; }
+.btn-close:hover { color: var(--t-text-bright, #fff); }
+
+/* ---- chart-type dropdown spawned from the legend (uses Bootstrap class names
+   that terminal.css leaves unstyled for this floating variant) ---- */
+.chart-legend-floating-ct-menu {
+    background: var(--t-panel, #131820); border: 1px solid var(--t-border, #1e2633);
+    border-radius: 6px; padding: 4px; min-width: 152px; box-shadow: 0 12px 30px rgba(0,0,0,.45);
+}
+.chart-legend-floating-ct-menu .dropdown-item {
+    display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+    background: transparent; border: none; color: var(--t-text, #c7d0dc);
+    padding: 7px 12px; border-radius: 5px; cursor: pointer; font: inherit; font-size: 12px;
+}
+.chart-legend-floating-ct-menu .dropdown-item:hover { background: var(--t-accent, #4a9eff); color: #fff; }
+.legend-ct-toggle {
+    background: transparent; border: 1px solid var(--t-border, #1e2633); border-radius: 4px;
+    color: var(--t-text-dim, #6b7a8d); cursor: pointer; padding: 1px 6px; font: inherit;
+}
+.legend-ct-toggle:hover { color: var(--t-accent, #4a9eff); border-color: var(--t-accent, #4a9eff); }

@@ -1,0 +1,3640 @@
+/* =======================================
+   StockSharp Trading Terminal — palette + base
+   Default (no theme attr or data-bs-theme="dark") = dark.
+   data-bs-theme="light" overrides the same tokens to a light scheme
+   so both terminal and cabinet share one palette pivot — flipping
+   the html attribute is enough to retheme everything that reads
+   `var(--t-*)`.
+   ======================================= */
+
+:root {
+    --t-bg: #0b0e11;
+    --t-panel: #181a20;
+    --t-border: #2b3139;
+    --t-text: #eaecef;
+    --t-text-dim: #848e9c;
+    --t-text-bright: #ffffff;
+    --t-accent: #fcd535;
+    --t-accent-hover: #f0c232;
+    --t-accent-text: #0b0e11;
+    --t-green: #0ecb81;
+    --t-green-hover: #0bb574;
+    --t-red: #f6465d;
+    --t-red-hover: #dd3b52;
+    --t-green-bg: rgba(14, 203, 129, 0.08);
+    --t-red-bg: rgba(246, 70, 93, 0.08);
+    --t-green-flash: rgba(14, 203, 129, 0.25);
+    --t-red-flash: rgba(246, 70, 93, 0.25);
+    --t-header: #12151c;
+    --t-hover: #22262f;
+    --t-surface: #1e2128;
+    --t-accent-glow: rgba(252, 213, 53, 0.18);
+    --t-accent-glow-soft: rgba(252, 213, 53, 0.12);
+    --t-font: 'DM Sans', -apple-system, sans-serif;
+    /* JetBrains Mono / Cascadia Code включают кириллицу — IBM Plex Mono нет,
+       и для "Купить/Продать/Лимит/Рынок/Отменена" браузер уходит в sans-serif
+       fallback, и таблица заявок выглядит иначе чем сделки/позиции. */
+    --t-mono: 'JetBrains Mono', 'Cascadia Code', 'Cascadia Mono', 'Consolas', 'Liberation Mono', monospace;
+    --t-radius: 3px;
+    --t-transition: 180ms ease;
+}
+
+:root[data-bs-theme="light"] {
+    --t-bg: #f5f7fa;
+    --t-panel: #ffffff;
+    --t-border: #e2e8f0;
+    --t-text: #1e293b;
+    --t-text-dim: #64748b;
+    --t-text-bright: #0f172a;
+    --t-accent: #d97706;
+    --t-accent-hover: #b45309;
+    --t-accent-text: #ffffff;
+    --t-green: #16a34a;
+    --t-green-hover: #15803d;
+    --t-red: #dc2626;
+    --t-red-hover: #b91c1c;
+    --t-green-bg: rgba(22, 163, 74, 0.10);
+    --t-red-bg: rgba(220, 38, 38, 0.10);
+    --t-green-flash: rgba(22, 163, 74, 0.22);
+    --t-red-flash: rgba(220, 38, 38, 0.22);
+    --t-header: #f8fafc;
+    --t-hover: #f1f5f9;
+    --t-surface: #ffffff;
+    --t-accent-glow: rgba(217, 119, 6, 0.15);
+    --t-accent-glow-soft: rgba(217, 119, 6, 0.08);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0,0,0,0);
+    white-space: nowrap;
+    border: 0;
+}
+
+html, body {
+    width: 100%;
+    min-height: 100vh;
+    /* Binance-style: let the page scroll vertically when content is taller than
+       the viewport instead of cramming every panel into a single screen. */
+    overflow-x: hidden;
+    overflow-y: auto;
+    background: var(--t-bg);
+    color: var(--t-text);
+    font-family: var(--t-font);
+    font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* ========== ANIMATIONS ========== */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes flashGreen {
+    0% { background: var(--t-green-flash); }
+    100% { background: transparent; }
+}
+
+@keyframes flashRed {
+    0% { background: var(--t-red-flash); }
+    100% { background: transparent; }
+}
+
+@keyframes priceUp {
+    0% { color: var(--t-green); text-shadow: 0 0 8px rgba(14,203,129,0.4); }
+    100% { text-shadow: none; }
+}
+
+@keyframes priceDown {
+    0% { color: var(--t-red); text-shadow: 0 0 8px rgba(246,70,93,0.4); }
+    100% { text-shadow: none; }
+}
+
+@keyframes toast-in {
+    from { opacity: 0; transform: translateY(10px) scale(0.95); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes toast-out {
+    from { opacity: 1; transform: translateY(0) scale(1); }
+    to { opacity: 0; transform: translateY(-10px) scale(0.95); }
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* ========== TOP BAR ========== */
+.terminal-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 44px;
+    padding: 0 14px;
+    background: var(--t-header);
+    border-bottom: 1px solid var(--t-border);
+    gap: 14px;
+    flex-shrink: 0;
+}
+
+.topbar-left, .topbar-center, .topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+.topbar-pair {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+}
+
+.terminal-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--t-accent);
+    font-weight: 700;
+    font-size: 16px;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: opacity var(--t-transition);
+    letter-spacing: 0.3px;
+}
+.terminal-brand:hover { color: var(--t-accent); opacity: 0.75; }
+.terminal-brand i { font-size: 18px; }
+.terminal-brand-name { letter-spacing: 0.5px; }
+.terminal-build-id {
+    font-size: 10px;
+    font-family: 'Consolas', 'Menlo', monospace;
+    color: var(--t-text-dim);
+    opacity: 0.6;
+    margin-left: 6px;
+    user-select: text;
+}
+
+.instrument-selector { position: relative; }
+
+/* Topbar instrument selector — flat-label look à la Binance's /trade
+   page, but interactive: clicking the symbol opens the same instrument
+   picker the orderbook / chart-pane labels use, and a confirmed pick
+   routes through terminalApp.switchSymbol → terminal-wide symbol
+   change (chart, BBO, order entry, URL all follow). This is the
+   single canonical "switch terminal symbol" entry point now that
+   orderbook label clicks are strictly per-widget. */
+.btn-terminal-select {
+    background: transparent;
+    border: none;
+    color: var(--t-text-bright);
+    font-weight: 700;
+    font-size: 16px;
+    letter-spacing: 0.3px;
+    padding: 0;
+    border-radius: var(--t-radius);
+    cursor: pointer;
+    transition: all var(--t-transition);
+    font-family: var(--t-font);
+    display: inline-flex;
+    align-items: center;
+    line-height: 1;
+    gap: 4px;
+}
+.btn-terminal-select:hover { color: var(--t-accent); }
+.btn-terminal-select .chevron { font-size: 12px; opacity: 0.6; }
+
+.instrument-search-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    width: 300px;
+    background: var(--t-panel);
+    border: 1px solid var(--t-border);
+    border-radius: 6px;
+    z-index: 1000;
+    padding: 8px;
+    margin-top: 4px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+    animation: fadeIn 0.15s ease;
+}
+.instrument-search-dropdown input {
+    background: var(--t-bg);
+    border-color: var(--t-border);
+    color: var(--t-text);
+    margin-bottom: 6px;
+    font-family: var(--t-font);
+}
+.instrument-search-dropdown input:focus {
+    border-color: var(--t-accent);
+    box-shadow: 0 0 0 2px var(--t-accent-glow-soft);
+    outline: none;
+}
+.instrument-list {
+    max-height: 300px;
+    overflow-y: auto;
+}
+.instrument-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 7px 10px;
+    cursor: pointer;
+    border-radius: var(--t-radius);
+    transition: background var(--t-transition);
+}
+.instrument-item:hover { background: var(--t-hover); }
+.instrument-item .sym { font-weight: 600; color: var(--t-text-bright); font-family: var(--t-mono); font-size: 12px; }
+.instrument-item .name { color: var(--t-text-dim); font-size: 11px; }
+.instrument-item .exchange { font-size: 10px; color: var(--t-text-dim); background: var(--t-surface); padding: 1px 6px; border-radius: 2px; }
+
+.price-display {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.current-price {
+    font-family: var(--t-mono);
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--t-text-bright);
+    transition: color 0.3s ease;
+    letter-spacing: -0.5px;
+    line-height: 1;
+}
+.current-price.flash-up { animation: priceUp 0.6s ease forwards; }
+.current-price.flash-down { animation: priceDown 0.6s ease forwards; }
+
+.price-change {
+    font-family: var(--t-mono);
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1;
+}
+.price-change.up { color: var(--t-green); }
+.price-change.down { color: var(--t-red); }
+
+.instrument-name {
+    color: var(--t-text-dim);
+    font-size: 11px;
+    font-weight: 500;
+    max-width: 160px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.topbar-stats {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding-left: 6px;
+    border-left: 1px solid var(--t-border);
+    margin-left: 4px;
+    font-family: var(--t-mono);
+}
+.topbar-stats .ts-item {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    line-height: 1.1;
+}
+.topbar-stats .ts-label {
+    font-size: 9px;
+    font-weight: 500;
+    color: var(--t-text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-family: var(--t-font);
+}
+.topbar-stats .ts-value {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--t-text);
+    white-space: nowrap;
+}
+.topbar-stats .ts-value.up { color: var(--t-green); }
+.topbar-stats .ts-value.down { color: var(--t-red); }
+
+.timeframe-selector { display: flex; gap: 2px; }
+.btn-tf {
+    padding: 3px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--t-text-dim);
+    border-radius: var(--t-radius);
+    cursor: pointer;
+    transition: all var(--t-transition);
+    font-family: var(--t-font);
+}
+.btn-tf:hover { color: var(--t-text-bright); background: var(--t-hover); }
+.btn-tf.active {
+    background: var(--t-accent);
+    color: var(--t-accent-text);
+    border-color: var(--t-accent);
+    box-shadow: 0 0 8px var(--t-accent-glow);
+}
+
+.topbar-right .form-select {
+    background-color: var(--t-surface);
+    border-color: var(--t-border);
+    color: var(--t-text);
+    font-size: 12px;
+    max-width: 200px;
+    font-family: var(--t-font);
+    transition: border-color var(--t-transition);
+}
+.topbar-right .form-select:focus {
+    border-color: var(--t-accent);
+    box-shadow: 0 0 0 2px var(--t-accent-glow-soft);
+}
+
+.account-balance {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 1px;
+    padding: 2px 10px;
+    font-family: var(--t-font-mono);
+}
+.account-balance .balance-total {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--t-green);
+    letter-spacing: 0.02em;
+}
+.account-balance .balance-detail {
+    font-size: 10px;
+    color: var(--t-text-dim);
+}
+
+/* User profile menu — dropdown trigger reuses the badge look. The
+   button form replaced the old <div> badge (which had a separate Stats
+   link + inline logout `×`); now Stats / Profile / Accounts / Orders /
+   Payments / KYC / Support / Sign Out all live inside the dropdown
+   menu so the topbar stays compact. */
+.user-profile-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    background: var(--t-surface);
+    border: 1px solid var(--t-border);
+    border-radius: var(--t-radius);
+    font-size: 11px;
+    color: var(--t-text);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background var(--t-transition), border-color var(--t-transition);
+    /* Strip Bootstrap button defaults — the badge controls its own look. */
+    line-height: 1.4;
+}
+button.user-profile-badge { font-family: inherit; }
+.user-profile-badge:hover { background: var(--t-hover); border-color: var(--t-text-dim); }
+.user-profile-badge.show { background: var(--t-hover); border-color: var(--t-accent); }
+.user-profile-badge i.bi-person-circle {
+    font-size: 14px;
+    color: var(--t-accent);
+}
+.user-profile-badge .user-email {
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.user-profile-badge .chevron {
+    font-size: 10px;
+    color: var(--t-text-dim);
+    transition: transform var(--t-transition);
+}
+.user-profile-badge.show .chevron { transform: rotate(180deg); color: var(--t-accent); }
+/* Bootstrap's default dropdown caret pseudo-element conflicts with the
+   explicit `<i.chevron>` we render — kill it here. */
+.user-profile-badge.dropdown-toggle::after { display: none; }
+
+.user-profile-dropdown {
+    background: var(--t-panel);
+    border: 1px solid var(--t-border);
+    border-radius: var(--t-radius);
+    padding: 4px 0;
+    min-width: 200px;
+    font-family: var(--t-font);
+    font-size: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.user-profile-dropdown .dropdown-item {
+    color: var(--t-text);
+    padding: 6px 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: background var(--t-transition), color var(--t-transition);
+}
+.user-profile-dropdown .dropdown-item i { color: var(--t-text-dim); width: 14px; text-align: center; }
+.user-profile-dropdown .dropdown-item:hover,
+.user-profile-dropdown .dropdown-item:focus {
+    background: var(--t-hover);
+    color: var(--t-text-bright);
+}
+.user-profile-dropdown .dropdown-item:hover i { color: var(--t-accent); }
+.user-profile-dropdown .dropdown-item-danger { color: var(--t-red); }
+.user-profile-dropdown .dropdown-item-danger:hover,
+.user-profile-dropdown .dropdown-item-danger:focus { background: var(--t-red-bg); color: var(--t-red); }
+.user-profile-dropdown .dropdown-item-danger:hover i { color: var(--t-red); }
+.user-profile-dropdown .dropdown-divider {
+    border-top-color: var(--t-border);
+    margin: 4px 0;
+    opacity: 1;
+}
+
+/* Sign In button (anonymous topbar) */
+.btn-topbar-signin {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    font-family: var(--t-font);
+    color: var(--t-accent);
+    background: transparent;
+    border: 1px solid var(--t-accent);
+    border-radius: var(--t-radius);
+    text-decoration: none;
+    transition: all var(--t-transition);
+    white-space: nowrap;
+}
+.btn-topbar-signin:hover {
+    background: var(--t-accent);
+    color: var(--t-accent-text);
+}
+
+/* ========== MAIN GRID ========== */
+/* Binance-style 3-column layout: orderbook | (chart + order entry) | trade feed
+   + a horizontal bottom strip (orders / positions) that spans all columns.
+   Grid height grows with the viewport; on short viewports it stays at 900px
+   and the whole page scrolls — panels never cram the chart into a postage stamp. */
+.terminal-grid {
+    display: grid;
+    /* Left → right: chart+order-entry | tradefeed | orderbook+watchlist.
+       Chart owns the elastic 1fr column, the two side rails are fixed. */
+    grid-template-columns: 1fr 300px 260px;
+    grid-template-rows: 1fr 240px;
+    height: max(980px, calc(100vh - 44px - 24px));
+    gap: 1px;
+    background: var(--t-border);
+}
+
+/* GoldenLayout host — replaces .terminal-grid at runtime when GL boots.
+   Same height envelope so the dock occupies the same vertical band as the
+   old grid; GL itself manages internal sizing/splitters/tabs. */
+.terminal-dock-host {
+    width: 100%;
+    height: max(980px, calc(100vh - 44px - 24px));
+    position: relative;
+}
+.terminal-dock-host .lm_content > .terminal-panel {
+    /* Panels moved into GL containers must fill the cell completely so
+       chart canvases / orderbook rows render at the right size.
+       (Legacy: kept for any straggler GL bundles; the dockview rules
+       below are the live ones.) */
+    width: 100%;
+    height: 100%;
+}
+
+/* Dockview-era sizing. Each dockview panel's content is my renderer
+   element (.terminal-dock-panel); it has to fill the dockview-given
+   parent box so the cloned <template> (.terminal-panel) and the
+   chart-container / orderbook / table inside it report a real size.
+   Without this rule .chart-panel collapses to toolbar height, the
+   chart's `height: calc(100% - 30px)` resolves to 0, and lightweight-
+   charts paints a zero-size canvas — the "empty chart" symptom. */
+.terminal-dock-host .terminal-dock-panel {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+}
+.terminal-dock-host .terminal-dock-panel > .terminal-panel {
+    flex: 1 1 auto;
+    min-height: 0;
+    min-width: 0;
+    width: 100%;
+    height: 100%;
+}
+
+/* Custom dockview tab — terminal-docking registers it as the default
+   tabComponent. Replaces the stock title+× with title + actions slot
+   + ×, and terminal-docking moves the panel's per-controls (depth
+   selector, view toggle, etc.) into the actions slot at panel boot.
+   The in-panel `.panel-header` is then collapsed (its display is set
+   to none from the lift helper) so only one row of chrome shows. */
+.terminal-tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 100%;
+    padding: 0 6px 0 10px;
+    min-width: 0;
+}
+.terminal-tab-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--t-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 0 1 auto;
+    min-width: 0;
+}
+/* The actions slot grows to fill the space between title and close;
+   contents are aligned to the right, so a small button row (depth /
+   cols / spread) ends up flush with the close button on the right,
+   while a wide control (watchlist's search input) can flex-grow to
+   eat the available width. */
+.terminal-tab-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: 1 1 auto;
+    justify-content: flex-end;
+    min-width: 0;
+    overflow: hidden;
+}
+/* Watchlist search row, after being lifted into the tab actions slot,
+   should grow to use the available width — it's the most useful
+   widget in the tab and we want it visible without truncation. */
+.terminal-tab-actions > .watchlist-search-row {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0;
+    margin: 0;
+}
+.terminal-tab-actions > .watchlist-search-row .watchlist-search-input {
+    width: 100%;
+    height: 22px;
+    padding: 0 8px;
+    font-size: 11px;
+}
+
+/* Orderbook lifted into the tab: position three groups along the row —
+   symbol + depth selector cluster pinned LEFT (right after the tab
+   title), view-selector + invert button float roughly to the CENTER,
+   and the spread label + close button anchor RIGHT. The two
+   `margin-left: auto` declarations consume the available flex slack
+   on each side of the view-selector cluster. */
+.terminal-tab-actions > .ob-view-selector { margin-left: auto; }
+.terminal-tab-actions > .spread-label     { margin-left: auto; }
+.terminal-tab-actions > .ob-symbol-label,
+.terminal-tab-actions > .ob-depth-selector {
+    margin-left: 0;
+}
+.terminal-tab-actions > .spread-label {
+    font-size: 10px;
+    color: var(--t-text-dim);
+    white-space: nowrap;
+}
+
+/* Chart toolbar, once lifted into the tab actions slot, drops the
+   separator-band look (border + own background) — the tab strip
+   already has them — and keeps its own internal horizontal scroller
+   so a wide toolbar doesn't blow the tab apart. The flex:1 lets it
+   eat the remaining slot width; min-width:0 lets the inner overflow
+   actually clip (without it, flex content expands to its intrinsic
+   width and the scrollbar never engages). */
+.terminal-tab-actions > .chart-toolbar {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: auto;
+    padding: 0 4px;
+    background: transparent;
+    border: 0;
+}
+
+/* The chart panel's container has an inline `height: calc(100% - 30px)`
+   that assumed the toolbar still occupied 30px of vertical space inside
+   the panel. With the toolbar lifted into the tab, that gap turns into
+   dead space at the top of the panel — pin the chart container to the
+   full panel height instead. !important because we're overriding an
+   inline style attribute set in Index.cshtml. */
+.terminal-dock-host .chart-container {
+    height: 100% !important;
+}
+.terminal-tab-close {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--t-text-dim);
+    border-radius: 3px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    line-height: 1;
+}
+.terminal-tab-close:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--t-text);
+}
+/* Inactive tabs in a multi-tab group dim the title; dockview already
+   sets .dv-inactive-tab on its wrapper, so we ride that. */
+.dv-inactive-tab .terminal-tab-title { opacity: 0.6; }
+
+/* Make the tab strip blend into the panel — no contrasting band at
+   the top. Override every dockview CSS variable that paints chrome
+   in the tab area (and the active/inactive panel tab background) to
+   the panel's own background. The user's panel uses --t-panel; we
+   keep that as the single source of truth. */
+.terminal-dock-host {
+    --dv-tabs-and-actions-container-background-color: var(--t-panel);
+    --dv-group-view-background-color: var(--t-panel);
+    --dv-activegroup-visiblepanel-tab-background-color: var(--t-panel);
+    --dv-activegroup-hiddenpanel-tab-background-color: var(--t-panel);
+    --dv-inactivegroup-visiblepanel-tab-background-color: var(--t-panel);
+    --dv-inactivegroup-hiddenpanel-tab-background-color: var(--t-panel);
+}
+
+/* Mobile / landscape-phone: drop dockview's tab strip entirely. On a
+   phone the tabs eat 30px of already-scarce vertical room, the close ×
+   they advertise has no easy "restore" path (the topbar Panels menu is
+   hidden on mobile too), and the mobile default layout puts each panel
+   in its own group anyway — there's no in-group tab to switch between.
+   Same two-clause query as docking._isMobile() so the two stay in sync. */
+@media (max-width: 768px), (max-height: 500px) {
+    .terminal-dock-host .dv-tabs-and-actions-container {
+        display: none !important;
+    }
+}
+
+/* GoldenLayout drag proxy — when the user drags a tab out of a multi-
+   component stack, GL clones the whole component and positions it via
+   its own offset math. The clone tends to drift far from the cursor on
+   long drags, which reads as the panel "flying away". Hide it; the
+   drop-target indicator (.lm_dropTargetIndicator) GL paints over the
+   prospective drop zone is enough visual feedback without the wandering
+   thumbnail. The drop logic itself is unaffected — only the proxy's
+   visual is suppressed. */
+.lm_dragProxy {
+    display: none !important;
+}
+/* Drop indicator stays visible — it's the rectangular highlight GL
+   paints over the stack/zone you're hovering, telling you where the
+   tab will land. */
+.lm_dropTargetIndicator {
+    background: rgba(74, 158, 255, 0.18) !important;
+    outline: 2px solid var(--t-accent) !important;
+    outline-offset: -2px;
+}
+
+/* GoldenLayout tab strip — only shown when a stack actually holds 2+
+   components (i.e. the user has merged panels). Single-component stacks
+   stay clean and the panel's own .panel-header is the only chrome.
+   .lm_stack-no-tabs is toggled by terminal-docking._refreshTabStrips on
+   every stateChanged event. */
+.terminal-dock-host .lm_stack > .lm_header {
+    background: var(--t-header) !important;
+    border-bottom: 1px solid var(--t-border) !important;
+    height: 22px !important;
+    box-shadow: none !important;
+}
+.terminal-dock-host .lm_stack-no-tabs > .lm_header {
+    display: none !important;
+    height: 0 !important;
+}
+.terminal-dock-host .lm_header .lm_tabs {
+    padding: 0 !important;
+}
+.terminal-dock-host .lm_header .lm_tab {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    /* Match the .panel-header look: tiny uppercase dim label, no flashy
+       blue chrome. Keeps the dock tabs visually indistinguishable from the
+       panel headers everywhere else in the terminal. */
+    color: var(--t-text-dim) !important;
+    font-family: var(--t-font);
+    font-size: 10px !important;
+    font-weight: 600 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.8px !important;
+    height: 22px !important;
+    line-height: 22px !important;
+    padding: 0 12px !important;
+    margin: 0 !important;
+    cursor: pointer !important;
+}
+.terminal-dock-host .lm_header .lm_tab .lm_title {
+    text-transform: uppercase !important;
+    letter-spacing: 0.8px !important;
+    font-size: 10px !important;
+    font-weight: 600 !important;
+    color: inherit !important;
+}
+.terminal-dock-host .lm_header .lm_tab.lm_active {
+    background: transparent !important;
+    color: var(--t-text-bright) !important;
+    border-bottom: 1px solid var(--t-accent) !important;
+}
+.terminal-dock-host .lm_header .lm_close_tab,
+.terminal-dock-host .lm_header .lm_controls {
+    display: none !important;
+}
+
+/* When a panel sits in a stack that has GL tabs (i.e., merged with at
+   least one other panel), the GL tab strip already shows the panel
+   title, so the panel's own .panel-header is duplicate chrome. Hide
+   it. Single-component stacks have .lm_stack-no-tabs (set by
+   _refreshTabStrips) — there the panel-header stays visible since
+   GL's strip is collapsed.
+   Action buttons (cancel-selected / cancel-all / refresh) live in the
+   .panel-rail inside .panel-body, not in .panel-header, so hiding the
+   header here is safe for every panel including activeOrdersPanel. */
+.terminal-dock-host .lm_stack:not(.lm_stack-no-tabs) .terminal-panel > .panel-header {
+    display: none;
+}
+/* Exceptions — panels whose .panel-header carries interactive controls
+   (symbol label/input + depth selector for orderbook; view toggle for
+   tradefeed). Hiding them in multi-tab stacks would strand the controls
+   behind the GL tab strip, so keep the panel-header visible for these
+   types regardless of tab mode. */
+.terminal-dock-host .lm_stack:not(.lm_stack-no-tabs) .orderbook-panel > .panel-header,
+.terminal-dock-host .lm_stack:not(.lm_stack-no-tabs) .tradefeed-panel > .panel-header {
+    display: flex;
+}
+
+/* PanelDragSwap drop-target highlight — colour reflects intent:
+     drop on top quarter  → swap (yellow/amber outline)
+     drop on body         → merge as tab (accent blue outline + wash) */
+.terminal-panel.drop-target-swap {
+    outline: 3px solid var(--t-orange, #f0b90b) !important;
+    outline-offset: -3px;
+    background-color: rgba(240, 185, 11, 0.06);
+}
+.terminal-panel.drop-target-merge {
+    outline: 3px solid var(--t-accent) !important;
+    outline-offset: -3px;
+    background-color: rgba(74, 158, 255, 0.10);
+}
+/* Fallback for old class still used by legacy sites. */
+.terminal-panel.drop-target:not(.drop-target-swap):not(.drop-target-merge) {
+    outline: 3px solid var(--t-accent) !important;
+    outline-offset: -3px;
+}
+/* Drag splitters between cells — match the resize-handle style we use
+   elsewhere so the whole UI looks consistent. */
+.terminal-dock-host .lm_splitter {
+    background: var(--t-border) !important;
+    transition: background 0.15s ease;
+}
+.terminal-dock-host .lm_splitter:hover {
+    background: var(--t-accent) !important;
+    opacity: 0.6;
+}
+
+/* GoldenLayout's bundled dark-theme stylesheet hard-codes
+   `.lm_goldenlayout { background: #000 }`, which leaks through every
+   inter-panel gap when our theme switches to light (panels are white,
+   splitters are light grey, but the container behind shows pure black
+   bands). Force the GL canvas to use our `--t-bg` so the gaps fade
+   into the page on both themes. */
+.terminal-dock-host .lm_goldenlayout {
+    background: var(--t-bg) !important;
+}
+
+.terminal-center {
+    grid-column: 1;
+    grid-row: 1;
+    display: grid;
+    /* Chart gets the lion's share (1fr, floor enforced by the outer grid);
+       order entry needs ~280px to fit all rows + Buy/Sell CTA without
+       internal scroll (tabs → Amount → % row → Total → TP/SL toggle → Max
+       → submit button + estimate). */
+    grid-template-rows: 1fr 280px;
+    gap: 1px;
+    background: var(--t-border);
+    min-height: 0;
+    min-width: 0;
+}
+
+.terminal-right {
+    grid-column: 2;
+    grid-row: 1;
+    display: grid;
+    /* Only the Market Trades feed lives here now — watchlist moved to
+       .terminal-left, "My Trades" moved to bt-tabs. One row is fine. */
+    grid-template-rows: 1fr;
+    gap: 1px;
+    background: var(--t-border);
+    min-height: 0;
+}
+
+.terminal-left {
+    grid-column: 3;
+    grid-row: 1;
+    display: grid;
+    /* Three rows: primary orderbook, optional extras stack, watchlist.
+       The middle row is `auto` so it takes zero space when empty
+       (extras-container :empty is hidden) and grows naturally as the
+       user pins extra orderbooks. */
+    grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 1px;
+    background: var(--t-border);
+    min-height: 0;
+}
+.terminal-left > .terminal-panel {
+    min-height: 0;
+}
+
+/* Chart panel doesn't have a panel-header — toolbar takes its slot.
+   The close button is the last toolbar button (after fullscreen) so it
+   shares the toolbar's height/styling instead of floating absolute and
+   overlapping other buttons. */
+
+/* Per-instance orderbook header controls. Symbol label is clickable to
+   reveal the symbol input on pinned (non-followsActive) instances; the
+   `+` button spawns a new GL orderbook component (gl.addComponent) and
+   the `×` closes the current one. The followsActive instance hides its
+   symbol input (driven by terminal-app.switchSymbol) and `×` (always
+   present, can't be closed). */
+.orderbook-panel .ob-symbol-label {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--t-text-bright);
+    border-bottom: 1px dashed var(--t-text-dim);
+    padding-bottom: 1px;
+}
+.orderbook-panel .ob-symbol-label:hover {
+    color: var(--t-accent);
+    border-bottom-color: var(--t-accent);
+}
+.orderbook-panel .ob-add-btn {
+    margin-left: auto;
+}
+.orderbook-panel .ob-close-btn {
+    /* sits to the right of the `+` on every non-followsActive instance */
+}
+
+.terminal-bottom {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+    background: var(--t-border);
+    min-height: 0;
+}
+
+/* ========== PANELS ========== */
+.terminal-panel {
+    background: var(--t-panel);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    animation: fadeIn 0.3s ease both;
+}
+.terminal-panel:nth-child(1) { animation-delay: 0s; }
+.terminal-panel:nth-child(2) { animation-delay: 0.05s; }
+.terminal-panel:nth-child(3) { animation-delay: 0.1s; }
+
+.panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 10px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--t-text-dim);
+    background: var(--t-header);
+    border-bottom: 1px solid var(--t-border);
+    flex-shrink: 0;
+    /* The header doubles as a GL drag handle (terminal-docking forwards
+       mousedown to the matching tab). Without user-select:none the
+       browser starts a text selection on press and the drag never
+       takes off. Inputs inside (watchlist search etc) keep their own
+       text-select via user-select:auto further down. */
+    user-select: none;
+    -webkit-user-select: none;
+}
+.panel-header input,
+.panel-header textarea {
+    user-select: auto;
+    -webkit-user-select: auto;
+}
+
+/* ========== CHART ========== */
+.chart-panel { min-height: 0; }
+#chartContainer { width: 100%; height: 100%; }
+
+/* ========== ORDER BOOK ========== */
+.orderbook-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    font-family: var(--t-mono);
+    font-size: 11px;
+    min-height: 0;
+}
+
+.orderbook-asks, .orderbook-bids {
+    /* Natural height — asks sit just above the mid, bids just below it, no
+       vertical centering inside a half-panel (gave a big empty block above
+       the asks on shallow books). Overflow-y kicks in only when the depth
+       selector is larger than the panel can fit. */
+    flex: 0 0 auto;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    max-height: calc(50% - 12px);
+}
+
+/* Order book row layout. Three columns by default — Price | Qty |
+   Total (cumulative qty from the best level outward, matches the
+   convention shown on every major exchange). The .total column is
+   hidden via the .ob-cols-2 variant below for users who prefer the
+   tighter two-column view. The .bar lives behind the row content as
+   an absolutely-positioned bar so its width doesn't fight the grid
+   for space. */
+.ob-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    padding: 1px 8px;
+    line-height: 1.7;
+    position: relative;
+    cursor: pointer;
+    transition: background 0.1s ease;
+}
+.ob-row:hover { background: var(--t-hover); }
+.ob-row .price { text-align: left;  font-weight: 600; position: relative; z-index: 1; }
+.ob-row .qty   { text-align: right; font-weight: 500; color: var(--t-text-dim); position: relative; z-index: 1; }
+.ob-row .total { text-align: right; font-weight: 500; color: var(--t-text-dim); position: relative; z-index: 1; }
+.ob-row.ask .price { color: var(--t-red); }
+.ob-row.bid .price { color: var(--t-green); }
+
+/* Column-header strip above the asks/bids list. Same grid template as
+   the rows so the labels stay aligned with the data underneath. */
+.ob-col-headers {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    padding: 4px 8px;
+    font-size: 10px;
+    color: var(--t-text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--t-border);
+    background: var(--t-panel-alt, var(--t-panel));
+}
+.ob-col-price { text-align: left; }
+.ob-col-qty,
+.ob-col-total { text-align: right; }
+
+/* Stacked view (default) — Price | Qty | Total on every row. The row
+   markup itself emits the four spans in this order; the rules above
+   align them. Nothing to override here per-mode, but the header strip
+   needs to mirror the same labels. */
+
+/* Diagonal view — classic two-sided book. Same three-column grid as
+   stacked, but with the qty cell migrated by side: asks get qty on
+   the LEFT, bids on the RIGHT, price always in the centre. The Total
+   span is hidden. The row HTML stays unchanged (price, qty, total,
+   bar); we just re-place via grid-template-areas keyed off .ask/.bid. */
+.orderbook-panel.ob-view-diagonal .ob-row {
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-areas: "left center right";
+}
+.orderbook-panel.ob-view-diagonal .ob-row .price {
+    grid-area: center;
+    text-align: center;
+}
+.orderbook-panel.ob-view-diagonal .ob-row.ask .qty {
+    grid-area: left;
+    text-align: left;
+}
+.orderbook-panel.ob-view-diagonal .ob-row.bid .qty {
+    grid-area: right;
+    text-align: right;
+}
+.orderbook-panel.ob-view-diagonal .ob-row .total {
+    display: none;
+}
+/* No column headers in the diagonal view — labels would be ambiguous
+   for asymmetric (per-side) rows, and the centered price column with
+   side-coloured qty makes the layout self-explanatory. */
+.orderbook-panel.ob-view-diagonal .ob-col-headers {
+    display: none;
+}
+
+/* Invert sides — flip the asks/mid/bids container so the bid block
+   floats above the mid line. Each block also flips internally (rows
+   reverse order) so the spread-adjacent levels stay closest to the
+   mid line in both modes. flex-direction is set explicitly here
+   because the asks/bids elements are normally block-flow; turning
+   them into flex containers is a no-op visually until we ask for
+   column-reverse. */
+.orderbook-panel.ob-invert .orderbook-content {
+    flex-direction: column-reverse;
+}
+.orderbook-panel.ob-invert .orderbook-asks,
+.orderbook-panel.ob-invert .orderbook-bids {
+    display: flex;
+    flex-direction: column-reverse;
+}
+
+/* Buy-vs-sell sentiment strip pinned at the bottom of the orderbook.
+   Two stacked flex children whose widths are set inline by the widget
+   each render, summing to 100%. Background colours echo the bid/ask
+   palette; labels are short ("B 54%" / "46% S") and sit centred. */
+.ob-sentiment {
+    display: flex;
+    height: 18px;
+    font-size: 10px;
+    font-weight: 600;
+    border-top: 1px solid var(--t-border);
+    overflow: hidden;
+    /* Don't squeeze the rows above when the panel is short — the bar is
+       informational, not load-bearing. */
+    flex: 0 0 18px;
+}
+.ob-sent-bid {
+    background: rgba(0, 200, 83, 0.55);
+    color: #fff;
+    text-align: center;
+    line-height: 18px;
+    transition: width 0.3s ease;
+    overflow: hidden;
+    white-space: nowrap;
+}
+.ob-sent-ask {
+    background: rgba(255, 61, 87, 0.55);
+    color: #fff;
+    text-align: center;
+    line-height: 18px;
+    transition: width 0.3s ease;
+    overflow: hidden;
+    white-space: nowrap;
+}
+.ob-sent-bid-label { opacity: 0.85; margin-right: 4px; }
+.ob-sent-ask-label { opacity: 0.85; margin-left:  4px; }
+/* Volume bar — per-side proportional to that level's qty vs. the max on its
+   side of the book (so a heavy wall on the opposite side doesn't crush the
+   bar on this one). Alpha here is the deciding factor for legibility; the
+   per-row heat-alpha gradient sits underneath at a much fainter level so
+   the two shadings stack without smearing into one muddy band. */
+.ob-row .bar {
+    position: absolute;
+    top: 0; bottom: 0;
+    opacity: 0.28;
+    z-index: 0;
+    pointer-events: none;
+    transition: width 0.3s ease;
+}
+.ob-row.ask .bar { right: 0; background: linear-gradient(to left, rgba(255,61,87,0.55), rgba(255,61,87,0)); }
+.ob-row.bid .bar { left: 0;  background: linear-gradient(to right, rgba(0,200,83,0.55), rgba(0,200,83,0)); }
+
+.ob-row.flash-green { animation: flashGreen 0.5s ease; }
+.ob-row.flash-red { animation: flashRed 0.5s ease; }
+
+/* Own-order overlay. Left-border stripe on the side the order sits on, plus
+   a small inline badge with the resting quantity. Doesn't change the row
+   layout — sits inside the existing qty cell. */
+.ob-row.own.bid { box-shadow: inset 3px 0 0 var(--t-green); }
+.ob-row.own.ask { box-shadow: inset -3px 0 0 var(--t-red); }
+.ob-row .own-badge {
+    display: inline-block;
+    margin: 0 4px;
+    padding: 0 4px;
+    border-radius: 2px;
+    background: rgba(255,255,255,0.08);
+    color: var(--t-text);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.4;
+}
+
+/* Mini depth-distribution chart pinned above the orderbook table. Height is
+   fixed (canvas attr) but width fills the panel. Pointer-events:none so
+   clicks fall through to whatever is underneath — depth chart is decoration,
+   not interaction. */
+.ob-depth-chart {
+    display: block;
+    width: 100%;
+    height: 80px;
+    pointer-events: none;
+    background: transparent;
+}
+
+.ob-depth-selector {
+    display: flex;
+    gap: 2px;
+}
+.btn-ob-depth {
+    background: transparent;
+    border: 1px solid var(--t-border);
+    color: var(--t-text-dim);
+    font-size: 9px;
+    padding: 0 5px;
+    border-radius: 2px;
+    cursor: pointer;
+    font-family: var(--t-mono);
+    line-height: 1.6;
+    transition: all var(--t-transition);
+}
+.btn-ob-depth:hover { color: var(--t-text); border-color: var(--t-text-dim); }
+.btn-ob-depth.active { background: var(--t-accent); color: var(--t-accent-text); border-color: var(--t-accent); }
+
+/* Column-count toggle: shares the same chrome as the depth selector
+   (small monospace pill buttons). 3 = classic centered-price layout;
+   2 = tight per-side layout (asks: qty|price, bids: price|qty). */
+.ob-view-selector { display: flex; gap: 2px; }
+.btn-ob-view,
+.btn-ob-invert,
+.btn-ob-depthtoggle {
+    background: transparent;
+    border: 1px solid var(--t-border);
+    color: var(--t-text-dim);
+    font-size: 9px;
+    padding: 0 5px;
+    border-radius: 2px;
+    cursor: pointer;
+    font-family: var(--t-mono);
+    line-height: 1.6;
+    transition: all var(--t-transition);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+}
+.btn-ob-view .bi,
+.btn-ob-invert .bi,
+.btn-ob-depthtoggle .bi { font-size: 11px; line-height: 1; }
+.btn-ob-view:hover,
+.btn-ob-invert:hover,
+.btn-ob-depthtoggle:hover { color: var(--t-text); border-color: var(--t-text-dim); }
+.btn-ob-view.active,
+.btn-ob-invert.active,
+.btn-ob-depthtoggle.active { background: var(--t-accent); color: var(--t-accent-text); border-color: var(--t-accent); }
+
+/* Depth chart hidden by the header toggle. */
+.ob-hide-depth .ob-depth-chart { display: none; }
+
+.orderbook-mid {
+    position: relative;
+    text-align: center;
+    padding: 4px;
+    font-weight: 700;
+    font-size: 13px;
+    color: var(--t-text-bright);
+    background: var(--t-bg);
+    border-top: 1px solid var(--t-border);
+    border-bottom: 1px solid var(--t-border);
+    flex-shrink: 0;
+    letter-spacing: -0.3px;
+}
+/* Spread size pinned to the right of the mid-price divider (T14): the mid
+   price stays centered, the spread reads to its right at the same row. */
+.ob-mid-spread {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-weight: 400;
+    font-size: 10px;
+    letter-spacing: 0;
+    color: var(--t-text-dim);
+}
+
+.spread-label { font-weight: 400; font-size: 10px; color: var(--t-text-dim); }
+
+/* ========== WATCHLIST (right rail) ========== */
+.watchlist-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.watchlist-search-row {
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--t-border);
+    flex-shrink: 0;
+}
+.watchlist-search-input {
+    width: 100%;
+    background: var(--t-bg);
+    border: 1px solid var(--t-border);
+    color: var(--t-text-bright);
+    font-size: 11px;
+    font-family: var(--t-font);
+    padding: 3px 8px;
+}
+.watchlist-search-input:focus {
+    outline: none;
+    border-color: var(--t-accent);
+    box-shadow: 0 0 0 2px var(--t-accent-glow-soft);
+}
+
+.watchlist-tabs {
+    display: flex;
+    gap: 2px;
+    padding: 3px 6px;
+    background: var(--t-header);
+    border-bottom: 1px solid var(--t-border);
+    flex-shrink: 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+.wl-tab {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--t-text-dim);
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: var(--t-radius);
+    cursor: pointer;
+    font-family: var(--t-font);
+    transition: all var(--t-transition);
+    white-space: nowrap;
+}
+.wl-tab:hover { color: var(--t-text-bright); background: var(--t-hover); }
+.wl-tab.active {
+    color: var(--t-accent-text);
+    background: var(--t-accent);
+    border-color: var(--t-accent);
+}
+
+.watchlist-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+.watchlist-table {
+    width: 100%;
+    font-size: 11px;
+    font-family: var(--t-mono);
+    border-collapse: collapse;
+}
+.watchlist-table thead th {
+    position: sticky;
+    top: 0;
+    background: var(--t-panel);
+    padding: 3px 6px;
+    font-weight: 600;
+    color: var(--t-text-dim);
+    text-transform: uppercase;
+    font-size: 9px;
+    letter-spacing: 0.3px;
+    border-bottom: 1px solid var(--t-border);
+    cursor: pointer;
+    user-select: none;
+    font-family: var(--t-font);
+    white-space: nowrap;
+}
+.watchlist-table thead th.ta-right { text-align: right; }
+.watchlist-table thead th:hover { color: var(--t-text-bright); }
+.watchlist-table thead th.sort-asc::after { content: ' \25B2'; font-size: 7px; }
+.watchlist-table thead th.sort-desc::after { content: ' \25BC'; font-size: 7px; }
+
+.watchlist-table tbody tr {
+    cursor: pointer;
+    transition: background var(--t-transition);
+}
+.watchlist-table tbody tr:hover { background: var(--t-hover); }
+.watchlist-table tbody tr.wl-current { background: var(--t-accent-glow-soft); }
+.watchlist-table tbody td {
+    padding: 2px 6px;
+    border-bottom: 1px solid rgba(43,49,57,0.35);
+    line-height: 1.6;
+    white-space: nowrap;
+}
+.wl-sym-cell { display: flex; align-items: center; gap: 4px; }
+.wl-fav {
+    background: transparent;
+    border: none;
+    color: var(--t-border);
+    font-size: 11px;
+    padding: 0 2px;
+    line-height: 1;
+    cursor: pointer;
+    transition: color var(--t-transition);
+}
+.wl-fav:hover { color: var(--t-accent-hover); }
+.wl-fav.active { color: var(--t-accent); }
+.wl-sym { color: var(--t-text-bright); font-weight: 500; }
+.wl-last { text-align: right; color: var(--t-text); transition: background 0.3s ease; }
+.wl-last.flash-up { animation: flashGreen 0.5s ease; }
+.wl-last.flash-down { animation: flashRed 0.5s ease; }
+.wl-chg { text-align: right; font-weight: 600; }
+.wl-chg.up { color: var(--t-green); }
+.wl-chg.down { color: var(--t-red); }
+
+/* ========== TRADE FEED ========== */
+.tf-tabs {
+    display: flex;
+    gap: 2px;
+}
+.tf-tab {
+    background: transparent;
+    border: none;
+    color: var(--t-text-dim);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    padding: 2px 8px;
+    border-radius: var(--t-radius);
+    cursor: pointer;
+    font-family: var(--t-font);
+    transition: all var(--t-transition);
+    border-bottom: 2px solid transparent;
+}
+.tf-tab:hover { color: var(--t-text-bright); }
+.tf-tab.active {
+    color: var(--t-accent);
+    border-bottom-color: var(--t-accent);
+}
+
+.tradefeed-content[hidden] { display: none; }
+.tradefeed-content {
+    flex: 1;
+    overflow-y: auto;
+    font-family: var(--t-mono);
+    font-size: 11px;
+    min-height: 0;
+}
+
+/* Bubble-chart view of recent ticks. Same panel as the list view —
+   exactly one of the two is visible at a time, controlled by the toggle
+   in the panel header. Canvas takes whatever vertical space is left
+   below the header, full panel width. */
+.tradefeed-bubbles {
+    flex: 1;
+    width: 100%;
+    min-height: 0;
+    display: block;
+}
+
+/* Header toggle (List | Bubbles). Hidden on phones via the existing
+   max-width:768px media query — _bindViewToggle also force-flips the
+   widget into list mode there. */
+.tradefeed-view-toggle {
+    display: inline-flex;
+    gap: 2px;
+    margin-left: auto;
+}
+.tradefeed-view-toggle .tf-view-btn {
+    background: transparent;
+    border: 1px solid var(--t-border);
+    color: var(--t-text-dim);
+    padding: 1px 6px;
+    border-radius: var(--t-radius);
+    cursor: pointer;
+    font-size: 10px;
+    line-height: 1;
+    height: 18px;
+    transition: all var(--t-transition);
+}
+.tradefeed-view-toggle .tf-view-btn:hover {
+    color: var(--t-text-bright);
+    border-color: var(--t-text-dim);
+}
+.tradefeed-view-toggle .tf-view-btn.active {
+    background: var(--t-accent);
+    color: var(--t-accent-text);
+    border-color: var(--t-accent);
+}
+.tf-row {
+    display: grid;
+    grid-template-columns: 58px minmax(0, 1fr) minmax(0, 1fr) 38px;
+    column-gap: 8px;
+    padding: 1px 8px;
+    line-height: 1.7;
+    transition: background 0.3s ease;
+}
+/* Multi-instrument layout — extra column for the symbol when the user
+   has pinned at least one extra instrument to this feed. */
+.tf-row.tf-row-multi {
+    grid-template-columns: 58px 70px minmax(0, 1fr) minmax(0, 1fr) 38px;
+}
+.tf-row .price, .tf-row .qty, .tf-row .sym { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tf-row .time { color: var(--t-text-dim); }
+.tf-row .sym { color: var(--t-text-bright); font-weight: 600; font-size: 11px; }
+.tf-row .price { text-align: right; font-weight: 500; }
+.tf-row .qty { text-align: right; color: var(--t-text-dim); }
+.tf-row .side { text-align: right; font-weight: 600; font-size: 10px; }
+.tf-row.buy .price { color: var(--t-green); }
+.tf-row.sell .price { color: var(--t-red); }
+.tf-row.buy .side { color: var(--t-green); }
+.tf-row.sell .side { color: var(--t-red); }
+
+/* Pinned-extras chip ribbon — sits between the panel header and the
+   trade list. Hidden when no extras are pinned. */
+.tf-extras {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--t-border);
+}
+.tf-extras[hidden] { display: none; }
+.tf-extra-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 4px 2px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--t-text-bright);
+    background: var(--t-panel-alt, var(--t-panel));
+    border: 1px solid var(--t-border);
+    border-radius: 10px;
+}
+.tf-extra-rm {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    color: var(--t-text-dim);
+    background: transparent;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    line-height: 1;
+}
+.tf-extra-rm:hover { color: var(--t-red); background: rgba(255, 61, 87, 0.12); }
+
+/* Bubble-view tooltip — anchored absolutely inside the tradefeed
+   panel, positioned by the widget on mousemove relative to the
+   canvas. Hidden by default, shown only when a bubble is hit. */
+.tradefeed-panel { position: relative; }
+.tf-bubble-tooltip {
+    position: absolute;
+    z-index: 20;
+    min-width: 120px;
+    padding: 6px 8px;
+    background: var(--t-panel);
+    border: 1px solid var(--t-border);
+    border-radius: 4px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    font-family: var(--t-mono, monospace);
+    font-size: 11px;
+    color: var(--t-text-bright);
+    pointer-events: none;
+    line-height: 1.5;
+}
+.tf-bubble-tooltip[hidden] { display: none; }
+.tf-bbtt-row { display: flex; justify-content: space-between; gap: 12px; }
+.tf-bbtt-label { color: var(--t-text-dim); }
+.tf-bbtt-value { font-weight: 600; }
+.tf-bbtt-row.buy .tf-bbtt-value { color: var(--t-green); }
+.tf-bbtt-row.sell .tf-bbtt-value { color: var(--t-red); }
+
+.tf-row.flash-new { animation: flashGreen 0.6s ease; }
+.tf-row.sell.flash-new { animation: flashRed 0.6s ease; }
+
+/* large trade highlight */
+.tf-row.large-trade { font-size: 12px; font-weight: 600; }
+.tf-row.large-trade .qty { color: var(--t-text-bright); }
+
+/* ========== ORDER ENTRY ========== */
+.order-entry-content {
+    padding: 8px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    gap: 6px;
+    /* Panel scrolls vertically if content overflows — backstop for viewports
+       or language/locale sizes that push labels past the fixed panel height. */
+    overflow-y: auto;
+}
+.order-entry-split {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    /* Scrolling is handled by the outer .order-entry-content — keeping it
+       here too introduced a scrollbar column and misaligned the split with
+       the order-type buttons above. */
+}
+.oe-col {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 6px 8px;
+    background: var(--t-surface);
+    border-radius: var(--t-radius);
+    border: 1px solid var(--t-border);
+    min-width: 0;
+}
+.oe-col-buy { border-color: rgba(14, 203, 129, 0.25); }
+.oe-col-sell { border-color: rgba(246, 70, 93, 0.25); }
+
+.oe-label {
+    font-size: 10px;
+    color: var(--t-text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    font-family: var(--t-font);
+}
+.oe-value {
+    font-family: var(--t-mono);
+    font-size: 11px;
+    color: var(--t-text);
+    text-align: right;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.oe-avbl, .oe-total, .oe-foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 10px;
+}
+
+.oe-field {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.oe-input-grp {
+    display: flex;
+    gap: 4px;
+    align-items: stretch;
+}
+.oe-input-grp .oe-input { flex: 1; min-width: 0; }
+.btn-bbo {
+    background: var(--t-bg);
+    border: 1px solid var(--t-border);
+    color: var(--t-text-dim);
+    font-size: 10px;
+    font-weight: 600;
+    padding: 0 8px;
+    border-radius: var(--t-radius);
+    cursor: pointer;
+    font-family: var(--t-font);
+    transition: all var(--t-transition);
+}
+.btn-bbo:hover {
+    color: var(--t-accent-text);
+    background: var(--t-accent);
+    border-color: var(--t-accent);
+}
+
+.oe-input {
+    background: var(--t-bg);
+    border: 1px solid var(--t-border);
+    color: var(--t-text-bright);
+    font-family: var(--t-mono);
+    font-size: 12px;
+    padding: 4px 6px;
+    border-radius: var(--t-radius);
+    transition: border-color var(--t-transition);
+    width: 100%;
+    min-width: 0;
+}
+.oe-input:focus {
+    outline: none;
+    border-color: var(--t-accent);
+    box-shadow: 0 0 0 2px var(--t-accent-glow-soft);
+}
+
+.oe-pct-row {
+    display: flex;
+    gap: 3px;
+}
+.btn-oe-pct {
+    flex: 1;
+    padding: 2px 0;
+    font-size: 10px;
+    font-weight: 500;
+    font-family: var(--t-mono);
+    background: var(--t-bg);
+    border: 1px solid var(--t-border);
+    color: var(--t-text-dim);
+    border-radius: 2px;
+    cursor: pointer;
+    transition: all var(--t-transition);
+}
+.btn-oe-pct:hover {
+    background: var(--t-hover);
+    color: var(--t-text-bright);
+}
+
+.oe-tpsl-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: var(--t-text-dim);
+    cursor: pointer;
+    user-select: none;
+    font-family: var(--t-font);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+.oe-tpsl {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px 0;
+    border-top: 1px dashed var(--t-border);
+}
+.oe-tpsl[hidden] { display: none; }
+
+.btn-oe-submit {
+    margin-top: auto;
+    flex: none;
+    padding: 10px 6px;
+    font-weight: 700;
+    font-size: 13px;
+    text-transform: uppercase;
+    border: none;
+    border-radius: var(--t-radius);
+    cursor: pointer;
+    color: #fff;
+    transition: all var(--t-transition);
+    font-family: var(--t-font);
+    letter-spacing: 0.3px;
+    position: relative;
+    overflow: hidden;
+}
+.btn-oe-submit.btn-buy { background: var(--t-green); color: #fff; }
+.btn-oe-submit.btn-buy:hover { background: var(--t-green-hover); box-shadow: 0 0 12px rgba(14,203,129,0.3); }
+.btn-oe-submit.btn-sell { background: var(--t-red); color: #fff; }
+.btn-oe-submit.btn-sell:hover { background: var(--t-red-hover); box-shadow: 0 0 12px rgba(246,70,93,0.3); }
+.btn-oe-submit:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn-oe-submit:active { transform: scale(0.97); }
+
+.oe-estimate {
+    font-size: 10px;
+    font-family: var(--t-mono);
+    color: var(--t-text-dim);
+    min-height: 12px;
+    text-align: center;
+}
+.oe-estimate.oe-estimate-error {
+    color: var(--t-red);
+}
+
+/* Two pairs of type buttons line up with the Buy/Sell columns under them:
+   outer gap = column gap (12px), inner pair gap = 4px. So the border of
+   Market/Limit pair sits over the Buy column, Stop/StopLimit over Sell. */
+.order-type-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+.ot-pair {
+    display: flex;
+    gap: 4px;
+    min-width: 0;
+}
+.btn-ot {
+    flex: 1;
+    padding: 4px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    background: transparent;
+    border: 1px solid var(--t-border);
+    color: var(--t-text-dim);
+    border-radius: var(--t-radius);
+    cursor: pointer;
+    transition: all var(--t-transition);
+    font-family: var(--t-font);
+    min-width: 0;
+}
+.btn-ot.active { background: var(--t-accent); color: var(--t-accent-text); border-color: var(--t-accent); }
+.btn-ot:hover:not(.active) { background: var(--t-hover); color: var(--t-text); border-color: var(--t-text-dim); }
+
+.order-form .form-label-sm {
+    font-size: 10px;
+    color: var(--t-text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 2px;
+    display: block;
+    font-family: var(--t-font);
+}
+.order-form .form-control {
+    background: var(--t-bg);
+    border-color: var(--t-border);
+    color: var(--t-text-bright);
+    font-family: var(--t-mono);
+    font-size: 13px;
+    transition: border-color var(--t-transition);
+}
+.order-form .form-control:focus {
+    border-color: var(--t-accent);
+    box-shadow: 0 0 0 2px var(--t-accent-glow-soft);
+}
+
+.quick-qty-row {
+    display: flex;
+    gap: 3px;
+}
+.btn-quick-qty {
+    flex: 1;
+    padding: 2px 0;
+    font-size: 10px;
+    font-weight: 600;
+    font-family: var(--t-mono);
+    background: var(--t-surface);
+    border: 1px solid var(--t-border);
+    color: var(--t-text-dim);
+    border-radius: 2px;
+    cursor: pointer;
+    transition: all var(--t-transition);
+}
+.btn-quick-qty:hover { background: var(--t-hover); color: var(--t-text-bright); border-color: var(--t-text-dim); }
+
+.order-estimate {
+    font-size: 10px;
+    color: var(--t-text-dim);
+    font-family: var(--t-mono);
+    text-align: right;
+    padding: 2px 0;
+}
+.order-estimate.order-estimate-error {
+    color: var(--t-red);
+    text-align: left;
+}
+.btn-buy:disabled, .btn-sell:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.order-buttons {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+}
+.btn-buy, .btn-sell {
+    flex: 1;
+    padding: 8px 5px;
+    font-weight: 700;
+    font-size: 13px;
+    text-transform: uppercase;
+    border: none;
+    border-radius: var(--t-radius);
+    cursor: pointer;
+    color: #fff;
+    transition: all var(--t-transition);
+    font-family: var(--t-font);
+    letter-spacing: 0.3px;
+    position: relative;
+    overflow: hidden;
+}
+.btn-buy { background: var(--t-green); }
+.btn-buy:hover { background: var(--t-green-hover); box-shadow: 0 0 12px rgba(14,203,129,0.3); }
+.btn-buy:active { transform: scale(0.97); }
+.btn-sell { background: var(--t-red); }
+.btn-sell:hover { background: var(--t-red-hover); box-shadow: 0 0 12px rgba(246,70,93,0.3); }
+.btn-sell:active { transform: scale(0.97); }
+.btn-buy.btn-preselected { box-shadow: 0 0 0 2px var(--t-green), 0 0 12px rgba(14,203,129,0.3); }
+.btn-sell.btn-preselected { box-shadow: 0 0 0 2px var(--t-red), 0 0 12px rgba(246,70,93,0.3); }
+
+.hotkey-hint {
+    font-size: 9px;
+    font-weight: 400;
+    opacity: 0.6;
+    margin-left: 4px;
+    font-family: var(--t-mono);
+}
+
+/* ========== BOTTOM PANEL GROUP ========== */
+/* The four trading-data panels — Open Orders, Order History, Trade
+   History, Positions — used to live as .bt-pane children of one
+   bottomTabsPanel with a custom .bt-tabs strip on top. Now they're
+   four independent .terminal-panel docks; the GL native tab strip
+   handles the tab UI when they share a stack. The single-tab "(N)"
+   badge in the active-orders title still uses .bt-count. */
+.bt-count {
+    color: var(--t-text-dim);
+    font-weight: 400;
+    font-size: 10px;
+}
+
+/* Scrollable content area inside each panel. The GL container sets
+   the panel to width/height:100%; .panel-header has its own
+   min-height; .panel-body soaks up the rest and scrolls when the
+   table overflows.
+
+   Bottom-row panels (active orders, order/trade history, positions)
+   add .panel-body-with-rail to host a vertical action toolbar pinned
+   to the right edge of the body. The body itself becomes a flex row
+   (table on the left, rail on the right) and overflow moves to the
+   inner .panel-body-content so the rail stays visible while the
+   table scrolls. */
+.terminal-panel > .panel-body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 0;
+    position: relative;
+}
+.terminal-panel > .panel-body.panel-body-with-rail {
+    display: flex;
+    flex-direction: row;
+    overflow: hidden;
+}
+.panel-body-content {
+    flex: 1;
+    min-width: 0;
+    overflow: auto;
+    position: relative;
+}
+.panel-rail {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 6px;
+    align-items: center;
+    flex-shrink: 0;
+    background: var(--t-header);
+    border-left: 1px solid var(--t-border);
+}
+.bt-icon-btn {
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid var(--t-border);
+    color: var(--t-text-dim);
+    border-radius: var(--t-radius);
+    cursor: pointer;
+    padding: 0;
+    transition: all var(--t-transition);
+}
+.bt-icon-btn i { font-size: 12px; line-height: 1; }
+.bt-icon-btn:hover:not(:disabled) {
+    color: var(--t-text-bright);
+    border-color: var(--t-text-dim);
+}
+.bt-icon-btn.bt-icon-cancel:hover:not(:disabled),
+.bt-icon-btn.bt-icon-cancel-all:hover {
+    color: var(--t-red);
+    border-color: var(--t-red);
+}
+.bt-icon-btn.bt-icon-reverse:hover {
+    /* Reverse-position icon — orange/amber to read as "destructive but
+       different from cancel". */
+    color: var(--t-orange, #f0b90b);
+    border-color: var(--t-orange, #f0b90b);
+}
+/* Per-row action cell on the positions table. Two icon buttons sit
+   side by side, centered in the cell, with a 4px gap. */
+.position-actions {
+    display: flex;
+    gap: 4px;
+    justify-content: center;
+}
+.bt-icon-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+/* ========== TABLES ========== */
+.orders-content, .positions-content {
+    flex: 1;
+    overflow: auto;
+    min-height: 0;
+}
+
+.terminal-table {
+    width: 100%;
+    font-size: 11px;
+    font-family: var(--t-mono);
+    border-collapse: collapse;
+}
+.terminal-table thead th {
+    padding: 4px 6px;
+    font-weight: 600;
+    color: var(--t-text-dim);
+    text-transform: uppercase;
+    font-size: 10px;
+    letter-spacing: 0.3px;
+    border-bottom: 1px solid var(--t-border);
+    position: sticky;
+    top: 0;
+    background: var(--t-panel);
+    white-space: nowrap;
+}
+/* Sortable columns (table-sort.js): click cycles asc -> desc -> natural. */
+.terminal-table thead th[data-sort] { cursor: pointer; user-select: none; }
+.terminal-table thead th[data-sort]:hover { color: var(--t-text-bright); }
+.terminal-table thead th.sort-asc::after { content: ' \25B2'; font-size: 7px; }
+.terminal-table thead th.sort-desc::after { content: ' \25BC'; font-size: 7px; }
+.terminal-table tbody td {
+    padding: 4px 6px;
+    border-bottom: 1px solid rgba(43,49,57,0.5);
+    white-space: nowrap;
+}
+.terminal-table tbody tr {
+    transition: background var(--t-transition);
+}
+.terminal-table tbody tr:hover {
+    background: var(--t-hover);
+}
+/* Numeric ID columns (#42) — dim, monospace, minimal width. Used for
+   order ids in the history tab and execution/order ids in trade history. */
+.terminal-table .mono-id {
+    color: var(--t-text-dim);
+    font-variant-numeric: tabular-nums;
+}
+
+.cell-editable { cursor: pointer; border-bottom: 1px dashed var(--t-text-dim); }
+.cell-editable:hover { color: var(--t-accent); }
+
+/* Terminal-state rows in active-orders — the table now keeps the row for
+   the order's whole lifetime so the user can read its final state instead
+   of guessing why it vanished. Dimmer styling so live rows stay prominent. */
+.terminal-table tbody tr.order-rejected td {
+    color: var(--t-text-dim);
+    background: rgba(220, 53, 69, 0.07);
+}
+.terminal-table tbody tr.order-cancelled td {
+    color: var(--t-text-dim);
+    background: rgba(108, 117, 125, 0.10);
+}
+.terminal-table tbody tr.order-filled td {
+    color: var(--t-text-dim);
+    background: rgba(40, 167, 69, 0.07);
+}
+.reject-reason-icon {
+    color: var(--t-warning, #e0a800);
+    cursor: help;
+    margin-left: 4px;
+}
+.reject-reason-icon:hover { color: var(--t-accent); }
+
+.inline-edit-input {
+    width: 80px;
+    background: var(--t-bg);
+    border: 1px solid var(--t-accent);
+    color: var(--t-text-bright);
+    font-family: var(--t-mono);
+    font-size: 11px;
+    padding: 1px 4px;
+    outline: none;
+    border-radius: var(--t-radius);
+}
+
+/* On narrow viewports (phones) the right-side action rail is too cramped
+   and squeezes the table further. Hide it on mobile — per-row ✕ in the
+   Open Orders / Positions tables still lets the user act on individual
+   rows, and refresh-only rails (history/trades) just go away.
+
+   Two-clause query so the rule fires for both portrait phones (width ≤
+   768px) and landscape phones (height ≤ 500px regardless of width). A
+   landscape phone like iPhone Pro is ~932×430 — wider than 768 but the
+   short height means the desktop layout still cramps everything. */
+@media (max-width: 768px), (max-height: 500px) {
+    .panel-rail { display: none; }
+}
+
+.pnl-positive { color: var(--t-green); font-weight: 600; }
+.pnl-negative { color: var(--t-red); font-weight: 600; }
+.side-buy { color: var(--t-green); font-weight: 600; }
+.side-sell { color: var(--t-red); font-weight: 600; }
+
+/* ========== EMPTY STATES ========== */
+.empty-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    min-height: 60px;
+    color: var(--t-text-dim);
+    font-size: 11px;
+    font-style: italic;
+    opacity: 0.6;
+}
+
+/* ========== STATUS BAR ========== */
+.terminal-statusbar {
+    height: 24px;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 14px;
+    padding: 0 14px;
+    background: var(--t-header);
+    border-top: 1px solid var(--t-border);
+    font-size: 11px;
+    color: var(--t-text-dim);
+    flex-shrink: 0;
+}
+.terminal-statusbar .status-left,
+.terminal-statusbar .status-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+.terminal-statusbar .status-left { white-space: nowrap; }
+
+.terminal-statusbar .hotkeys-hint {
+    font-size: 10px;
+    color: var(--t-text-dim);
+    opacity: 0.5;
+    font-family: var(--t-mono);
+}
+
+.terminal-statusbar .hotkeys-hint kbd {
+    background: var(--t-surface);
+    border: 1px solid var(--t-border);
+    border-radius: 2px;
+    padding: 0 4px;
+    font-size: 9px;
+    font-family: var(--t-mono);
+    color: var(--t-text);
+}
+
+.status-ticker {
+    overflow: hidden;
+    min-width: 0;
+    height: 100%;
+    display: flex;
+    align-items: center;
+}
+.status-ticker-track {
+    display: flex;
+    gap: 24px;
+    white-space: nowrap;
+    animation: tickerScroll 60s linear infinite;
+    animation-play-state: running;
+    will-change: transform;
+}
+.status-ticker:hover .status-ticker-track {
+    animation-play-state: paused;
+}
+.status-ticker-track .tk {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
+    font-family: var(--t-mono);
+    font-size: 11px;
+}
+.status-ticker-track .tk-sym { color: var(--t-text-bright); font-weight: 500; }
+.status-ticker-track .tk-price { color: var(--t-text); }
+.status-ticker-track .tk-chg.up { color: var(--t-green); }
+.status-ticker-track .tk-chg.down { color: var(--t-red); }
+
+@keyframes tickerScroll {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+}
+
+.status-link {
+    color: var(--t-text-dim);
+    text-decoration: none;
+    font-size: 11px;
+    font-family: var(--t-font);
+    transition: color var(--t-transition);
+}
+.status-link:hover { color: var(--t-accent); }
+
+/* The notifications bell is the only <button> in .status-right; reset
+   the default UA chrome so it sits flat next to the <a> links. */
+.status-icon-btn {
+    background: transparent;
+    border: 0;
+    padding: 0 2px;
+    cursor: pointer;
+    line-height: 1;
+}
+.status-icon-btn i { font-size: 13px; }
+
+/* Notifications settings popover — anchored above the status bar's
+   right edge (the bell sits in .status-right) and floats over the
+   trading layout. Mirrors the dark "panel" look so it reads as part
+   of the terminal chrome rather than a stock OS dialog. */
+.notifications-popover {
+    position: fixed;
+    bottom: 30px;
+    right: 8px;
+    width: 260px;
+    background: var(--t-panel);
+    border: 1px solid var(--t-border);
+    border-radius: var(--t-radius);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+    color: var(--t-text-bright);
+    font-family: var(--t-font);
+    font-size: 12px;
+    padding: 10px;
+    z-index: 1080;
+}
+.notifications-popover[hidden] { display: none; }
+.notifications-popover-header {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--t-text-dim);
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--t-border);
+    margin-bottom: 8px;
+}
+.notifications-popover .ntf-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    cursor: pointer;
+}
+.notifications-popover .ntf-row input[type="checkbox"] { margin: 0; }
+.notifications-popover .ntf-row input[type="checkbox"]:disabled + span { color: var(--t-text-dim); cursor: not-allowed; }
+.notifications-popover .ntf-row-master { font-weight: 600; padding-bottom: 8px; }
+.notifications-popover .ntf-row-foreground {
+    margin-top: 6px;
+    padding-top: 8px;
+    border-top: 1px solid var(--t-border);
+    font-size: 11px;
+    color: var(--t-text-dim);
+}
+.notifications-popover .ntf-events {
+    border: 0;
+    margin: 4px 0 0;
+    padding: 0;
+}
+.notifications-popover .ntf-events legend {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--t-text-dim);
+    padding: 0;
+    margin-bottom: 4px;
+}
+.notifications-popover .ntf-hint {
+    margin: 8px 0 0;
+    font-size: 11px;
+    color: var(--t-text-dim);
+    line-height: 1.4;
+}
+.notifications-popover .ntf-hint[hidden] { display: none; }
+
+/* ========== SCROLLBARS ========== */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--t-border); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--t-text-dim); }
+
+/* ========== RESPONSIVE ========== */
+/* Tablet — tighten side rails, keep 3-column */
+@media (max-width: 1200px) and (min-width: 993px) {
+    .terminal-grid {
+        grid-template-columns: 1fr 260px 220px;
+    }
+}
+
+/* Small laptop — drop the tradefeed middle rail to keep chart breathing
+   room. Orderbook+watchlist (right rail now) stays because L2/symbol-pick
+   are higher-value than the tape. */
+@media (max-width: 992px) and (min-width: 769px) {
+    .terminal-grid {
+        grid-template-columns: 1fr 220px;
+    }
+    .terminal-right { display: none; }
+    .terminal-left { grid-column: 2; }
+    .topbar-center { display: none; }
+    .topbar-stats { display: none; }
+}
+
+/* Medium laptop — hide instrument name and day stats to keep topbar compact */
+@media (max-width: 1280px) and (min-width: 993px) {
+    .instrument-name { display: none; }
+    .topbar-stats .ts-item:nth-child(4) { display: none; }
+}
+
+/* Phone — single-column stacked flex layout. The two-clause query
+   matches portrait phones (width ≤ 768) OR landscape phones (height
+   ≤ 500). iPhone Pro landscape is ~932×430 — wider than 768 but the
+   short height makes the desktop chrome unusable, so we still want
+   the mobile compactions. JS matchMedia checks (terminal-docking,
+   tradefeed-widget, orderbook-widget, panel-resizer) use the same
+   query string verbatim — keep the JS in sync if you change this. */
+@media (max-width: 768px), (max-height: 500px) {
+    html, body { overflow-x: hidden; overflow-y: auto; }
+
+    /* Mobile: drastically compact order-entry to fit the panel without
+       any inner scrollbar. Each column has 11+ rows on desktop (avbl,
+       price, stop, qty, %-row, total, tpsl-toggle, tpsl, foot, button,
+       estimate) — too tall for a phone panel ~25% of viewport. Hide
+       secondary rows, halve input heights, drop padding. The user
+       still gets type tabs, qty, optional price, and the Buy/Sell
+       button — enough to place an order one-handed. */
+    /* Portfolio selector squeezes hard on a phone topbar — the
+       full label "Test Trading (USD)" pushes the theme/lang/user
+       cluster onto a second row. Cap it tight; the chevron + first
+       few chars + ellipsis are still enough to identify the
+       portfolio, and tapping opens the full list. */
+    .topbar-right #portfolioSelect {
+        max-width: 110px;
+        text-overflow: ellipsis;
+    }
+
+    .order-entry-content { padding: 4px 6px; gap: 3px; overflow: hidden; }
+    .order-entry-split { gap: 6px; }
+    .oe-col { padding: 4px 6px; gap: 2px; }
+    .order-entry-content .order-type-tabs { padding: 0; gap: 4px; }
+    .order-entry-content .order-type-tabs .btn-ot { padding: 4px 6px; font-size: 11px; }
+    .oe-col .oe-avbl,
+    .oe-col .oe-total,
+    .oe-col .oe-tpsl-toggle,
+    .oe-col .oe-tpsl,
+    .oe-col .oe-foot,
+    .oe-col .oe-estimate { display: none; }
+    .oe-col .oe-field { gap: 2px; }
+    .oe-col .oe-field input { height: 28px; padding: 0 6px; }
+    .oe-col .oe-pct-row { gap: 4px; }
+    .oe-col .oe-pct-row .btn-oe-pct { padding: 2px 4px; font-size: 10px; }
+    .oe-col .btn-oe-submit { padding: 8px; font-size: 13px; }
+
+    /* Mobile orderbook: 5 levels each side. Tighten row line-height
+       and font so 5 asks + mid + 5 bids fit in the panel without an
+       inner scrollbar. Depth selector is hidden — depth is forced
+       to 5 on mobile (see orderbook-widget.js), so the 5/10 toggle
+       does nothing useful there and just steals header space.
+       Asks/bids stay natural-height (no stretch) and the parent
+       centres them around the mid line, so any leftover panel
+       height splits evenly above/below instead of leaving a single
+       dead block between the orderbook and order-entry. */
+    .orderbook-asks, .orderbook-bids { overflow-y: hidden; }
+    .orderbook-content { justify-content: center; }
+    .orderbook-content .ob-row { line-height: 1.4; padding: 0 6px; font-size: 10px; }
+    .orderbook-content .orderbook-mid { padding: 2px 6px; font-size: 12px; }
+    .orderbook-content .spread-label { font-size: 10px; }
+    .orderbook-panel .ob-depth-selector { display: none; }
+    /* Symbol-label retargeting is desktop-only — on mobile the layout
+       is single-instrument (URL drives the terminal symbol via the
+       topbar selector) and a per-widget symbol pick would just
+       confuse users. Hide the clickable label; the actual symbol is
+       already shown in the topbar. */
+    .orderbook-panel .ob-symbol-label { display: none; }
+
+    /* Hide all panel-close `×` buttons on mobile. The mobile layout is
+       a fixed single-column stack defined by defaultMobileConfig — there
+       is no UI to add panels back, so closing one would strand the user
+       without a way to recover the orderbook / order-entry / tradefeed.
+       Same for the orderbook's `+` add-button: a multi-orderbook setup
+       is desktop-only and the extra row would just push everything off
+       the fold. */
+    .panel-close-btn,
+    .orderbook-panel .ob-close-btn,
+    .orderbook-panel .ob-add-btn,
+    .chart-panel-close,
+    /* Topbar dropdown that spawns extra panels — same reasoning as
+       hiding `×` and `+`. The mobile stack is fixed; new components
+       would just push existing ones below the fold. Two selectors
+       so the rule still hits even when Razor hasn't been recompiled
+       to render the explicit `topbar-panels-menu` class on the
+       wrapper. */
+    .topbar-panels-menu,
+    .terminal-topbar .dropdown:has(> #panelsMenu),
+    /* Multi-instrument is desktop-only on mobile: drop the tradefeed
+       `+ symbol` picker button and the chip ribbon that lists pinned
+       extras. (Extras saved from a desktop session would otherwise
+       still render here even though the user can't add/remove them
+       from a phone — mc-layout-btns is already hidden above.) */
+    .tradefeed-panel .tf-add-symbol-btn,
+    .tradefeed-panel .tf-extras { display: none !important; }
+
+    .terminal-topbar {
+        flex-wrap: wrap;
+        padding: 6px 8px;
+        gap: 6px;
+        height: auto;
+        min-height: 44px;
+    }
+    /* Binance-style mobile header:
+         row 1: BRAND (left) | portfolio/lang/user (right)
+         row 2: instrument+price (left col) | 2x2 stats (right col)
+       topbar-left uses `display: contents` so its children (brand +
+       topbar-pair) become direct flex items of .terminal-topbar and can
+       order independently. */
+    .topbar-left { display: contents; }
+
+    .topbar-left > .terminal-brand {
+        order: 1;
+        flex: 0 0 auto;
+    }
+    .topbar-right {
+        order: 2;
+        flex: 1 1 auto;
+        justify-content: flex-end;
+        gap: 6px;
+        min-width: 0;
+    }
+    .topbar-center { display: none; }
+
+    .topbar-pair {
+        order: 3;
+        flex: 1 1 100%;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        grid-template-rows: auto auto;
+        column-gap: 10px;
+        row-gap: 4px;
+        align-items: center;
+        padding-top: 4px;
+        border-top: 1px solid var(--t-border);
+    }
+    .topbar-pair > .instrument-selector { grid-column: 1; grid-row: 1; }
+    .topbar-pair > .price-display {
+        grid-column: 1; grid-row: 2;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1px;
+    }
+    .topbar-pair > .topbar-stats {
+        grid-column: 2;
+        grid-row: 1 / span 2;
+        align-self: center;
+    }
+    .instrument-name { display: none; }
+    .current-price { font-size: 22px; line-height: 1; letter-spacing: -0.5px; }
+    .price-change { font-size: 12px; }
+
+    /* Interactive dropdown back on mobile — chevron returns, button gets
+       pointer events + muted background. */
+    .btn-terminal-select {
+        background: var(--t-surface);
+        border: 1px solid var(--t-border);
+        padding: 3px 10px;
+        font-size: 15px;
+        cursor: pointer;
+        pointer-events: auto;
+    }
+    .btn-terminal-select .chevron { display: inline; font-size: 11px; margin-left: 4px; }
+    .btn-terminal-select:hover { background: var(--t-hover); border-color: var(--t-accent); }
+
+    /* Right column: 2x2 grid of 24h stats, compact.
+       Keep total width bounded so the instrument/price column gets the
+       majority of the header width. */
+    .topbar-stats {
+        grid-area: stats;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: auto auto;
+        gap: 4px 10px;
+        border-left: none;
+        padding-left: 0;
+        margin-left: 0;
+        font-family: var(--t-mono);
+        max-width: 56vw;
+    }
+    .topbar-stats .ts-item {
+        min-width: 0;
+        align-items: flex-start;
+    }
+    .topbar-stats .ts-item:nth-child(4) { display: flex; }
+    .topbar-stats .ts-label {
+        font-size: 9px;
+        line-height: 1.1;
+        white-space: nowrap;
+    }
+    .topbar-stats .ts-value {
+        font-size: 10px;
+        line-height: 1.1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 100%;
+    }
+
+    .timeframe-selector { overflow-x: auto; justify-content: flex-start; -webkit-overflow-scrolling: touch; }
+    .timeframe-selector .btn-tf { flex-shrink: 0; }
+    .user-email { display: none; }
+
+    /* Mobile GL fallback: the .terminal-grid is hidden on mobile (GL
+       takes over via defaultMobileConfig), but the panel children
+       (.chart-panel, .order-entry-panel, .tradefeed-panel) get cloned
+       into the dock-host and the legacy stacked-flex sizing leaks in.
+       Scope all height/min-height fallbacks under .terminal-grid so
+       they only apply when GL didn't init. */
+    .terminal-grid {
+        display: flex;
+        flex-direction: column;
+        height: auto;
+        min-height: calc(100vh - 44px - 24px);
+        overflow: visible;
+    }
+    .terminal-grid .terminal-panel { flex-shrink: 0; }
+
+    .terminal-grid .terminal-center {
+        display: flex;
+        flex-direction: column;
+    }
+    .terminal-grid .chart-panel { height: 55vh; min-height: 300px; }
+    /* Тулбар на mobile: явно display:flex + min-height, чтобы не схлопывался
+       в нулевую высоту когда mobile-режим срабатывает (например при открытии
+       DevTools на десктопе viewport уменьшается → срабатывает media-query
+       → если родитель сжимает toolbar до 0, юзер не видит ТФ/типы графика). */
+    .chart-toolbar {
+        display: flex !important;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overflow-y: visible;
+        min-height: 32px !important;
+        -webkit-overflow-scrolling: touch;
+    }
+    /* `!important` because the desktop chart-toolbar baseline at the
+       bottom of this file sets `.chart-toolbar .mc-layout-btns` to
+       `inline-flex` at the same specificity and later source order,
+       which would otherwise un-hide the multi-chart layout buttons on
+       mobile (multi-instrument is desktop-only). */
+    .chart-toolbar .btn-drawing-tool,
+    .chart-toolbar .mc-layout-btns,
+    .chart-toolbar .btn-fullscreen { display: none !important; }
+    /* Drop the now-orphan vertical dividers that bracket the hidden
+       multi-chart / fullscreen / close-panel buttons. Without this
+       three pipe `|` separators stack at the end of the toolbar with
+       nothing between them. */
+    .chart-toolbar .toolbar-separator:has(+ .mc-layout-btns),
+    .chart-toolbar .toolbar-separator:has(+ .btn-fullscreen),
+    .chart-toolbar .toolbar-separator:has(+ .chart-panel-close) { display: none !important; }
+
+    .terminal-grid .terminal-right {
+        display: flex;
+        flex-direction: column;
+    }
+    /* Hide both side rails on phone — instrument discovery lives in the
+       topbar dropdown-search, price discovery in the chart. */
+    .terminal-grid .terminal-left { display: none; }
+    .terminal-grid .tradefeed-panel { min-height: 200px; }
+    /* Bubble chart view is desktop-only — hide the canvas + the toggle
+       button group on phones. JS also forces view='list' there. */
+    .tradefeed-view-toggle,
+    .tradefeed-bubbles { display: none !important; }
+
+    .terminal-grid .terminal-bottom {
+        display: flex;
+        flex-direction: column;
+        grid-column: auto;
+    }
+    .terminal-grid .order-entry-panel { min-height: 200px; }
+    .terminal-grid .orders-panel,
+    .terminal-grid .positions-panel { min-height: 220px; }
+
+    /* Larger touch targets */
+    .btn-buy, .btn-sell { padding: 14px; font-size: 15px; }
+    .btn-ot { padding: 10px 14px; }
+    .btn-tf { padding: 6px 10px; }
+    .form-control-sm { font-size: 14px; padding: 8px 10px; }
+
+    .terminal-statusbar {
+        font-size: 10px;
+        padding: 4px 8px;
+        grid-template-columns: 1fr auto;
+    }
+    .status-ticker { display: none; }
+    .hotkeys-hint { display: none; }
+}
+
+/* ========== TOAST NOTIFICATIONS ========== */
+.terminal-toast {
+    position: fixed;
+    bottom: 40px;
+    right: 16px;
+    padding: 10px 18px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    z-index: 9999;
+    animation: toast-in 0.25s ease;
+    font-family: var(--t-font);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+}
+.terminal-toast.success { background: var(--t-green); color: #fff; }
+.terminal-toast.error {
+    background: var(--t-red);
+    color: #fff;
+    /* Make errors harder to miss — wider, bolder, pulse-border until dismissed. */
+    max-width: 560px;
+    padding: 12px 16px 12px 22px;
+    font-weight: 600;
+    box-shadow: 0 6px 24px rgba(246, 70, 93, 0.55);
+    border-left: 4px solid #fff;
+}
+.terminal-toast.warning {
+    background: #f5a623;
+    color: #1a1a1a;
+    font-weight: 600;
+}
+.terminal-toast.info { background: var(--t-accent); color: var(--t-accent-text); }
+.terminal-toast-msg { margin-right: 12px; }
+.terminal-toast-close {
+    display: inline-block;
+    cursor: pointer;
+    font-size: 18px;
+    font-weight: bold;
+    line-height: 1;
+    padding: 0 4px;
+    opacity: 0.75;
+    transition: opacity var(--t-transition);
+}
+.terminal-toast-close:hover { opacity: 1; }
+.terminal-toast.hiding {
+    animation: toast-out 0.2s ease forwards;
+}
+
+.disconnect-banner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 9999;
+    background: var(--t-red);
+    color: #fff;
+    text-align: center;
+    padding: 6px 12px;
+    font-family: var(--t-font);
+    font-size: 13px;
+    font-weight: 500;
+    animation: toast-in 0.3s ease;
+}
+.disconnect-banner i { margin-right: 6px; }
+
+.order-entry-content.offline {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+/* ========== CHART TOOLBAR ========== */
+.chart-toolbar {
+    display: flex;
+    align-items: center;
+    padding: 2px 8px;
+    background: var(--t-header);
+    border-bottom: 1px solid var(--t-border);
+    gap: 2px;
+    flex-shrink: 0;
+    height: 30px;
+    /* Pack everything on one line; horizontal scroll if the center column is
+       narrow. flex-wrap:nowrap stops content spilling onto a second row
+       that would collide with the chart. Dropdowns inside (TF "More",
+       Drawings menu) escape this overflow via position:fixed — see the
+       per-menu rule below — so we get both: scroll along the toolbar AND
+       full-height dropdown menus. */
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+}
+/* Toolbar dropdowns escape the toolbar's overflow clip by detaching to the
+   viewport. Bootstrap's popper still computes top/left correctly because
+   none of the toolbar ancestors has a `transform` that would re-anchor a
+   fixed element. */
+/* Ручное позиционирование — chart-toolbar.ts сам открывает/закрывает
+   .show через addClass/removeClass (Bootstrap data-API в нашем layout
+   не работает: что-то перехватывает click до Bootstrap-а). */
+.chart-toolbar .dropdown-menu {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 4px;
+    z-index: 1080;
+    min-width: 130px;
+}
+.chart-toolbar .dropdown-menu.show {
+    display: block;
+}
+.chart-toolbar {
+    overflow: visible !important;
+}
+.chart-toolbar .dropdown,
+.chart-toolbar .timeframe-selector,
+.chart-toolbar .chart-type-selector {
+    position: relative;
+}
+/* Floating exit-button когда панель раскрыта на весь экран — viewport
+   правый верхний угол. Без этого после fullscreen нет способа вернуть
+   панель назад, юзер должен жать Escape. */
+/* (Перешли на native Fullscreen API — браузер сам показывает кнопку выхода
+   и обрабатывает Esc, плюс DockView не ломает layout. Старый css-overlay
+   убран.) */
+/* Legend chart-type dropdown — стилизуем как тулбарный (Bootstrap
+   dropdown-menu / .dropdown-item + наши кастомные .btn-toolbar). */
+.chart-legend .legend-ct-toggle.btn-toolbar {
+    background: transparent;
+    border: 1px solid var(--t-border);
+    border-radius: 3px;
+    color: var(--t-text-dim);
+    padding: 1px 6px;
+    cursor: pointer;
+    font-size: 11px;
+    line-height: 1;
+}
+.chart-legend .legend-ct-toggle.btn-toolbar:hover {
+    color: var(--t-text-bright);
+    background: var(--t-hover);
+}
+.chart-legend .legend-ct-menu.dropdown-menu {
+    min-width: 130px;
+    padding: 4px 0;
+    background: var(--t-panel);
+    border: 1px solid var(--t-border);
+    border-radius: 3px;
+    z-index: 99999;
+    font-family: var(--t-mono);
+}
+.chart-legend .legend-ct-item.dropdown-item {
+    color: var(--t-text);
+    padding: 4px 12px;
+    font-size: 11px;
+}
+.chart-legend .legend-ct-item.dropdown-item:hover {
+    background: var(--t-hover);
+    color: var(--t-text-bright);
+}
+.chart-legend .legend-ct-item.dropdown-item i {
+    margin-right: 6px;
+    color: var(--t-text-dim);
+}
+.chart-toolbar > * { flex-shrink: 0; }
+.chart-toolbar .toolbar-separator {
+    width: 1px;
+    height: 18px;
+    background: var(--t-border);
+    margin: 0 6px;
+}
+/* Uniform 24px height for every clickable toolbar item. Without this, .btn-tf
+   inherits Bootstrap's line-height:1.5 while .btn-toolbar is icon-only, so the
+   two render at different heights and the row appears wavy. Forcing one height
+   + inline-flex centering aligns all icons on a single baseline regardless of
+   the wrapper (.timeframe-selector, .dropdown.tf-more-wrap, .mc-layout-btns,
+   .dropdown.drawings-dropdown). */
+.chart-toolbar .btn-tf,
+.chart-toolbar .btn-toolbar {
+    height: 24px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+}
+.chart-toolbar .btn-tf { padding: 0 10px; }
+.chart-toolbar .btn-toolbar {
+    padding: 0 8px;
+    font-size: 11px;
+    font-weight: 500;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--t-text-dim);
+    border-radius: var(--t-radius);
+    cursor: pointer;
+    transition: all var(--t-transition);
+    font-family: var(--t-font);
+    white-space: nowrap;
+    gap: 4px;
+}
+.chart-toolbar .timeframe-selector,
+.chart-toolbar .mc-layout-btns,
+.chart-toolbar .tf-more-wrap,
+.chart-toolbar .drawings-dropdown {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+}
+.chart-toolbar .btn-toolbar:hover {
+    color: var(--t-text-bright);
+    background: var(--t-hover);
+}
+.chart-toolbar .btn-toolbar.active {
+    background: var(--t-accent);
+    color: var(--t-accent-text);
+    border-color: var(--t-accent);
+}
+.chart-toolbar .btn-toolbar i { font-size: 12px; }
+
+/* ========== CHART SIDE TOOLS (vertical drawing sidebar) ========== */
+.chart-side-tools {
+    position: absolute;
+    left: 0;
+    top: 30px;
+    bottom: 0;
+    width: 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 4px 0;
+    background: var(--t-bg-2, #1a1d24);
+    border-right: 1px solid var(--t-border);
+    z-index: 8;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+.chart-side-tools .btn-side-tool {
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    color: var(--t-text-dim);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+    padding: 0;
+    font-size: 14px;
+}
+.chart-side-tools .btn-side-tool:hover {
+    background: var(--t-hover);
+    color: var(--t-text-bright);
+}
+.chart-side-tools .btn-side-tool.active {
+    background: var(--t-accent-bg, rgba(74,158,255,0.15));
+    border-color: var(--t-accent, #4a9eff);
+    color: var(--t-accent, #4a9eff);
+}
+.chart-side-tools .side-tools-separator {
+    width: 24px;
+    height: 1px;
+    background: var(--t-border);
+    margin: 4px 0;
+}
+
+/* ========== CHART LEGEND ========== */
+.chart-legend {
+    position: absolute;
+    /* Anchored inside .chart-panes-wrapper now (see chart-pane-manager.js)
+       — the wrapper starts right below the toolbar, so legend sits a few
+       pixels in from the top-left of the chart canvas itself. The 48px
+       left offset clears the new vertical drawing sidebar (40px + 8px gap). */
+    top: 6px;
+    left: 48px;
+    z-index: 10;
+    font-family: var(--t-mono);
+    font-size: 11px;
+    color: var(--t-text-dim);
+    /* Каждый элемент легенды (OHLC основного инструмента + каждый индикатор)
+       — на отдельной строке. column направление + align flex-start, чтобы
+       строки не растягивались на всю ширину легенды. */
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    /* Capture mouse events anywhere in the legend strip so the chart's
+       crosshair-move stops firing while the user reads / aims at the row.
+       Previously this was `none` so the chart kept tracking through the
+       legend — every cursor pixel changed the indicator numbers, the row
+       reflowed, and the × / ✎ buttons walked away from the cursor.
+       chart-legend.js additionally calls chart.clearCrosshairPosition() on
+       mouseenter so the existing vertical line vanishes immediately. */
+    pointer-events: auto;
+    /* Clip to the primary chart's tile width — overflow:hidden on the
+       wrapper handles horizontal clipping, but a hard right boundary
+       prevents the legend from elbowing the price scale on narrow tiles. */
+    max-width: calc(100% - 16px);
+}
+.chart-legend .legend-item {
+    white-space: nowrap;
+}
+.chart-legend .legend-up { color: var(--t-green); }
+.chart-legend .legend-down { color: var(--t-red); }
+.chart-legend .legend-vol { color: var(--t-text-dim); }
+.chart-legend .legend-time { color: var(--t-text-dim); }
+.chart-legend .legend-indicators {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+/* OHLC = одна свечная серия = одна строка легенды. Все items (Time / O / H /
+   L / C / V) inline в один row с пробелами — слипания "22:14O 0.49…" больше
+   не происходит. Каждый индикатор отдельно идёт через .legend-indicators
+   (column) — то есть OHLC одна строка, ниже каждый индикатор на своей. */
+.chart-legend .legend-ohlcv {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+}
+.chart-legend .legend-indicator {
+    white-space: nowrap;
+    /* Numeric values inside the row update on every crosshair-move; without
+       tabular-nums + a stable minimum width the row reflows pixel-by-pixel
+       and the edit/× buttons walk away from under the cursor — making it
+       impossible to click them. min-width is also applied to .legend-value
+       below so multi-line indicators don't bounce either. */
+    font-variant-numeric: tabular-nums;
+    align-items: center;
+    /* Capture the mouse here so hovering ON the indicator row blocks the
+       chart's crosshair-move underneath — which stops the row's values from
+       updating every pixel of cursor travel. The buttons inside the row
+       still receive clicks; the chart crosshair just briefly disappears
+       while the user reads / aims at the × / ✎ icon. */
+    pointer-events: auto;
+}
+.chart-legend .legend-value {
+    display: inline-block;
+    min-width: 56px;
+    font-variant-numeric: tabular-nums;
+}
+/* Indicator name label before a multi-output value run (Ichimoku, MACD, …).
+   Keep it dim so the coloured numbers read first. */
+.chart-legend .legend-ind-name,
+.chart-pane-header .pane-ind-name {
+    color: var(--t-text-dim);
+    font-weight: 600;
+    margin-right: 4px;
+}
+.chart-legend .legend-edit-btn,
+.chart-legend .legend-remove-btn,
+.chart-pane-header .legend-edit-btn,
+.chart-pane-header .legend-remove-btn {
+    cursor: pointer;
+    color: var(--t-text-dim);
+    font-size: 11px;
+    margin-left: 2px;
+    padding: 0 4px;
+    border-radius: 3px;
+    opacity: 0.55;
+    transition: opacity var(--t-transition), background var(--t-transition), color var(--t-transition);
+    user-select: none;
+    /* .chart-legend has pointer-events:none so crosshair tracking stays unblocked;
+       opt the interactive buttons back in so clicks actually register. */
+    pointer-events: auto;
+}
+.chart-legend .legend-edit-btn:hover,
+.chart-pane-header .legend-edit-btn:hover {
+    opacity: 1;
+    color: var(--t-accent);
+    background: rgba(252,213,53,0.12);
+}
+.chart-legend .legend-remove-btn,
+.chart-pane-header .legend-remove-btn {
+    font-size: 13px;
+    line-height: 1;
+}
+.chart-legend .legend-remove-btn:hover,
+.chart-pane-header .legend-remove-btn:hover {
+    opacity: 1;
+    color: var(--t-sell);
+    background: rgba(246,70,93,0.15);
+}
+.active-indicator-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.active-indicator-actions {
+    display: flex;
+    gap: 4px;
+}
+
+/* ========== CHART SUB-PANES ========== */
+.chart-panes-wrapper {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    /* Anchor #chartLegend (position:absolute) to this wrapper so it
+       follows the primary chart's tile in multi-chart layouts and gets
+       clipped by overflow:hidden instead of overflowing the neighbouring
+       tile. */
+    position: relative;
+}
+.chart-sub-pane {
+    position: relative;
+}
+.chart-pane-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1px 8px;
+    background: var(--t-header);
+    border-bottom: 1px solid var(--t-border);
+    height: 20px;
+    flex-shrink: 0;
+}
+.chart-pane-header .pane-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--t-text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+}
+/* Live values for the indicators drawn on this sub-pane — painted by
+   ChartLegend._paintSubPaneValues on every tick. Grows in the middle
+   of the header, label on the left, × on the right. */
+.chart-pane-header .pane-values {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--t-mono);
+    font-size: 10px;
+    color: var(--t-text-dim);
+    margin-left: 10px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.chart-pane-header .pane-values .pane-value {
+    margin-right: 10px;
+}
+.chart-pane-header .pane-close-btn {
+    background: none;
+    border: none;
+    color: var(--t-text-dim);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 0 4px;
+    line-height: 1;
+    transition: color var(--t-transition);
+}
+.chart-pane-header .pane-close-btn:hover {
+    color: var(--t-red);
+}
+
+/* ========== MULTI-CHART ========== */
+.multi-chart-grid {
+    width: 100%;
+    height: calc(100% - 30px);
+    display: grid;
+    gap: 1px;
+    background: var(--t-border);
+}
+.multi-chart-grid.mc-1x1 { grid-template: 1fr / 1fr; }
+.multi-chart-grid.mc-2x1 { grid-template: 1fr / 1fr 1fr; }
+.multi-chart-grid.mc-1x2 { grid-template: 1fr 1fr / 1fr; }
+.multi-chart-grid.mc-2x2 { grid-template: 1fr 1fr / 1fr 1fr; }
+
+.mc-panel {
+    background: var(--t-panel);
+    position: relative;
+    overflow: hidden;
+    border: 2px solid transparent;
+    transition: border-color var(--t-transition);
+}
+.mc-panel.mc-active {
+    border-color: var(--t-accent);
+}
+/* When the primary chart wrapper is moved into multiChartGrid as slot 0,
+   it needs to behave like any other grid cell (border, min-size, active
+   ring) so the tiling layout looks uniform. Inline width:100%/height:100%
+   from ChartPaneManager.init still works inside a grid cell. */
+.multi-chart-grid > .chart-panes-wrapper.mc-primary {
+    background: var(--t-panel);
+    position: relative;
+    overflow: hidden;
+    border: 2px solid transparent;
+    transition: border-color var(--t-transition);
+    min-width: 0;
+    min-height: 0;
+}
+.multi-chart-grid > .chart-panes-wrapper.mc-primary.mc-active {
+    border-color: var(--t-accent);
+}
+.mc-panel-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 8px;
+    background: var(--t-header);
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--t-text-dim);
+    height: 22px;
+    flex-shrink: 0;
+}
+.mc-panel-symbol {
+    color: var(--t-text-bright);
+    font-family: var(--t-mono);
+    cursor: pointer;
+    border-bottom: 1px dashed var(--t-text-dim);
+    padding-bottom: 1px;
+}
+.mc-panel-symbol:hover {
+    color: var(--t-accent);
+    border-bottom-color: var(--t-accent);
+}
+.mc-panel-tf {
+    color: var(--t-accent);
+    font-family: var(--t-mono);
+}
+.mc-panel-legend {
+    position: absolute;
+    top: 24px;
+    left: 8px;
+    z-index: 10;
+    font-family: var(--t-mono);
+    font-size: 10px;
+    color: var(--t-text-dim);
+    pointer-events: none;
+}
+/* Placeholder shown in an empty multi-chart panel before the user picks a
+   symbol for it. Clicking anywhere in the pane — including this watermark —
+   activates the pane and pops the top-bar instrument search open.
+   z-index + pointer-events:auto guarantee the (otherwise empty) chart
+   canvas below can't swallow the click. */
+.mc-panel-empty {
+    position: absolute;
+    inset: 22px 0 0 0;
+    z-index: 5;
+    pointer-events: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: var(--t-text);
+    font-size: 14px;
+    text-align: center;
+    padding: 24px;
+    cursor: pointer;
+    transition: color var(--t-transition), background var(--t-transition);
+}
+.mc-panel-empty .bi {
+    font-size: 52px;
+    color: var(--t-accent);
+    opacity: 0.55;
+    transition: opacity var(--t-transition), transform var(--t-transition);
+}
+.mc-panel-empty-title {
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    color: var(--t-text-bright);
+}
+.mc-panel-empty:hover {
+    background: rgba(252, 213, 53, 0.06);
+}
+.mc-panel-empty:hover .bi {
+    opacity: 1;
+    transform: scale(1.08);
+}
+.mc-layout-btns {
+    display: flex;
+    gap: 2px;
+}
+
+/* ========== CHART FULLSCREEN ========== */
+/* Native :fullscreen — браузер сам растягивает panel поверх всей
+   страницы. Никаких position:fixed на наших элементах, никаких ~ sibling
+   правил, скрывающих топбар/правую/нижнюю панель — браузерный fullscreen
+   уже всё это перекрывает. */
+.chart-panel:fullscreen {
+    background: var(--t-panel);
+    width: 100vw;
+    height: 100vh;
+}
+/* Indicator-modal должен оставаться видимым над fullscreen-чартом.
+   Внутри :fullscreen-стека z-index браузера обнуляется относительно
+   top-layer, поэтому диалог надо рендерить ТОЖЕ как :fullscreen-child
+   или через ::backdrop. Поскольку модал лежит в document.body,
+   браузер автоматически кладёт top-layer элементы поверх него — но
+   если pause: indicator-modal должен явно использовать ::backdrop
+   класс или модал рендерится поверх :fullscreen-элемента и его
+   z-index срабатывает обычно (testing required). */
+
+/* Toolbar drawings dropdown — per-drawing rows live here as a backup
+   to the on-chart × buttons. Bootstrap's default dropdown menu is wide
+   and bright; restyle it to match the dim-monospace terminal look. */
+.drawings-menu {
+    min-width: 220px;
+    background: var(--t-surface);
+    border: 1px solid var(--t-border);
+    border-radius: var(--t-radius);
+    padding: 4px 0;
+    font-family: var(--t-font);
+    font-size: 11px;
+}
+.drawings-menu .dropdown-item,
+.drawings-menu .dropdown-item-text {
+    padding: 4px 10px;
+    color: var(--t-text);
+}
+.drawings-menu .dropdown-item:hover {
+    background: var(--t-hover);
+    color: var(--t-text-bright);
+}
+.drawings-menu .drawings-menu-clear {
+    color: var(--t-sell);
+}
+.drawings-menu .drawings-menu-divider {
+    border-color: var(--t-border);
+    margin: 4px 0;
+}
+.drawings-menu .drawings-menu-row-btn {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    background: none;
+    border: none;
+    text-align: left;
+    cursor: pointer;
+    color: var(--t-text);
+}
+.drawings-menu .drawings-menu-x {
+    color: var(--t-text-dim);
+    margin-left: 12px;
+    font-size: 10px;
+}
+.drawings-menu .drawings-menu-row-btn:hover .drawings-menu-x {
+    color: var(--t-sell);
+}
+
+/* Per-drawing × button: anchored at the endpoint of each drawing (right
+   side of a trendline, top-right of a fibonacci band, right edge of a
+   horizontal line). DOM sits above .drawing-canvas so clicks register
+   even when no drawing tool is active. Bright by default — these are
+   the only way to delete one specific drawing without wiping all. */
+.drawing-del-btn {
+    position: absolute;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    line-height: 18px;
+    font-size: 16px;
+    font-weight: 700;
+    text-align: center;
+    border-radius: 50%;
+    border: 1.5px solid var(--t-sell);
+    background: rgba(16, 20, 26, 0.95);
+    color: var(--t-sell);
+    cursor: pointer;
+    pointer-events: auto;
+    opacity: 0.9;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+    transition: opacity var(--t-transition), color var(--t-transition), background var(--t-transition), transform var(--t-transition);
+}
+.drawing-del-btn:hover {
+    opacity: 1;
+    color: #fff;
+    background: var(--t-sell);
+    transform: scale(1.15);
+}
+
+/* ========== DRAWING CANVAS ========== */
+.drawing-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 5;
+}
+
+/* ========== INDICATOR DIALOG ========== */
+/* Поверх fullscreen-чарта диалог открывается через перенос
+   в document.fullscreenElement (см. indicator-dialog.ts → show()),
+   поэтому ручных z-index override'ов больше не нужно — top-layer
+   браузера обеспечивает видимость. */
+.indicator-modal .modal-content {
+    background: var(--t-panel);
+    border: 1px solid var(--t-border);
+    color: var(--t-text);
+}
+.indicator-modal .modal-header {
+    background: var(--t-header);
+    border-bottom: 1px solid var(--t-border);
+    padding: 10px 16px;
+}
+.indicator-modal .modal-header .modal-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--t-text-bright);
+}
+.indicator-modal .modal-header .btn-close {
+    filter: invert(0.7);
+}
+.indicator-modal .modal-body {
+    padding: 0;
+    display: flex;
+    height: min(640px, 75vh);
+}
+
+.indicator-modal .indicator-sidebar {
+    width: 300px;
+    border-right: 1px solid var(--t-border);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+.indicator-modal .indicator-search-input {
+    background: var(--t-bg);
+    border: none;
+    border-bottom: 1px solid var(--t-border);
+    color: var(--t-text);
+    padding: 8px 12px;
+    font-size: 12px;
+    font-family: var(--t-font);
+    outline: none;
+}
+.indicator-modal .indicator-search-input:focus {
+    box-shadow: inset 0 -2px 0 var(--t-accent);
+}
+.indicator-modal .indicator-category-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--t-border);
+    background: var(--t-header);
+}
+.indicator-modal .indicator-category-tab {
+    flex: 1;
+    padding: 5px 4px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    text-align: center;
+    color: var(--t-text-dim);
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    transition: all var(--t-transition);
+}
+.indicator-modal .indicator-category-tab:hover {
+    color: var(--t-text);
+}
+.indicator-modal .indicator-category-tab.active {
+    color: var(--t-accent);
+    border-bottom-color: var(--t-accent);
+}
+.indicator-modal .indicator-list {
+    flex: 1;
+    overflow-y: auto;
+}
+.indicator-modal .indicator-list-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: background var(--t-transition);
+    border-bottom: 1px solid rgba(43,49,57,0.3);
+}
+.indicator-modal .indicator-list-item:hover {
+    background: var(--t-hover);
+}
+.indicator-modal .indicator-list-info {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+.indicator-modal .indicator-list-name {
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--t-text-bright);
+}
+.indicator-modal .indicator-list-fullname {
+    font-size: 10px;
+    color: var(--t-text-dim);
+}
+.indicator-modal .indicator-list-group {
+    font-size: 9px;
+    background: var(--t-surface);
+    padding: 1px 6px;
+    border-radius: 2px;
+    color: var(--t-text-dim);
+}
+
+.indicator-modal .indicator-detail {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+.indicator-modal .indicator-settings {
+    padding: 16px;
+    flex: 1;
+}
+.indicator-modal .indicator-settings-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--t-text-bright);
+    margin-bottom: 12px;
+}
+.indicator-modal .indicator-settings-params {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+.indicator-modal .indicator-param-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.indicator-modal .indicator-param-label {
+    font-size: 11px;
+    color: var(--t-text-dim);
+    width: 80px;
+    flex-shrink: 0;
+}
+.indicator-modal .indicator-param-input {
+    background: var(--t-bg) !important;
+    border-color: var(--t-border) !important;
+    color: var(--t-text-bright) !important;
+    font-family: var(--t-mono);
+    font-size: 12px;
+    max-width: 100px;
+}
+.indicator-modal .indicator-add-btn {
+    margin-top: 8px;
+}
+
+.indicator-modal .active-indicators-panel {
+    border-top: 1px solid var(--t-border);
+    padding: 8px 16px;
+    background: var(--t-header);
+    max-height: 120px;
+    overflow-y: auto;
+}
+.indicator-modal .active-indicators-panel .panel-title {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--t-text-dim);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+}
+.indicator-modal .active-indicator-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 3px 0;
+    font-size: 11px;
+}
+.indicator-modal .active-indicator-name {
+    color: var(--t-text);
+}
+/* Mobile: stack the picker vertically so the narrow-screen detail pane has
+   room for the label + input. The sidebar becomes a top half (cap its
+   height) and the settings panel sits below it with full width. */
+@media (max-width: 640px) {
+    .indicator-modal .modal-dialog {
+        margin: 0;
+        max-width: 100%;
+        height: 100vh;
+    }
+    .indicator-modal .modal-content {
+        height: 100vh;
+        border: none;
+        border-radius: 0;
+    }
+    .indicator-modal .modal-body {
+        flex-direction: column;
+        height: calc(100vh - 48px);
+    }
+    .indicator-modal .indicator-sidebar {
+        width: 100%;
+        border-right: none;
+        border-bottom: 1px solid var(--t-border);
+        flex: 1 1 50%;
+        min-height: 0;
+    }
+    .indicator-modal .indicator-detail {
+        flex: 1 1 50%;
+        min-height: 0;
+        overflow-y: auto;
+    }
+    .indicator-modal .indicator-param-input {
+        max-width: none;
+        flex: 1;
+    }
+}
+
+.indicator-modal .active-indicator-remove {
+    font-size: 14px;
+    padding: 0 4px;
+    line-height: 1;
+    border-color: var(--t-red) !important;
+    color: var(--t-red) !important;
+}
+.indicator-modal .no-indicators {
+    color: var(--t-text-dim);
+    font-size: 11px;
+    font-style: italic;
+}
+
+/* ========== AUTH GATE MODAL ========== */
+.auth-gate-modal .modal-content {
+    background: var(--t-panel);
+    border: 1px solid var(--t-border);
+    color: var(--t-text);
+    text-align: center;
+}
+.auth-gate-modal .modal-body {
+    padding: 30px 24px;
+}
+.auth-gate-modal .auth-gate-icon {
+    font-size: 48px;
+    color: var(--t-accent);
+    margin-bottom: 16px;
+}
+.auth-gate-modal .auth-gate-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--t-text-bright);
+    margin-bottom: 8px;
+}
+.auth-gate-modal .auth-gate-message {
+    font-size: 13px;
+    color: var(--t-text-dim);
+    margin-bottom: 20px;
+}
+.auth-gate-modal .btn-auth-signin {
+    background: var(--t-accent);
+    color: var(--t-accent-text);
+    border: none;
+    padding: 10px 32px;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: var(--t-radius);
+    cursor: pointer;
+    transition: all var(--t-transition);
+    margin-bottom: 8px;
+}
+.auth-gate-modal .btn-auth-signin:hover {
+    background: var(--t-accent-hover);
+    box-shadow: 0 0 16px var(--t-accent-glow);
+}
+.auth-gate-modal .btn-auth-continue {
+    background: none;
+    border: none;
+    color: var(--t-text-dim);
+    font-size: 12px;
+    cursor: pointer;
+    padding: 4px 12px;
+}
+.auth-gate-modal .btn-auth-continue:hover {
+    color: var(--t-text);
+}
+
+/* ========== PANEL RESIZE HANDLES ========== */
+.resize-handle {
+    background: var(--t-border);
+    position: relative;
+    z-index: 2;
+    flex-shrink: 0;
+    transition: background 0.15s ease;
+}
+.resize-handle.rh-col {
+    cursor: col-resize;
+}
+.resize-handle.rh-row {
+    cursor: row-resize;
+}
+/* Extend grab area with invisible pseudo-element */
+.resize-handle::after {
+    content: '';
+    position: absolute;
+}
+.resize-handle.rh-col::after {
+    top: 0;
+    bottom: 0;
+    left: -3px;
+    right: -3px;
+    cursor: col-resize;
+}
+.resize-handle.rh-row::after {
+    left: 0;
+    right: 0;
+    top: -3px;
+    bottom: -3px;
+    cursor: row-resize;
+}
+.resize-handle:hover {
+    background: var(--t-accent);
+    opacity: 0.6;
+}
+.resize-handle:active {
+    background: var(--t-accent);
+    opacity: 0.8;
+}
+
+/* ========== HOTKEY HELP MODAL ========== */
+.hotkey-help-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: rgba(0,0,0,0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.15s ease;
+}
+.hotkey-help-modal {
+    background: var(--t-panel);
+    border: 1px solid var(--t-border);
+    border-radius: 6px;
+    padding: 24px 28px;
+    min-width: 320px;
+    max-width: 420px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    text-align: center;
+}
+.hotkey-help-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--t-text-bright);
+    margin-bottom: 16px;
+}
+.hotkey-help-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 16px;
+    text-align: left;
+    font-size: 12px;
+    color: var(--t-text);
+    margin-bottom: 18px;
+}
+.hotkey-help-grid kbd {
+    display: inline-block;
+    background: var(--t-bg);
+    border: 1px solid var(--t-border);
+    border-radius: 3px;
+    padding: 1px 6px;
+    font-family: var(--t-mono);
+    font-size: 11px;
+    color: var(--t-text-bright);
+    min-width: 22px;
+    text-align: center;
+    margin-right: 6px;
+}
+.hotkey-help-close {
+    margin-top: 4px;
+}
+
+/* Chart context menu (right-click on chart, see chart-context-menu.js). */
+.chart-ctx-menu {
+    position: fixed;
+    z-index: 10001;
+    min-width: 200px;
+    background: var(--t-panel, #131820);
+    border: 1px solid var(--t-border, #1e2633);
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    padding: 4px 0;
+    font-size: 12px;
+    user-select: none;
+}
+.chart-ctx-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: 0;
+    color: var(--t-text, #e0e6ed);
+    padding: 6px 12px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: inherit;
+}
+.chart-ctx-item:hover:not(:disabled) {
+    background: var(--t-hover, #1f2733);
+}
+.chart-ctx-item:disabled {
+    color: var(--t-text-dim, #6b7a8d);
+    cursor: default;
+}
+.chart-ctx-buy:not(:disabled) { color: #00c853; }
+.chart-ctx-sell:not(:disabled) { color: #ff3d57; }
+.chart-ctx-sep {
+    height: 1px;
+    background: var(--t-border, #1e2633);
+    margin: 4px 0;
+}
+
+/* Brief flash when chart-context-menu prefills the order-entry side. */
+@keyframes orderSideFlash {
+    0%   { box-shadow: 0 0 0 2px var(--t-accent, #4a9eff); }
+    100% { box-shadow: 0 0 0 0   transparent; }
+}
+.order-side-flash {
+    animation: orderSideFlash 600ms ease-out;
+}

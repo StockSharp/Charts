@@ -1,0 +1,23 @@
+// Minimal static server for the demo (some tooling refuses to load file://).
+// Serves the repo root on :8791; browse http://localhost:8791/demo/index.html.
+import { createServer } from 'node:http';
+import { readFile } from 'node:fs/promises';
+import { extname, join, normalize } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = fileURLToPath(new URL('.', import.meta.url));
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.map': 'application/json', '.css': 'text/css' };
+
+createServer(async (req, res) => {
+    try {
+        const url = decodeURIComponent((req.url || '/').split('?')[0]);
+        const rel = normalize(url).replace(/^(\.\.[/\\])+/, '');
+        const file = join(root, rel === '/' ? 'demo/index.html' : rel);
+        const body = await readFile(file);
+        res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream', 'cache-control': 'no-store' });
+        res.end(body);
+    } catch {
+        res.writeHead(404);
+        res.end('not found');
+    }
+}).listen(8791, () => console.log('serving Charts on http://localhost:8791/demo/index.html'));

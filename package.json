@@ -1,0 +1,17 @@
+{
+  "name": "sschart",
+  "version": "0.1.0",
+  "description": "In-house canvas trading-chart engine with a lightweight-charts-shaped API (window.LightweightCharts).",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "main": "src/sschart.ts",
+  "types": "src/sschart.ts",
+  "scripts": {
+    "build": "node build.mjs",
+    "serve": "node serve.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.23.1"
+  }
+}
