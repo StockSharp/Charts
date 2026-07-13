@@ -9,7 +9,8 @@
   "types": "src/sschart.ts",
   "scripts": {
     "build": "node build.mjs",
-    "serve": "node serve.mjs"
+    "serve": "node serve.mjs",
+    "test": "node build-tests.mjs && node --test \"tests/_dist/**/*.test.cjs\""
   },
   "devDependencies": {
     "esbuild": "^0.23.1"

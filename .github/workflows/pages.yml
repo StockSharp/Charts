@@ -1,0 +1,50 @@
+name: Deploy demo to GitHub Pages
+
+# Builds the sschart engine + chart-stack bundles and publishes the demo so the
+# live HTML can be viewed at https://stocksharp.github.io/Charts/demo/ .
+# Requires Pages to be enabled for the repo with "Source: GitHub Actions".
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm run build            # -> dist/sschart.js + dist/chart-app.js
+      - run: npm test                 # the ported indicator suite
+      - name: Stage site
+        run: |
+          mkdir -p _site/demo _site/dist
+          cp -r demo/. _site/demo/
+          cp -r dist/. _site/dist/
+          printf '<!doctype html><meta http-equiv="refresh" content="0; url=demo/index.html">' > _site/index.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

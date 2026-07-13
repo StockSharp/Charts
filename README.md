@@ -9,6 +9,10 @@ self-contained demo.
 `setData` / `update`, `timeScale`, series markers, price lines, crosshair),
 published as the `SSChart` global.
 
+**▶ Live demo: https://stocksharp.github.io/Charts/demo/** — built and published on
+every push to `main` by [`.github/workflows/pages.yml`](.github/workflows/pages.yml)
+(enable Pages with *Source: GitHub Actions* in the repo settings).
+
 ## What's here
 
 ```
@@ -53,7 +57,15 @@ loads it as the `SSChart` global, then the chart-stack bundle on top.
 npm install        # once, to fetch esbuild
 npm run build      # bundles src -> dist/
 npm run serve      # http://localhost:8791/demo/index.html
+npm test           # the ported indicator suite (163 files) against src/chart/indicators/calc
 ```
+
+## Tests
+
+The indicator unit tests (`tests/indicators/*.test.js`, ported from the web
+terminal) run every `calc/` implementation and are the single source of truth for
+indicator correctness. `build-tests.mjs` esbuild-bundles them into `tests/_dist`,
+then `node --test` runs them.
 
 ## Notes
 
