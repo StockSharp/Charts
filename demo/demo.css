@@ -57,3 +57,11 @@ body {
     color: var(--t-text-dim, #6b7a8d); cursor: pointer; padding: 1px 6px; font: inherit;
 }
 .legend-ct-toggle:hover { color: var(--t-accent, #4a9eff); border-color: var(--t-accent, #4a9eff); }
+
+/* Target-pane selector in the indicator picker (New pane / Main chart / …). */
+.indicator-target-select {
+    background: var(--t-panel, #131820); color: var(--t-text, #c7d0dc);
+    border: 1px solid var(--t-border, #1e2633); border-radius: 4px;
+    padding: 4px 8px; font: inherit; font-size: 12px; min-width: 150px; cursor: pointer;
+}
+.indicator-target-select:focus { outline: none; border-color: var(--t-accent, #4a9eff); }

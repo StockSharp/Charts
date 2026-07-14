@@ -1,6 +1,7 @@
 // Chart Pane Manager — multi-pane stacking with timeScale sync
 import { IndicatorEngine } from './indicators/indicator-engine.js';
 import { ChartLegend } from './chart-legend.js';
+import { ChartContextMenu } from './chart-context-menu.js';
 
 export class ChartPaneManager {
     _containerId: string;
@@ -57,13 +58,18 @@ export class ChartPaneManager {
         chartEl.style.flex = '3';
         chartEl.style.minHeight = '0';
 
-        // Subscribe to main chart time scale for sync
+        // Subscribe to main chart time scale for sync. Sync on the TIME axis,
+        // not the bar-index (logical) axis: Renko / P&F keep the MAIN price
+        // series on the raw candles while a pane's spine + indicators live on
+        // fewer DERIVED bars (bricks / columns on synthetic times), so the two
+        // index spaces have different bar counts and a logical range misaligns.
+        // Time is the shared domain across the main chart and every pane.
         if (this._mainChart) {
-            this._mainChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-                if (this._syncing) return;
+            this._mainChart.timeScale().subscribeVisibleTimeRangeChange((range) => {
+                if (this._syncing || !range) return;
                 this._syncing = true;
                 for (const [, pane] of this._panes) {
-                    try { pane.chart.timeScale().setVisibleLogicalRange(range); } catch (e) { }
+                    try { pane.chart.timeScale().setVisibleRange(range); } catch (e) { }
                 }
                 this._syncing = false;
             });
@@ -170,14 +176,14 @@ export class ChartPaneManager {
             handleScale: true,
         });
 
-        // Sync time scale
-        chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-            if (this._syncing) return;
+        // Sync time scale by time (see the main-chart subscription above).
+        chart.timeScale().subscribeVisibleTimeRangeChange((range) => {
+            if (this._syncing || !range) return;
             this._syncing = true;
-            try { this._mainChart.timeScale().setVisibleLogicalRange(range); } catch (e) { }
+            try { this._mainChart.timeScale().setVisibleRange(range); } catch (e) { }
             for (const [id, pane] of this._panes) {
                 if (id === paneId) continue;
-                try { pane.chart.timeScale().setVisibleLogicalRange(range); } catch (e) { }
+                try { pane.chart.timeScale().setVisibleRange(range); } catch (e) { }
             }
             this._syncing = false;
         });
@@ -204,18 +210,36 @@ export class ChartPaneManager {
             crosshairMarkerVisible: false,
         });
 
-        this._panes.set(paneId, { el: paneEl, chart, ro, label, spine, measure });
+        // Same right-click menu as the main chart, but pane-scoped: add a study
+        // into THIS pane, or remove the pane. No dedicated + button — the menu
+        // is the consistent affordance across the main chart and every sub-pane.
+        const ctxMenu = new ChartContextMenu();
+        ctxMenu.init(chartDiv, null, {
+            paneMode: true,
+            onAddIndicator: () => window.terminalApp?.openIndicatorAddToPane?.(paneId),
+            onRemovePane: () => {
+                const eng = window._indicatorEngine;
+                if (!eng) return;
+                // Drop every study in this pane; the last removal auto-closes it.
+                eng.getIndicators().filter((e) => e.paneId === paneId).forEach((e) => eng.remove(e.id));
+            },
+        });
+
+        this._panes.set(paneId, { el: paneEl, chart, ro, label, spine, measure, ctxMenu });
 
         if (this._spineData.length) spine.setData(this._spineData);
 
         // Update bottom pane visibility
         this._updateTimeScaleVisibility();
 
-        // Sync current range to new pane
+        // Seed the new pane with the main chart's CURRENT time window (time,
+        // not logical index) so a pane created while on Renko / P&F — or after a
+        // realtime scroll — adopts exactly the main chart's visible span instead
+        // of an incompatible bar-index range.
         if (this._mainChart) {
             try {
-                const range = this._mainChart.timeScale().getVisibleLogicalRange();
-                if (range) chart.timeScale().setVisibleLogicalRange(range);
+                const range = this._mainChart.timeScale().getVisibleRange();
+                if (range) chart.timeScale().setVisibleRange(range);
             } catch (e) { }
         }
 
@@ -227,6 +251,7 @@ export class ChartPaneManager {
         if (!pane) return;
 
         pane.ro.disconnect();
+        try { pane.ctxMenu?.dispose(); } catch { }
         pane.chart.remove();
         pane.el.remove();
         this._panes.delete(paneId);

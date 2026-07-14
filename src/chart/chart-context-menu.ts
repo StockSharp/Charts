@@ -144,59 +144,82 @@ export class ChartContextMenu {
         if (!this._menuEl) return;
 
         // i18n.js exposes `const T = { t(key, ...args) }` at script-scope.
-        // window.T is a separate Razor-injected flat dict (no .t method) —
-        // we used to dereference it here by accident and fall through to the
-        // identity function, which left every menu label in English even
-        // when the page culture was RU/etc.
+        // window.T is a separate Razor-injected flat dict (no .t method) — using
+        // it here would fall through to the identity fn and leave labels English.
         const t = (typeof T !== 'undefined' && T.t) ? T.t.bind(T) : (s: string) => s;
-        const fmt = (typeof window.TerminalUtils !== 'undefined' && window.TerminalUtils.formatPrice)
-            ? window.TerminalUtils.formatPrice
-            : (p: any) => String(p);
 
-        const priceLabel = price != null ? fmt(price) : '--';
-        const hasPrice = price != null;
+        let items: any[];
+        if (this._hooks.paneMode) {
+            // Sub-pane menu: the same right-click affordance as the main chart,
+            // scoped to the pane — add a study into THIS pane, or drop the pane.
+            // No order/price actions (a sub-pane isn't the price axis).
+            items = [
+                {
+                    key: 'addToPane', label: t('Add indicator…'),
+                    action: () => this._hooks.onAddIndicator && this._hooks.onAddIndicator(),
+                },
+                { separator: true },
+                {
+                    key: 'removePane', label: t('Remove pane'), cls: 'chart-ctx-sell',
+                    disabled: !this._hooks.onRemovePane,
+                    action: () => this._hooks.onRemovePane && this._hooks.onRemovePane(),
+                },
+            ];
+        } else {
+            const fmt = (typeof window.TerminalUtils !== 'undefined' && window.TerminalUtils.formatPrice)
+                ? window.TerminalUtils.formatPrice
+                : (p: any) => String(p);
 
-        // Hit-test the orders cache at this price level so the menu can
-        // (a) show a count, (b) disable the entry when nothing matches.
-        // Hook is optional — if the host didn't wire findOrdersAtPrice we
-        // fall back to "enabled when onCancelOrdersAt is wired" so the entry
-        // is still callable (the action handler itself toasts on no-match).
-        let cancelCount = 0;
-        if (hasPrice && typeof this._hooks.findOrdersAtPrice === 'function') {
-            try {
-                const matches = this._hooks.findOrdersAtPrice(price);
-                cancelCount = Array.isArray(matches) ? matches.length : 0;
-            } catch (err) { console.warn('[ctx-menu] findOrdersAtPrice', err); }
+            const priceLabel = price != null ? fmt(price) : '--';
+            const hasPrice = price != null;
+
+            // Hit-test the orders cache at this price level so the menu can
+            // (a) show a count, (b) disable the entry when nothing matches.
+            // Hook is optional — if the host didn't wire findOrdersAtPrice we
+            // fall back to "enabled when onCancelOrdersAt is wired" so the entry
+            // is still callable (the action handler itself toasts on no-match).
+            let cancelCount = 0;
+            if (hasPrice && typeof this._hooks.findOrdersAtPrice === 'function') {
+                try {
+                    const matches = this._hooks.findOrdersAtPrice(price);
+                    cancelCount = Array.isArray(matches) ? matches.length : 0;
+                } catch (err) { console.warn('[ctx-menu] findOrdersAtPrice', err); }
+            }
+            const cancelLabel = cancelCount > 0
+                ? t('Cancel {0} orders at {1}', cancelCount, priceLabel)
+                : t('Cancel orders at this price');
+            const cancelDisabled = !hasPrice
+                || !this._hooks.onCancelOrdersAt
+                || (typeof this._hooks.findOrdersAtPrice === 'function' && cancelCount === 0);
+
+            items = [
+                {
+                    key: 'buy', label: `${t('Buy')} @ ${priceLabel}`,
+                    cls: 'chart-ctx-buy', disabled: !hasPrice,
+                    action: () => this._hooks.onBuyAtPrice && this._hooks.onBuyAtPrice(price),
+                },
+                {
+                    key: 'sell', label: `${t('Sell')} @ ${priceLabel}`,
+                    cls: 'chart-ctx-sell', disabled: !hasPrice,
+                    action: () => this._hooks.onSellAtPrice && this._hooks.onSellAtPrice(price),
+                },
+                { separator: true },
+                {
+                    key: 'indicator', label: t('Add indicator…'),
+                    action: () => this._hooks.onAddIndicator && this._hooks.onAddIndicator(),
+                },
+                {
+                    key: 'addPane', label: t('Add pane…'),
+                    disabled: !this._hooks.onAddPane,
+                    action: () => this._hooks.onAddPane && this._hooks.onAddPane(),
+                },
+                {
+                    key: 'cancelOrders', label: cancelLabel,
+                    disabled: cancelDisabled,
+                    action: () => this._hooks.onCancelOrdersAt && this._hooks.onCancelOrdersAt(price),
+                },
+            ];
         }
-        const cancelLabel = cancelCount > 0
-            ? t('Cancel {0} orders at {1}', cancelCount, priceLabel)
-            : t('Cancel orders at this price');
-        const cancelDisabled = !hasPrice
-            || !this._hooks.onCancelOrdersAt
-            || (typeof this._hooks.findOrdersAtPrice === 'function' && cancelCount === 0);
-
-        const items: any[] = [
-            {
-                key: 'buy', label: `${t('Buy')} @ ${priceLabel}`,
-                cls: 'chart-ctx-buy', disabled: !hasPrice,
-                action: () => this._hooks.onBuyAtPrice && this._hooks.onBuyAtPrice(price),
-            },
-            {
-                key: 'sell', label: `${t('Sell')} @ ${priceLabel}`,
-                cls: 'chart-ctx-sell', disabled: !hasPrice,
-                action: () => this._hooks.onSellAtPrice && this._hooks.onSellAtPrice(price),
-            },
-            { separator: true },
-            {
-                key: 'indicator', label: t('Add indicator…'),
-                action: () => this._hooks.onAddIndicator && this._hooks.onAddIndicator(),
-            },
-            {
-                key: 'cancelOrders', label: cancelLabel,
-                disabled: cancelDisabled,
-                action: () => this._hooks.onCancelOrdersAt && this._hooks.onCancelOrdersAt(price),
-            },
-        ];
 
         this._menuEl.innerHTML = '';
         for (const it of items) {

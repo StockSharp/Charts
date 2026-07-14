@@ -152,7 +152,12 @@ export class IndicatorEngine {
         }
     }
 
-    add(type, params) {
+    // targetPaneId is a genuinely optional placement hint: when the user adds an
+    // indicator via a sub-pane's ＋ button it names the pane to drop into; when
+    // omitted, placement is automatic (overlay on the main chart, or a measure-
+    // resolved sub-pane). Absent = auto is a legitimate default, so this stays
+    // optional rather than threaded through every existing call site.
+    add(type, params, targetPaneId) {
         const settings = IndicatorSettings.getIndicator(type);
         if (!settings) return null;
 
@@ -175,8 +180,30 @@ export class IndicatorEngine {
             seriesRefs: [], paneId: null, colors: [], outputNames: [],
         };
 
-        if (settings.pane === 'separate' && this._paneManager) {
+        // Explicit user placement from the picker's pane selector (or a sub-pane's
+        // context menu) wins over automatic placement:
+        //   '__main__' -> overlay on the main chart, '__new__' -> a fresh pane,
+        //   '<paneId>' -> that existing pane. Absent -> automatic (overlay vs a
+        //   measure-resolved sub-pane).
+        if (targetPaneId === '__main__') {
+            entry.paneId = null;
+        } else if (targetPaneId === '__new__' && this._paneManager) {
+            const label = settings.name + ' (' + this._formatParams(mergedParams) + ')';
+            entry.paneId = this._paneManager.addPane(label, null);
+        } else if (targetPaneId && this._paneManager && this._paneManager.getChart(targetPaneId)) {
+            entry.paneId = targetPaneId;
+        } else if (settings.pane === 'separate' && this._paneManager) {
             entry.paneId = this._resolveSubPane(settings, mergedParams);
+        }
+
+        // Per-indicator price scale inside a sub-pane. The first indicator in a
+        // pane keeps the visible 'right' axis; every later one gets its own
+        // scale so studies with different value ranges (RSI 0..100 vs MACD
+        // -2..+2) each auto-fit and overlay instead of squashing on one shared
+        // scale — the multi-axis-per-area model the C# chart uses.
+        if (entry.paneId) {
+            const firstInPane = !this._indicators.some(e => e.paneId === entry.paneId);
+            entry.paneScaleId = firstInPane ? 'right' : ('ind' + id);
         }
 
         this._indicators.push(entry);
@@ -219,6 +246,7 @@ export class IndicatorEngine {
             // on the right chart (main vs paneId sub-chart).
             entry.seriesRefs = this._renderer.render(entry, data, chart, settings) || [];
             entry.colors = this._renderer.getLastColors();
+            this._applyPaneScale(entry, chart);
         } else {
             // Subsequent recompute: delegate to renderer.update which knows
             // the per-type series-order (MACD has histogram/macd/signal,
@@ -235,6 +263,21 @@ export class IndicatorEngine {
         if (entry._points.length > 0) {
             entry._lastValues = entry._points[entry._points.length - 1].values;
         }
+    }
+
+    /// Route an indicator's series onto its own sub-pane scale (see add()). The
+    /// first indicator in a pane stays on 'right' (the visible axis, drawn by the
+    /// engine); every later one moves to a private scale that auto-fits its own
+    /// range, with the same margins so each study uses the full pane height. The
+    /// engine draws axes only for 'right'/'left', so these extra scales stay
+    /// invisible — they exist purely to keep the overlays from squashing.
+    _applyPaneScale(entry, chart) {
+        const sid = entry.paneScaleId;
+        if (!chart || !sid || sid === 'right') return;
+        for (const s of entry.seriesRefs) {
+            try { s.applyOptions({ priceScaleId: sid }); } catch { }
+        }
+        try { chart.priceScale(sid).applyOptions({ scaleMargins: { top: 0.1, bottom: 0.1 } }); } catch { }
     }
 
     /// Materialise a `[{time, values:{k:v, ...}}]` table from the calc output

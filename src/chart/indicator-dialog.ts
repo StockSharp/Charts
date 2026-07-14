@@ -14,6 +14,9 @@ export class IndicatorDialog {
     _settingsEl: HTMLElement | null;
     _activeListEl: HTMLElement | null;
     _selectedType: string | null;
+    // When opened from a sub-pane's ＋ button, the id of the pane new indicators
+    // should be placed into; null = automatic placement (overlay vs own pane).
+    _targetPaneId: string | null;
 
     constructor() {
         this._modalEl = null;
@@ -24,6 +27,7 @@ export class IndicatorDialog {
         this._settingsEl = null;
         this._activeListEl = null;
         this._selectedType = null;
+        this._targetPaneId = null;
     }
 
     init(modalId, indicatorEngine) {
@@ -60,11 +64,35 @@ export class IndicatorDialog {
         this._renderList();
     }
 
+    // Open the picker with a target pre-selected in the pane dropdown: an
+    // existing pane id, or the sentinels '__new__' (a fresh pane) / '__main__'
+    // (the main chart). show() clears the target, so set it after show().
+    showForPane(paneId) {
+        this.show();
+        this._targetPaneId = paneId;
+    }
+
+    // Options for the target-pane <select>: a fresh pane, the main chart, or any
+    // existing sub-pane (by its label). `selected` marks the default option.
+    _paneOptionsHtml(selected) {
+        const opts: Array<{ v: string; label: string }> = [
+            { v: '__new__', label: T.t('New pane') },
+            { v: '__main__', label: T.t('Main chart') },
+        ];
+        const panes = this._indicatorEngine?._paneManager?._panes;
+        if (panes) {
+            for (const [id, pane] of panes) opts.push({ v: id, label: pane.label || id });
+        }
+        return opts.map(o =>
+            `<option value="${o.v}"${o.v === selected ? ' selected' : ''}>${o.label}</option>`).join('');
+    }
+
     show() {
         if (!this._modal || !this._modalEl) return;
         this._renderList();
         this._renderActiveList();
         this._selectedType = null;
+        this._targetPaneId = null;
         if (this._settingsEl) this._settingsEl.innerHTML = '';
         if (this._searchInput) this._searchInput.value = '';
         // Re-apply the category filter — _renderList repopulated the list with
@@ -166,6 +194,13 @@ export class IndicatorDialog {
         if (isEdit) {
             html += `<button class="btn btn-sm btn-primary indicator-save-btn">${T.t('Save')}</button>`;
         } else {
+            // Where the study goes. Default: the pane the picker was opened from,
+            // else main chart for an overlay / a new pane for an oscillator.
+            const def = this._targetPaneId || (settings.pane === 'overlay' ? '__main__' : '__new__');
+            html += `<div class="indicator-param-row indicator-target-row">
+                <label class="indicator-param-label">${T.t('Pane')}</label>
+                <select class="indicator-target-select">${this._paneOptionsHtml(def)}</select>
+            </div>`;
             html += `<button class="btn btn-sm btn-primary indicator-add-btn">${T.t('Add {0}', localizedName)}</button>`;
         }
         this._settingsEl.innerHTML = html;
@@ -190,7 +225,9 @@ export class IndicatorDialog {
             params[input.dataset.key!] = parseFloat(input.value);
         });
 
-        this._indicatorEngine.add(typeId, params);
+        const sel = this._settingsEl.querySelector('.indicator-target-select') as HTMLSelectElement | null;
+        const target = sel ? sel.value : this._targetPaneId;
+        this._indicatorEngine.add(typeId, params, target);
         this._renderActiveList();
         const addedSettings = IndicatorSettings.getIndicator(typeId);
         TerminalUtils.showToast(T.t('{0} added', T.t(addedSettings?.name || typeId)), 'success');

@@ -88,11 +88,20 @@ function boot() {
     // Edit hook fired by the legend ✎ and the sub-pane header ✎ buttons.
     const openIndicatorEdit = (id: number, type: string) => { dialog.show(); (dialog as any)._showSettings(type, id); };
     legend.onEditIndicator = openIndicatorEdit;
-    (window as any).terminalApp = { openIndicatorEdit };
+    // ＋ on a sub-pane header opens the picker targeting that pane, so the next
+    // indicator lands in it instead of spawning its own pane.
+    const openIndicatorAddToPane = (paneId: string) => dialog.showForPane(paneId);
+    (window as any).terminalApp = { openIndicatorEdit, openIndicatorAddToPane };
 
-    // Right-click context menu ("Add indicator…" opens the dialog).
+    // "+ Pane" toolbar button and the main chart's right-click "Add pane…" open
+    // the picker with the target preset to a NEW pane — picking a study and
+    // pressing Add then creates the pane with that study in it (so the pane is
+    // labelled by its indicator, and cancelling leaves no empty pane behind).
+    const addNewPane = () => dialog.showForPane('__new__');
+
+    // Right-click context menu ("Add indicator…" / "Add pane…" open the dialog).
     const menu = new ChartContextMenu();
-    menu.init(container, candleSeries, { onAddIndicator: () => dialog.show() });
+    menu.init(container, candleSeries, { onAddIndicator: () => dialog.show(), onAddPane: addNewPane });
 
     // Chart-type switcher (candle / bar / line / area / heikin), driven by the
     // legend's per-pane chart-type dropdown.
@@ -121,6 +130,8 @@ function boot() {
     // Toolbar buttons.
     const addBtn = document.getElementById('addIndicatorBtn');
     if (addBtn) addBtn.addEventListener('click', () => dialog.show());
+    const addPaneBtn = document.getElementById('addPaneBtn');
+    if (addPaneBtn) addPaneBtn.addEventListener('click', addNewPane);
     const fitBtn = document.getElementById('fitBtn');
     if (fitBtn) fitBtn.addEventListener('click', () => chart.timeScale().fitContent());
 
@@ -148,21 +159,38 @@ function boot() {
     //      recompute every indicator (exactly the terminal's live path) ----
     const feed = S.makeFeed();
     let timer: any = null;
+    // Cap the live window. The feed seals a new bar every few ticks and every
+    // tick recomputes every indicator over the WHOLE history; left unbounded a
+    // long run (with a few studies) recomputes thousands of bars per tick and
+    // janks hard. A rolling window keeps realtime cost O(window), flat over time.
+    const MAX_LIVE = 800;
     function step() {
         const bar = feed.next(5);
         const lv = S.levelsFor(bar);   // per-bar volume-by-price for the footprint (cluster / box) types
-        const last = live[live.length - 1];
-        if (bar.time === last.time) {
-            last.open = bar.open; last.high = bar.high; last.low = bar.low; last.close = bar.close; last.volume = bar.vol; last.levels = lv;
-        } else {
-            live.push({ time: bar.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close, volume: bar.vol, levels: lv });
-        }
-        typeSwitcher.updatePrice({ time: bar.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close, volume: bar.vol, levels: lv });
         const derived = currentType === 'renko' || currentType === 'pf';
-        if (!derived) volumeSeries.update({ time: bar.time, value: bar.vol, color: volColor(bar) });
+        const last = live[live.length - 1];
+        const newBar = bar.time !== last.time;
+        if (newBar) {
+            live.push({ time: bar.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close, volume: bar.vol, levels: lv });
+        } else {
+            last.open = bar.open; last.high = bar.high; last.low = bar.low; last.close = bar.close; last.volume = bar.vol; last.levels = lv;
+        }
+        // Drop the oldest bars once past the window (only when a new bar sealed).
+        const trimmed = newBar && live.length > MAX_LIVE;
+        if (trimmed) live.splice(0, live.length - MAX_LIVE);
+
+        if (trimmed) {
+            // Reseed the main + volume series to the window so they don't grow
+            // unbounded and stay aligned with the (windowed) indicators.
+            candleSeries.setData(live);
+            if (!derived) volumeSeries.setData(live.map((c: any) => ({ time: c.time, value: c.volume, color: volColor(c) })));
+        } else {
+            typeSwitcher.updatePrice({ time: bar.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close, volume: bar.vol, levels: lv });
+            if (!derived) volumeSeries.update({ time: bar.time, value: bar.vol, color: volColor(bar) });
+        }
         try { chart.timeScale().scrollToRealTime(); } catch { /* */ }
-        // Renko / P&F: rebuild the derived bars from the grown window and recompute
-        // the studies on them; time-aligned types take the coalesced live path.
+        // Renko / P&F: rebuild the derived bars from the window and recompute the
+        // studies on them; time-aligned types take the coalesced live path.
         if (derived) engine.setCandles(currentType === 'renko' ? SSChart.renkoBars(live) : SSChart.pnfBars(live));
         else engine.onLiveUpdate();      // RAF-coalesced recompute of every indicator
         legend.setRawCandles(live);
