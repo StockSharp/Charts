@@ -99,9 +99,23 @@ function boot() {
     const typeSwitcher = new ChartTypeSwitcher();
     typeSwitcher.init(chart, candleSeries, volumeSeries);
     typeSwitcher.setRawCandles(live);   // shares the ref, so it always rebuilds from the live window
+    let currentType = 'candlestick';
     legend.onChartTypeChange = (type: string) => {
         const s = typeSwitcher.switchType(type);
         if (s) { candleSeries = s; menu.setCandleSeries(s); }
+        currentType = type;
+        // Renko / P&F re-bin price into bricks / columns — a different bar count
+        // than the candles. Recompute every indicator on those derived bars (via
+        // the engine transforms) so overlays / oscillators line up natively; drop
+        // the volume histogram (Renko / P&F are volume-agnostic). Time-aligned
+        // types feed the raw candles back and restore the volume.
+        if (type === 'renko' || type === 'pf') {
+            engine.setCandles(type === 'renko' ? SSChart.renkoBars(live) : SSChart.pnfBars(live));
+            volumeSeries.setData([]);
+        } else {
+            engine.setCandles(live);
+            volumeSeries.setData(live.map((c: any) => ({ time: c.time, value: c.volume, color: volColor(c) })));
+        }
     };
 
     // Toolbar buttons.
@@ -144,9 +158,13 @@ function boot() {
             live.push({ time: bar.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close, volume: bar.vol, levels: lv });
         }
         typeSwitcher.updatePrice({ time: bar.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close, volume: bar.vol, levels: lv });
-        volumeSeries.update({ time: bar.time, value: bar.vol, color: volColor(bar) });
+        const derived = currentType === 'renko' || currentType === 'pf';
+        if (!derived) volumeSeries.update({ time: bar.time, value: bar.vol, color: volColor(bar) });
         try { chart.timeScale().scrollToRealTime(); } catch { /* */ }
-        engine.onLiveUpdate();           // RAF-coalesced recompute of every indicator
+        // Renko / P&F: rebuild the derived bars from the grown window and recompute
+        // the studies on them; time-aligned types take the coalesced live path.
+        if (derived) engine.setCandles(currentType === 'renko' ? SSChart.renkoBars(live) : SSChart.pnfBars(live));
+        else engine.onLiveUpdate();      // RAF-coalesced recompute of every indicator
         legend.setRawCandles(live);
         legend.refresh();
     }

@@ -169,6 +169,78 @@ function textOn(bg: string): string {
     return lum > 150 ? '#111' : '#fff';
 }
 
+// ---- Renko / Point&Figure transforms ------------------------------------
+// Renko and P&F re-bin price into bricks / columns whose count differs from the
+// source candles. To keep them on the SAME axis as everything else — so overlay
+// indicators recomputed on the bricks/columns line up, the crosshair works, and
+// panning/zoom behave like every other series — each derived bar is given a
+// synthetic time spread evenly across the source time span. The renderers draw
+// these via timeToX(); the same functions are exported so a host can feed the
+// derived bars to its indicator engine and have the studies align natively.
+function evenSpan(src: ReadonlyArray<AnyPoint>, n: number): number[] {
+    if (n <= 0) return [];
+    const t0 = src[0].time, t1 = src[src.length - 1].time;
+    const out = new Array<number>(n);
+    if (n === 1 || !(t1 > t0)) { for (let i = 0; i < n; i += 1) out[i] = t0 + i; return out; }
+    for (let i = 0; i < n; i += 1) out[i] = t0 + (i / (n - 1)) * (t1 - t0);
+    return out;
+}
+function renkoBox(src: ReadonlyArray<AnyPoint>, boxSize?: number): number {
+    if (num(boxSize, 0) > 0) return boxSize as number;
+    let lo = Infinity, hi = -Infinity;
+    for (const p of src) { const c = p.close; if (c < lo) lo = c; if (c > hi) hi = c; }
+    return ((Number.isFinite(hi - lo) && hi > lo) ? (hi - lo) : 1) / 40;
+}
+function renkoBricks(src: ReadonlyArray<AnyPoint>, box: number): Array<{ up: boolean; lo: number; hi: number }> {
+    const bricks: Array<{ up: boolean; lo: number; hi: number }> = [];
+    if (src.length === 0 || !(box > 0)) return bricks;
+    let base = src[0].close;
+    for (const p of src) {
+        while (p.close >= base + box) { bricks.push({ up: true, lo: base, hi: base + box }); base += box; }
+        while (p.close <= base - box) { bricks.push({ up: false, lo: base - box, hi: base }); base -= box; }
+    }
+    return bricks;
+}
+// Derived OHLC bars (one per brick) for feeding an indicator engine.
+export function renkoBars(candles: ReadonlyArray<AnyPoint>, boxSize?: number): AnyPoint[] {
+    if (candles.length < 2) return [];
+    const bricks = renkoBricks(candles, renkoBox(candles, boxSize));
+    const times = evenSpan(candles, bricks.length);
+    return bricks.map((bk, i) => (bk.up
+        ? { time: times[i], open: bk.lo, high: bk.hi, low: bk.lo, close: bk.hi }
+        : { time: times[i], open: bk.hi, high: bk.hi, low: bk.lo, close: bk.lo }) as AnyPoint);
+}
+function pnfBox(src: ReadonlyArray<AnyPoint>, boxSize?: number): number {
+    if (num(boxSize, 0) > 0) return boxSize as number;
+    let lo = Infinity, hi = -Infinity;
+    for (const p of src) { if (p.low < lo) lo = p.low; if (p.high > hi) hi = p.high; }
+    return ((Number.isFinite(hi - lo) && hi > lo) ? (hi - lo) : 1) / 50;
+}
+function pnfColumns(src: ReadonlyArray<AnyPoint>, box: number, rev: number): Array<{ up: boolean; lo: number; hi: number }> {
+    const cols: Array<{ up: boolean; lo: number; hi: number }> = [];
+    if (src.length === 0 || !(box > 0)) return cols;
+    let ref = Infinity;
+    for (const p of src) if (p.close < ref) ref = p.close;
+    let dir = 0, top = src[0].close, bot = src[0].close;
+    for (const p of src) {
+        const c = p.close;
+        if (dir >= 0 && c >= top + box) { dir = 1; top = Math.floor((c - ref) / box) * box + ref; if (cols.length === 0 || !cols[cols.length - 1].up) cols.push({ up: true, lo: bot, hi: top }); else cols[cols.length - 1].hi = top; }
+        else if (dir <= 0 && c <= bot - box) { dir = -1; bot = Math.ceil((c - ref) / box) * box + ref; if (cols.length === 0 || cols[cols.length - 1].up) cols.push({ up: false, lo: bot, hi: top }); else cols[cols.length - 1].lo = bot; }
+        else if (dir === 1 && c <= top - rev * box) { dir = -1; bot = c; cols.push({ up: false, lo: bot, hi: top - box }); }
+        else if (dir === -1 && c >= bot + rev * box) { dir = 1; top = c; cols.push({ up: true, lo: bot + box, hi: top }); }
+    }
+    return cols;
+}
+// Derived OHLC bars (one per column) for feeding an indicator engine.
+export function pnfBars(candles: ReadonlyArray<AnyPoint>, boxSize?: number, reversal?: number): AnyPoint[] {
+    if (candles.length < 2) return [];
+    const cols = pnfColumns(candles, pnfBox(candles, boxSize), num(reversal, 2));
+    const times = evenSpan(candles, cols.length);
+    return cols.map((col, i) => (col.up
+        ? { time: times[i], open: col.lo, high: col.hi, low: col.lo, close: col.hi }
+        : { time: times[i], open: col.hi, high: col.hi, low: col.lo, close: col.lo }) as AnyPoint);
+}
+
 class Series {
     readonly kind: SeriesKind;
     opts: SeriesOptions;
@@ -777,7 +849,13 @@ class ChartImpl {
             for (const s of this.series) {
                 if (s.priceScaleId() !== scaleId) continue;
                 if (s.kind === 'VolumeProfile') continue;   // overlay — doesn't drive the scale
-                for (const p of s.data) {
+                // Renko / P&F drive the scale from their derived bricks / columns
+                // (on synthetic times) — the same bars the renderer draws — so the
+                // visible price range matches what's on screen when zoomed / panned.
+                const pts = s.kind === 'Renko' ? renkoBars(s.data, s.opts.boxSize)
+                    : s.kind === 'PointFigure' ? pnfBars(s.data, s.opts.boxSize, s.opts.reversal)
+                    : s.data;
+                for (const p of pts) {
                     if (windowed && (p.time < this.viewFrom || p.time > this.viewTo)) continue;
                     if (s.kind === 'Candlestick' || s.kind === 'Bar'
                         || s.kind === 'PointFigure' || s.kind === 'Renko'
@@ -1481,70 +1559,54 @@ class ChartImpl {
         }
 
         if (s.kind === 'Renko') {
-            // Brick chart: a new brick every time price moves a full box.
+            // Brick chart: bricks are derived bars on synthetic, evenly-spread
+            // times (see renkoBars) so they sit on the shared time axis and any
+            // overlay indicators — recomputed on the same bricks — line up. The
+            // box is taken from the full close range (stable across zoom).
             const up = s.opts.upColor ?? '#00c853';
             const dn = s.opts.downColor ?? '#ff3d57';
-            const range = b.max - b.min || 1;
-            const box = num(s.opts.boxSize, range / 40);
-            const bricks: Array<{ lo: number; hi: number; up: boolean }> = [];
-            let base = visible[0].close;
-            for (const p of visible) {
-                while (p.close >= base + box) { bricks.push({ lo: base, hi: base + box, up: true }); base += box; }
-                while (p.close <= base - box) { bricks.push({ lo: base - box, hi: base, up: false }); base -= box; }
-            }
-            const bw = Math.max(3, this.plotW() / Math.max(1, bricks.length) - 1);
+            const bricks = renkoBricks(s.data, renkoBox(s.data, s.opts.boxSize));
+            const times = evenSpan(s.data, bricks.length);
+            const bw = bricks.length > 1
+                ? Math.max(2, Math.abs(this.timeToX(times[1]) - this.timeToX(times[0])) * 0.85)
+                : Math.max(3, this.barStepPx());
             bricks.forEach((bk, i) => {
-                const x = this.plotL() + i * (this.plotW() / Math.max(1, bricks.length));
+                const x = this.timeToX(times[i]);
+                if (x < this.plotL() - bw || x > this.plotR() + bw) return;
                 const yT = this.valueToY(bk.hi, b);
                 const yB = this.valueToY(bk.lo, b);
                 ctx.fillStyle = bk.up ? up : dn;
-                ctx.fillRect(x, Math.min(yT, yB), bw, Math.max(1, Math.abs(yB - yT)));
+                ctx.fillRect(x - bw / 2, Math.min(yT, yB), bw, Math.max(1, Math.abs(yB - yT)));
             });
             return;
         }
 
         if (s.kind === 'PointFigure') {
             // X column = rising (X marks), O column = falling (O marks).
+            // Columns are derived bars on synthetic, evenly-spread times (see
+            // pnfBars) so they sit on the shared axis with overlay indicators
+            // (recomputed on the same columns). Box is from the full range and
+            // stays put across zoom; the symbol fills it (classic P&F density).
             const up = s.opts.upColor ?? '#00c853';
             const dn = s.opts.downColor ?? '#ff3d57';
-            // Box size derived from the FULL data range (stable across zoom),
-            // not the visible one — so zooming in expands the boxes in pixels
-            // (fewer columns, bigger symbols), mirroring how candles widen.
-            let fullMin = Infinity, fullMax = -Infinity;
-            for (const p of s.data) {
-                if (p.low < fullMin) fullMin = p.low;
-                if (p.high > fullMax) fullMax = p.high;
-            }
-            const fullRange = (Number.isFinite(fullMax - fullMin) && fullMax > fullMin) ? (fullMax - fullMin) : 1;
-            // Denser-by-default defaults: small box + tight reversal so even
-            // a quiet drift produces many columns (classic P&F look). User
-            // can override boxSize / reversal via SeriesOptions to taste.
-            const box = num(s.opts.boxSize, fullRange / 50);
-            const rev = num(s.opts.reversal, 2);
-            const cols: Array<{ x: boolean; lo: number; hi: number }> = [];
-            let dir = 0, top = visible[0].close, bot = visible[0].close;
-            for (const p of visible) {
-                const c = p.close;
-                if (dir >= 0 && c >= top + box) { dir = 1; top = Math.floor((c - b.min) / box) * box + b.min; if (cols.length === 0 || !cols[cols.length - 1].x) cols.push({ x: true, lo: bot, hi: top }); else cols[cols.length - 1].hi = top; }
-                else if (dir <= 0 && c <= bot - box) { dir = -1; bot = Math.ceil((c - b.min) / box) * box + b.min; if (cols.length === 0 || cols[cols.length - 1].x) cols.push({ x: false, lo: bot, hi: top }); else cols[cols.length - 1].lo = bot; }
-                else if (dir === 1 && c <= top - rev * box) { dir = -1; bot = c; cols.push({ x: false, lo: bot, hi: top - box }); }
-                else if (dir === -1 && c >= bot + rev * box) { dir = 1; top = c; cols.push({ x: true, lo: bot + box, hi: top }); }
-            }
+            const box = pnfBox(s.data, s.opts.boxSize);
+            const cols = pnfColumns(s.data, box, num(s.opts.reversal, 2));
             if (cols.length === 0) return;
-            const cw = this.plotW() / cols.length;
-            // No fixed pixel cap: the symbol fills the box (~90% vertical,
-            // ~80% horizontal) so consecutive X's/O's stack with classic P&F
-            // touching density, and grow proportionally on zoom-in.
+            const times = evenSpan(s.data, cols.length);
+            const cw = cols.length > 1
+                ? Math.abs(this.timeToX(times[1]) - this.timeToX(times[0]))
+                : this.barStepPx();
             const boxPx = Math.abs(this.valueToY(b.min + box, b) - this.valueToY(b.min, b));
             const r = Math.max(2, Math.min(cw * 0.4, boxPx * 0.45));
             ctx.lineWidth = 1.5;
             cols.forEach((col, ci) => {
-                const cx = this.plotL() + ci * cw + cw / 2;
-                ctx.strokeStyle = col.x ? up : dn;
+                const cx = this.timeToX(times[ci]);
+                if (cx < this.plotL() - cw || cx > this.plotR() + cw) return;
+                ctx.strokeStyle = col.up ? up : dn;
                 for (let v = col.lo; v <= col.hi + 1e-6; v += box) {
                     const yc = this.valueToY(v + box / 2, b);
                     ctx.beginPath();
-                    if (col.x) {
+                    if (col.up) {
                         ctx.moveTo(cx - r, yc - r); ctx.lineTo(cx + r, yc + r);
                         ctx.moveTo(cx + r, yc - r); ctx.lineTo(cx - r, yc + r);
                     } else {
