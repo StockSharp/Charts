@@ -201,6 +201,36 @@ function boot() {
         if (timer) { clearInterval(timer); timer = null; rtBtn.classList.remove('on'); }
         else { timer = setInterval(step, 350); rtBtn.classList.add('on'); }
     });
+
+    // ---- Resting order lines, driven entirely by the chart's OWN order engine — the same one the
+    //      terminal will use. Each line is created `draggable`, so the chart owns the whole gesture:
+    //      hover it (ns-resize cursor), press and drag it up/down (the chart freezes autoscale and
+    //      anchors the label for the duration, so it stays WYSIWYG and the price never drifts off the
+    //      cursor), release to commit. Ctrl+click on empty chart places a NEW order via the chart's
+    //      click event. The "✕" on a line cancels it. The demo supplies only the order data and the
+    //      callbacks — it wires no pointer handlers of its own.
+    (function orderLineDemo() {
+        const fmt = (p: number) => p.toFixed(2);
+        const snap = (p: number) => Math.round(p * 100) / 100;
+
+        function addOrder(price: number): void {
+            let line: any;
+            line = candleSeries.createPriceLine({
+                price, color: '#4a9eff', lineWidth: 2, axisLabelVisible: true, draggable: true,
+                title: `ORDER @ ${fmt(price)}`,
+                onDrag: (p: number) => line.applyOptions({ title: `ORDER @ ${fmt(p)}` }),   // live label while dragging
+                onDragCommit: (p: number) => line.applyOptions({ title: `ORDER @ ${fmt(p)}` }),   // a terminal would send an order-replace here
+                onClose: () => candleSeries.removePriceLine(line),                          // ✕ cancels the order
+            });
+        }
+
+        addOrder(snap(live[live.length - 1]?.close ?? 100));   // one resting order at startup
+
+        // Ctrl+click on the chart → place a NEW resting order at that price (terminal behaviour).
+        chart.subscribeClick((c) => {
+            if (c.ctrlKey && c.price !== null && c.price > 0) addOrder(snap(c.price));
+        });
+    })();
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

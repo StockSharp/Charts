@@ -69,11 +69,27 @@ export interface PriceLineOptions {
     axisLabelTextColor?: string;
     title?: string;
     id?: string;
+    // When set, the line's title label gets a small "✕" button rendered
+    // just outside it; clicking that button calls this callback (used by
+    // the terminal to cancel a resting order straight from its chart line).
+    // The button click is consumed so it never starts a line drag.
+    onClose?: () => void;
     // True while the host is actively dragging this line. Its label
     // skips the easing pass (snaps straight to target) so it never
     // trails the cursor on a fast pull, while still acting as the
     // immovable anchor that other labels yield to during collision.
     anchored?: boolean;
+    // When true, the chart itself owns the drag gesture for this line: hovering it shows a
+    // ns-resize cursor, pressing and moving drags it (the chart freezes autoscale and anchors
+    // the label for the duration so it stays WYSIWYG), releasing commits. This is the reusable
+    // order-line engine the terminal drives — hosts only supply the callbacks below, they do
+    // not wire their own pointer handlers.
+    draggable?: boolean;
+    // Called on every move while this line is dragged, with the live price under the cursor.
+    onDrag?: (price: number) => void;
+    // Called once when the drag is released, with the final price. Use this to commit the move
+    // (e.g. send an order-replace to the exchange); onDrag is for live UI feedback only.
+    onDragCommit?: (price: number) => void;
 }
 export interface IPriceLine {
     applyOptions(patch: Partial<PriceLineOptions>): void;
@@ -332,6 +348,12 @@ class PriceLine implements IPriceLine {
 export interface PriceScaleOptions {
     scaleMargins?: { top?: number; bottom?: number };
     mode?: PriceScaleModeValue;     // Normal | Logarithmic
+    // When false, pin the price range at its current value instead of auto-fitting it to the
+    // visible data on every frame. Used by hosts during an interactive gesture (e.g. dragging a
+    // resting order line): with autoscale on, a live candle arriving mid-drag re-fits the range
+    // and shifts the price<->pixel mapping, so the dragged line drifts and the committed price no
+    // longer matches the axis. Re-enable (true) to resume auto-fit. Defaults to true.
+    autoScale?: boolean;
 }
 class PriceScaleApi {
     constructor(private readonly chart: ChartImpl | null, private readonly scaleId: string) {}
@@ -345,6 +367,7 @@ class PriceScaleApi {
             });
         }
         if (patch.mode !== undefined) this.chart.setScaleMode(this.scaleId, patch.mode);
+        if (patch.autoScale !== undefined) this.chart.setAutoScale(this.scaleId, patch.autoScale);
     }
 }
 
@@ -358,6 +381,19 @@ class MarkersPlugin {
 
 type RangeListener = (range: { from: Time; to: Time } | null) => void;
 type CrosshairListener = (param: { time?: Time; point?: { x: number; y: number } }) => void;
+// A press-release on the plot that did not move and did not grab a draggable line. Carries the
+// price/time under the cursor and the keyboard modifiers, so a host can place a resting order
+// (e.g. Ctrl+click) without wiring its own pointer handlers — the chart owns the gesture.
+export interface ChartClick {
+    price: number | null;
+    time: Time | null;
+    point: { x: number; y: number };
+    ctrlKey: boolean;
+    shiftKey: boolean;
+    altKey: boolean;
+    metaKey: boolean;
+}
+type ClickListener = (c: ChartClick) => void;
 // lwc-shaped logical range = fractional bar indices. {from:5.5, to:170.2}
 // means "bar 5 plus halfway through bar 6 … bar 170 plus 20%". Used by
 // the terminal to sync multiple panes on the BAR axis (independent of
@@ -412,6 +448,9 @@ class ChartImpl {
     rangeListeners: RangeListener[] = [];
     logicalRangeListeners: LogicalRangeListener[] = [];
     private crosshairListeners: CrosshairListener[] = [];
+    // Screen rects (CSS px) of the per-frame price-line "✕" close buttons, with the
+    // callback to fire when one is clicked. Rebuilt every draw; hit-tested on mousedown.
+    private _closeHits: { x: number; y: number; w: number; h: number; onClose: () => void }[] = [];
 
     private width = 0;
     private height = 0;
@@ -426,6 +465,10 @@ class ChartImpl {
     // scaleMargins per scaleId — set via Series.priceScale().applyOptions()
     // OR chart.applyOptions({ rightPriceScale: { scaleMargins } }).
     private scaleMarginsByScale = new Map<string, { top: number; bottom: number }>();
+    // When a scale has autoscale disabled, its price range is pinned here (the fully-computed
+    // bounds captured at the moment it was frozen) and priceBounds returns it verbatim instead of
+    // re-fitting to the visible data. Absence of an entry means autoscale is on (the default).
+    private frozenPriceBounds = new Map<string, { min: number; max: number; mode: PriceScaleModeValue }>();
     // Per-scale display mode (Normal / Logarithmic).
     private scaleModeByScale = new Map<string, PriceScaleModeValue>();
     // optional ResizeObserver when autoSize is on (default true)
@@ -443,6 +486,16 @@ class ChartImpl {
     // manual horizontal time-scale stretch (drag the time axis)
     private timeDragging = false;
     private lastAxisX = 0;
+    // order-line drag engine: the draggable price line currently grabbed (null = none)
+    private lineDrag: { series: Series; line: PriceLine } | null = null;
+    // true between a pointerdown that landed on the canvas and its release — so a stray global
+    // pointerup (gesture started elsewhere) is ignored by finishGesture
+    private pointerDown = false;
+    // pointer-down origin, used to tell a click (place) from a drag (pan / line move)
+    private downX = 0;
+    private downY = 0;
+    // click subscribers — fired on a press-release that did not move and did not grab a line
+    private clickListeners: ((c: ChartClick) => void)[] = [];
 
     private readonly padL = 8;
     private padR = 64;        // right price axis
@@ -549,6 +602,21 @@ class ChartImpl {
     }
     setScaleMargins(scaleId: string, m: { top: number; bottom: number }): void {
         this.scaleMarginsByScale.set(scaleId, m);
+        // A margin change while frozen would be ignored (priceBounds returns the pinned range), so
+        // drop the freeze to honour it — margins are set at setup, not during a drag.
+        this.frozenPriceBounds.delete(scaleId);
+        this.scheduleDraw();
+    }
+    // Freeze / unfreeze the price range for a scale (PriceScaleApi.applyOptions({autoScale})).
+    // Disabling captures the current fully-computed bounds and pins them; enabling resumes auto-fit.
+    setAutoScale(scaleId: string, enabled: boolean): void {
+        if (enabled) {
+            this.frozenPriceBounds.delete(scaleId);
+        } else if (!this.frozenPriceBounds.has(scaleId)) {
+            // priceBounds() checks the frozen map first, but it is still empty here, so this
+            // computes fresh bounds — exactly what we want to pin.
+            this.frozenPriceBounds.set(scaleId, this.priceBounds(scaleId));
+        }
         this.scheduleDraw();
     }
     getScaleMode(scaleId: string): PriceScaleModeValue {
@@ -558,12 +626,17 @@ class ChartImpl {
         this.scaleModeByScale.set(scaleId, mode);
         this.scheduleDraw();
     }
+    subscribeClick(cb: ClickListener): void { this.clickListeners.push(cb); }
+    unsubscribeClick(cb: ClickListener): void { this.clickListeners = this.clickListeners.filter((x) => x !== cb); }
     subscribeCrosshairMove(cb: CrosshairListener): void { this.crosshairListeners.push(cb); }
     unsubscribeCrosshairMove(cb: CrosshairListener): void {
         this.crosshairListeners = this.crosshairListeners.filter((x) => x !== cb);
     }
     applyOptions(patch: ChartOptions): void {
         Object.assign(this.opts, patch);
+        // Toggling time-axis visibility must re-reserve (or free) its vertical strip so the axis
+        // actually appears/disappears — not just flip a flag with no layout room for it.
+        if (patch.timeScale) this.recomputeTimeAxisPad();
         // Sugar: chart.applyOptions({rightPriceScale:{scaleMargins:{...}}})
         // mirrors Series.priceScale().applyOptions and writes into the
         // same per-scale store the renderer consults.
@@ -616,7 +689,16 @@ class ChartImpl {
         this.canvas.style.width = `${w}px`;
         this.canvas.style.height = `${h}px`;
         this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-        if (this.opts.timeScale?.visible === false) this.padB = 4;
+        this.recomputeTimeAxisPad();
+    }
+
+    // Reserve room for the time axis only when it is visible. Bidirectional on purpose: toggling
+    // timeScale.visible at runtime (the sub-pane stack hands the axis between charts on add/remove)
+    // must both HIDE and RESTORE the strip. The old one-way latch only ever shrank padB, so once a
+    // pane was created hidden it never got its axis room back, and the main chart never got it back
+    // after the last sub-pane was removed.
+    private recomputeTimeAxisPad(): void {
+        this.padB = this.opts.timeScale?.visible === false ? 4 : 22;
     }
 
     onDataChanged(): void {
@@ -843,6 +925,11 @@ class ChartImpl {
 
     // price scale per axis ('right' default, 'left' optional)
     private priceBounds(scaleId: string): { min: number; max: number; mode: PriceScaleModeValue } {
+        // Autoscale disabled: return the pinned range so live data / view changes cannot shift the
+        // price<->pixel mapping (used by hosts to keep a drag WYSIWYG).
+        const frozen = this.frozenPriceBounds.get(scaleId);
+        if (frozen) return frozen;
+
         const scan = (windowed: boolean): { min: number; max: number } => {
             let mn = Infinity;
             let mx = -Infinity;
@@ -980,6 +1067,7 @@ class ChartImpl {
         const ctx = this.ctx;
         const lay = this.opts.layout ?? {};
         ctx.clearRect(0, 0, this.width, this.height);
+        this._closeHits = [];
         ctx.fillStyle = lay.background?.color ?? DEF_LAYOUT_BG;
         ctx.fillRect(0, 0, this.width, this.height);
 
@@ -1176,6 +1264,20 @@ class ChartImpl {
                 ctx.fillRect(titleX, yLab - labelH / 2, titleW, labelH);
                 ctx.fillStyle = txtCol;
                 ctx.fillText(titleText, titleX + 5, yLab + 1);
+            }
+            // "✕" close button, just outside the title pill (left of a right-side
+            // label, right of a left-side one). Clicking it fires o.onClose — the
+            // terminal wires this to cancel the resting order on that line.
+            if (o.onClose && titleText) {
+                const closeW = labelH;
+                const closeX = onLeft ? (titleX + titleW) : (titleX - closeW);
+                ctx.fillStyle = labCol;
+                ctx.fillRect(closeX, yLab - labelH / 2, closeW, labelH);
+                ctx.fillStyle = txtCol;
+                ctx.textAlign = 'center';
+                ctx.fillText('✕', closeX + closeW / 2, yLab + 1);
+                ctx.textAlign = 'left';
+                this._closeHits.push({ x: closeX, y: yLab - labelH / 2, w: closeW, h: labelH, onClose: o.onClose });
             }
             // Price pill in the axis gutter — slightly darker shade
             // for the two-tone candle look.
@@ -1755,10 +1857,15 @@ class ChartImpl {
         const s = this.indexRefSeries();
         if (s === null || s.data.length === 0) return { ticks: [], step: 60 };
         const d = s.data;
+        const n = d.length;
         const lfRaw = this.timeToLogical(this.viewFrom) ?? 0;
-        const ltRaw = this.timeToLogical(this.viewTo) ?? (d.length - 1);
-        const lf = Math.max(0, Math.floor(lfRaw));
-        const lt = Math.min(d.length - 1, Math.ceil(ltRaw));
+        const ltRaw = this.timeToLogical(this.viewTo) ?? (n - 1);
+        // Clamp BOTH ends into [0, n-1]. The visible window can sit fully past
+        // either edge (scrolled beyond the data, or a sub-pane whose spine has
+        // fewer bars than the logical range synced onto it), which would leave
+        // lf/lt out of range and read `.time` of an undefined bar below.
+        const lf = Math.min(n - 1, Math.max(0, Math.floor(lfRaw)));
+        const lt = Math.min(n - 1, Math.max(lf, Math.ceil(ltRaw)));
         const visCount = Math.max(1, lt - lf);
         const target = Math.max(2, Math.floor(this.plotW() / 80));
         const stride = Math.max(1, Math.round(visCount / target));
@@ -2015,11 +2122,40 @@ class ChartImpl {
         return true;
     }
 
+    // Order-line engine: the nearest draggable price line whose rendered Y is within grab
+    // tolerance of `my`, or null when the cursor is over a gutter or not near one.
+    private hitDraggableLine(my: number, mx: number): { series: Series; line: PriceLine } | null {
+        if (this.inTimeGutter(my) || this.inPriceGutter(mx)) return null;
+        const TOL = 6;
+        let best: { series: Series; line: PriceLine } | null = null;
+        let bestDist = TOL;
+        for (const s of this.series) {
+            for (const pl of s.priceLines) {
+                if (pl.raw().draggable !== true) continue;
+                const y = this.priceToY(pl.raw().price, s.priceScaleId());
+                if (y === null) continue;
+                const d = Math.abs(y - my);
+                if (d <= bestDist) { bestDist = d; best = { series: s, line: pl }; }
+            }
+        }
+        return best;
+    }
+
     private bindPointer(): void {
         this.canvas.addEventListener('pointermove', (e) => {
             const r = this.canvas.getBoundingClientRect();
             this.mouseX = e.clientX - r.left;
             this.mouseY = e.clientY - r.top;
+            if (this.lineDrag) {                        // dragging a resting order line: it follows the cursor
+                const p = this.yToPrice(this.mouseY, this.lineDrag.series.priceScaleId());
+                if (p !== null) {
+                    this.lineDrag.line.applyOptions({ price: p, anchored: true });
+                    const cb = this.lineDrag.line.raw().onDrag;
+                    if (cb) { try { cb(p); } catch { /* a host callback must not break the gesture */ } }
+                }
+                this.scheduleDraw();
+                return;
+            }
             if (this.priceDragging) {
                 const dy = this.mouseY - this.lastDragY;
                 this.lastDragY = this.mouseY;
@@ -2041,7 +2177,8 @@ class ChartImpl {
                 return;
             }
             this.canvas.style.cursor = this.inTimeGutter(this.mouseY) ? 'ew-resize'
-                : this.inPriceGutter(this.mouseX) ? 'ns-resize' : 'default';
+                : this.inPriceGutter(this.mouseX) ? 'ns-resize'
+                : this.hitDraggableLine(this.mouseY, this.mouseX) ? 'ns-resize' : 'default';
             if (this.dragging && this.dragPanEnabled) {
                 const dx = this.mouseX - this.lastDragX;
                 this.lastDragX = this.mouseX;
@@ -2063,6 +2200,23 @@ class ChartImpl {
             for (const cb of this.crosshairListeners) cb({});
             this.scheduleDraw();
         });
+        // Price-line "✕" close buttons: a mousedown landing on one fires its callback and
+        // is consumed here, so it neither pans the chart nor bubbles to the host element
+        // (whose own mousedown would start a line drag). This uses mousedown — not
+        // pointerdown — precisely so stopPropagation blocks the host's mousedown handler.
+        this.canvas.addEventListener('mousedown', (e) => {
+            const r = this.canvas.getBoundingClientRect();
+            const mx = e.clientX - r.left;
+            const my = e.clientY - r.top;
+            for (const h of this._closeHits) {
+                if (mx >= h.x && mx <= h.x + h.w && my >= h.y && my <= h.y + h.h) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    try { h.onClose(); } catch { /* ignore */ }
+                    return;
+                }
+            }
+        });
         this.canvas.addEventListener('pointerdown', (e) => {
             // capture so a finger / mouse leaving the canvas mid-drag
             // keeps sending us pointermove events
@@ -2070,6 +2224,21 @@ class ChartImpl {
             const r = this.canvas.getBoundingClientRect();
             const mx = e.clientX - r.left;
             const my = e.clientY - r.top;
+            this.downX = mx; this.downY = my; this.pointerDown = true;
+            // A press on a "✕" close button is handled by the mousedown listener above — don't drag.
+            for (const h of this._closeHits) {
+                if (mx >= h.x && mx <= h.x + h.w && my >= h.y && my <= h.y + h.h) return;
+            }
+            // Grab a draggable order line before any pan / axis-stretch gesture. Freeze the scale
+            // and anchor the label for the whole drag so the line stays WYSIWYG under the cursor.
+            const hit = this.hitDraggableLine(my, mx);
+            if (hit) {
+                this.lineDrag = hit;
+                hit.line.applyOptions({ anchored: true });
+                try { hit.series.priceScale().applyOptions({ autoScale: false }); } catch { /* */ }
+                this.canvas.style.cursor = 'ns-resize';
+                return;
+            }
             if (this.inTimeGutter(my)) {
                 // grab the time axis → horizontal stretch
                 this.timeDragging = true;
@@ -2083,11 +2252,42 @@ class ChartImpl {
                 this.lastDragX = mx;
             }
         });
-        const endDrag = (): void => {
+        const finishGesture = (e?: PointerEvent): void => {
+            if (!this.pointerDown) return;   // ignore releases from a gesture that began off-canvas
+            this.pointerDown = false;
+            // Commit an order-line drag: unfreeze the scale, drop the anchor, notify the host.
+            if (this.lineDrag) {
+                const p = this.mouseY !== null ? this.yToPrice(this.mouseY, this.lineDrag.series.priceScaleId()) : null;
+                this.lineDrag.line.applyOptions({ anchored: false });
+                try { this.lineDrag.series.priceScale().applyOptions({ autoScale: true }); } catch { /* */ }
+                const cb = this.lineDrag.line.raw().onDragCommit;
+                if (cb && p !== null) { try { cb(p); } catch { /* */ } }
+                this.lineDrag = null;
+                this.dragging = false; this.priceDragging = false; this.timeDragging = false;
+                return;
+            }
+            const moved = this.mouseX !== null && this.mouseY !== null &&
+                Math.hypot(this.mouseX - this.downX, this.mouseY - this.downY) > 4;
+            const wasPan = this.dragging || this.priceDragging || this.timeDragging;
             this.dragging = false; this.priceDragging = false; this.timeDragging = false;
+            // A press-release that neither moved nor grabbed a line is a click: report price/time
+            // and modifiers so a host can place a resting order (e.g. Ctrl+click) via the engine.
+            if (e && !moved && !wasPan && this.clickListeners.length > 0 &&
+                this.mouseX !== null && this.mouseY !== null &&
+                !this.inTimeGutter(this.mouseY) && !this.inPriceGutter(this.mouseX)) {
+                const price = this.yToPrice(this.mouseY, 'right');
+                const time = this.snapTime(this.mouseX);
+                const c: ChartClick = {
+                    price, time: time ?? null, point: { x: this.mouseX, y: this.mouseY },
+                    ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey,
+                };
+                for (const cb of this.clickListeners) { try { cb(c); } catch { /* */ } }
+            }
         };
-        window.addEventListener('pointerup', endDrag);
-        window.addEventListener('pointercancel', endDrag);
+        // window (not canvas) so a release off the plot still ends the gesture; the pointerDown
+        // guard inside finishGesture keeps unrelated global releases from being processed.
+        window.addEventListener('pointerup', (e) => finishGesture(e as PointerEvent));
+        window.addEventListener('pointercancel', () => finishGesture());
         // Double-click anywhere → fit all data to the full width
         // (the desktop/terminal/Designer chart behaviour).
         this.canvas.addEventListener('dblclick', (e) => { e.preventDefault(); this.fitContent(); });
