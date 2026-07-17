@@ -6,6 +6,10 @@ import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
+// Host/port are overridable via env so the demo can be exposed on a LAN address.
+// Default HOST 0.0.0.0 binds every interface (localhost + LAN IP).
+const HOST = process.env.HOST || '0.0.0.0';
+const PORT = Number(process.env.PORT) || 8791;
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.map': 'application/json', '.css': 'text/css' };
 
 createServer(async (req, res) => {
@@ -20,4 +24,4 @@ createServer(async (req, res) => {
         res.writeHead(404);
         res.end('not found');
     }
-}).listen(8791, () => console.log('serving Charts on http://localhost:8791/demo/index.html'));
+}).listen(PORT, HOST, () => console.log(`serving Charts on http://${HOST}:${PORT}/demo/index.html (LAN-reachable when HOST is 0.0.0.0)`));
