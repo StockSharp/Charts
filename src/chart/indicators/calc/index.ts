@@ -8,6 +8,10 @@
 // a new indicator: import its calc fn, list it in `IMPLEMENTATIONS` once with
 // every name the catalogue might hand back (kind + alias, both case-folded).
 
+// Generated indicator catalog (the picker's metadata). Regenerate, don't hand-edit entries; the
+// C# parity test validates it against the StockSharp catalog snapshot.
+import CATALOG from '../catalog.json';
+
 import { calcSMA } from './sma.js';
 import { calcEMA } from './ema.js';
 import { calcRSI } from './rsi.js';
@@ -362,6 +366,37 @@ for (const impl of IMPLEMENTATIONS) {
 export function getCalcFn(kind: string) {
     if (typeof kind !== 'string') return undefined;
     return registry[kind.toLowerCase()];
+}
+
+// English label of a param/output/indicator, derived from its camelCase key. This IS the i18n
+// key: T.t(humanize(key)) resolves it against the injected dictionary, falling back to English.
+// So no separate `label` is stored — the key is the single source for identifier AND display.
+export function humanize(key: string): string {
+    return String(key)
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+        .replace(/^./, (c) => c.toUpperCase());
+}
+
+
+// The indicator picker's single source of truth is the JSON catalog (../catalog.json): one
+// self-describing entry per client-computable indicator. `serverKind`/`id` is the canonical kind,
+// which resolves back to the calc fn through the registry; params carry the calc's own keys
+// (labels are derived via humanize()+T.t at render time). Edit the JSON, not code, to tune meta;
+// the C# parity test (tests/parity.test.js) checks it against the StockSharp catalog snapshot.
+export function getClientCatalog(): any[] {
+    return (CATALOG as any[]).map((e) => ({
+        id: e.kind,
+        serverKind: e.kind,   // resolves to the calc fn via the registry (kind is an alias)
+        name: e.name,
+        fullName: e.name,
+        group: e.group,
+        pane: e.pane,
+        params: e.params,
+        outputs: e.outputs,
+        scaleRange: e.scaleRange,
+        levels: e.levels,
+    }));
 }
 
 export function apply(kind: string, candles: any, params: any) {

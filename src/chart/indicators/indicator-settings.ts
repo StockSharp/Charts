@@ -1,4 +1,6 @@
 // Indicator Settings — config for each indicator (params, pane type, colors, group)
+import { getClientCatalog } from './calc/index.js';
+
 export const IndicatorSettings = (function () {
 
     // Dark palette from desktop IndicatorColorProvider
@@ -32,185 +34,19 @@ export const IndicatorSettings = (function () {
         _colorIndex = 0;
     }
 
-    // Indicator definitions
-    const INDICATORS = {
-        SMA: {
-            name: 'SMA',
-            fullName: 'Simple Moving Average',
-            group: 'Trend',
-            pane: 'overlay',
-            params: [{ key: 'period', label: 'Period', type: 'number', default: 20, min: 2, max: 500 }],
-            outputs: ['line'],
-        },
-        EMA: {
-            name: 'EMA',
-            fullName: 'Exponential Moving Average',
-            group: 'Trend',
-            pane: 'overlay',
-            params: [{ key: 'period', label: 'Period', type: 'number', default: 20, min: 2, max: 500 }],
-            outputs: ['line'],
-        },
-        BollingerBands: {
-            name: 'Bollinger Bands',
-            fullName: 'Bollinger Bands',
-            group: 'Volatility',
-            pane: 'overlay',
-            params: [
-                { key: 'period', label: 'Period', type: 'number', default: 20, min: 2, max: 500 },
-                { key: 'stdDev', label: 'Std Dev', type: 'number', default: 2, min: 0.1, max: 5, step: 0.1 },
-            ],
-            outputs: ['band'],
-        },
-        Envelope: {
-            name: 'Envelope',
-            fullName: 'Moving Average Envelope',
-            group: 'Volatility',
-            pane: 'overlay',
-            params: [
-                { key: 'period', label: 'Period', type: 'number', default: 20, min: 2, max: 500 },
-                { key: 'percent', label: 'Percent', type: 'number', default: 2.5, min: 0.1, max: 20, step: 0.1 },
-            ],
-            outputs: ['band'],
-        },
-        MACD: {
-            name: 'MACD',
-            fullName: 'Moving Average Convergence/Divergence',
-            group: 'Momentum',
-            pane: 'separate',
-            params: [
-                { key: 'fast', label: 'Fast', type: 'number', default: 12, min: 2, max: 100 },
-                { key: 'slow', label: 'Slow', type: 'number', default: 26, min: 2, max: 200 },
-                { key: 'signal', label: 'Signal', type: 'number', default: 9, min: 2, max: 50 },
-            ],
-            outputs: ['macd-hist'],
-        },
-        RSI: {
-            name: 'RSI',
-            fullName: 'Relative Strength Index',
-            group: 'Momentum',
-            pane: 'separate',
-            params: [{ key: 'period', label: 'Period', type: 'number', default: 14, min: 2, max: 100 }],
-            outputs: ['oscillator'],
-            scaleRange: { min: 0, max: 100 },
-            levels: [30, 70],
-        },
-        Stochastic: {
-            name: 'Stochastic',
-            fullName: 'Stochastic Oscillator',
-            group: 'Momentum',
-            pane: 'separate',
-            params: [
-                { key: 'kPeriod', label: '%K Period', type: 'number', default: 14, min: 2, max: 100 },
-                { key: 'dPeriod', label: '%D Period', type: 'number', default: 3, min: 1, max: 50 },
-                { key: 'smooth', label: 'Smooth', type: 'number', default: 3, min: 1, max: 50 },
-            ],
-            outputs: ['dual-line'],
-            scaleRange: { min: 0, max: 100 },
-            levels: [20, 80],
-        },
-        ADX: {
-            name: 'ADX',
-            fullName: 'Average Directional Index',
-            group: 'Trend',
-            pane: 'separate',
-            params: [{ key: 'period', label: 'Period', type: 'number', default: 14, min: 2, max: 100 }],
-            outputs: ['triple-line'],
-        },
-        Alligator: {
-            name: 'Alligator',
-            fullName: 'Williams Alligator',
-            group: 'Trend',
-            pane: 'overlay',
-            params: [
-                { key: 'jaw', label: 'Jaw', type: 'number', default: 13, min: 2, max: 100 },
-                { key: 'teeth', label: 'Teeth', type: 'number', default: 8, min: 2, max: 100 },
-                { key: 'lips', label: 'Lips', type: 'number', default: 5, min: 2, max: 100 },
-            ],
-            outputs: ['triple-line'],
-        },
-        Ichimoku: {
-            name: 'Ichimoku',
-            fullName: 'Ichimoku Cloud',
-            group: 'Trend',
-            pane: 'overlay',
-            params: [
-                { key: 'tenkan', label: 'Tenkan', type: 'number', default: 9, min: 2, max: 100 },
-                { key: 'kijun', label: 'Kijun', type: 'number', default: 26, min: 2, max: 100 },
-                { key: 'senkouB', label: 'Senkou B', type: 'number', default: 52, min: 2, max: 200 },
-            ],
-            outputs: ['ichimoku'],
-        },
-        ParabolicSAR: {
-            name: 'Parabolic SAR',
-            fullName: 'Parabolic Stop and Reverse',
-            group: 'Trend',
-            pane: 'overlay',
-            params: [
-                { key: 'step', label: 'Step', type: 'number', default: 0.02, min: 0.001, max: 0.5, step: 0.001 },
-                { key: 'max', label: 'Max', type: 'number', default: 0.2, min: 0.01, max: 1, step: 0.01 },
-            ],
-            outputs: ['dots'],
-        },
-        ZigZag: {
-            name: 'ZigZag',
-            fullName: 'ZigZag',
-            group: 'Volatility',
-            pane: 'overlay',
-            params: [{ key: 'deviation', label: 'Deviation %', type: 'number', default: 5, min: 0.1, max: 50, step: 0.1 }],
-            outputs: ['zigzag'],
-        },
-        Fractals: {
-            name: 'Fractals',
-            fullName: 'Williams Fractals',
-            group: 'Volatility',
-            pane: 'overlay',
-            params: [{ key: 'period', label: 'Period', type: 'number', default: 2, min: 1, max: 10 }],
-            outputs: ['fractals'],
-        },
-        RVI: {
-            name: 'RVI',
-            fullName: 'Relative Vigor Index',
-            group: 'Momentum',
-            pane: 'separate',
-            params: [{ key: 'period', label: 'Period', type: 'number', default: 10, min: 2, max: 100 }],
-            outputs: ['dual-line'],
-        },
-        PPO: {
-            name: 'PPO',
-            fullName: 'Percentage Price Oscillator',
-            group: 'Momentum',
-            pane: 'separate',
-            params: [
-                { key: 'fast', label: 'Fast', type: 'number', default: 12, min: 2, max: 100 },
-                { key: 'slow', label: 'Slow', type: 'number', default: 26, min: 2, max: 200 },
-                { key: 'signal', label: 'Signal', type: 'number', default: 9, min: 2, max: 50 },
-            ],
-            outputs: ['macd-hist'],
-        },
-        GatorOscillator: {
-            name: 'Gator Oscillator',
-            fullName: 'Gator Oscillator',
-            group: 'Momentum',
-            pane: 'separate',
-            params: [
-                { key: 'jaw', label: 'Jaw', type: 'number', default: 13, min: 2, max: 100 },
-                { key: 'teeth', label: 'Teeth', type: 'number', default: 8, min: 2, max: 100 },
-                { key: 'lips', label: 'Lips', type: 'number', default: 5, min: 2, max: 100 },
-            ],
-            outputs: ['dual-hist'],
-        },
-        Volume: {
-            name: 'Volume',
-            fullName: 'Volume',
-            group: 'Volume',
-            pane: 'separate',
-            params: [],
-            outputs: ['histogram'],
-        },
-    };
+    // Indicator definitions come from the client calc registry (calc/index.ts) — the single source
+    // of truth: one self-describing entry per client-computable indicator, no server catalog needed.
+    // Keyed by the catalog id; the picker, the param editor and the engine all read from here.
+    const INDICATORS: Record<string, any> = {};
+    for (const e of getClientCatalog()) INDICATORS[e.id] = e;
 
-    // Groups for dialog
+    // Groups for the dialog tabs, in a stable order, plus any extra group the catalog introduces
+    // (e.g. 'Other' for auto-derived entries) appended after the curated ones.
     const GROUPS = ['Trend', 'Momentum', 'Volatility', 'Volume'];
+    for (const id of Object.keys(INDICATORS)) {
+        const g = INDICATORS[id].group;
+        if (g && !GROUPS.includes(g)) GROUPS.push(g);
+    }
 
     function getIndicator(id) {
         return INDICATORS[id] || null;

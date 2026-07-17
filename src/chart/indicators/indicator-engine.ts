@@ -157,15 +157,13 @@ export class IndicatorEngine {
     // omitted, placement is automatic (overlay on the main chart, or a measure-
     // resolved sub-pane). Absent = auto is a legitimate default, so this stays
     // optional rather than threaded through every existing call site.
-    add(type, params, targetPaneId) {
+    add(type, params, targetPaneId?) {
         const settings = IndicatorSettings.getIndicator(type);
         if (!settings) return null;
 
-        // Resolve the calc-registry key. CLIENT_KIND_TO_SERVER maps the
-        // UI-level type ('SMA') to the lowercase canonical kind ('sma')
-        // that calc/index.js registers. The catalog's serverKind (when
-        // available) is the same canonical form.
-        const calcKind = (settings.serverKind || CLIENT_KIND_TO_SERVER[type] || type).toLowerCase();
+        // Resolve the calc-registry key from the catalog entry's serverKind (the canonical kind,
+        // which the registry indexes by), falling back to the id itself.
+        const calcKind = (settings.serverKind || type).toLowerCase();
         const calcFn = getCalcFn(calcKind);
         if (!calcFn) {
             console.warn('[Indicators] no client-side calc for', type, '(kind=' + calcKind + ') — skipping');
@@ -178,6 +176,9 @@ export class IndicatorEngine {
             id, type, calcKind, calcFn,
             params: mergedParams,
             seriesRefs: [], paneId: null, colors: [], outputNames: [],
+            // Per-indicator price scale inside a sub-pane; 'right' (the visible axis) by default,
+            // reassigned below for the 2nd+ indicator in a pane. Declared here so the type carries it.
+            paneScaleId: 'right',
         };
 
         // Explicit user placement from the picker's pane selector (or a sub-pane's
@@ -220,7 +221,9 @@ export class IndicatorEngine {
         if (!this._candles.length) return;
         let data;
         try {
-            data = entry.calcFn(this._candles, this._mapParamsToServer(entry.type, entry.params));
+            // Params already use the calc fn's own keys (from the registry meta), so feed them
+            // straight in — no UI->calc rename (that indirection silently dropped several params).
+            data = entry.calcFn(this._candles, entry.params);
         } catch (err) {
             console.error('[Indicators] calc failed for', entry.type, err);
             return;
@@ -522,16 +525,6 @@ export class IndicatorEngine {
         return merged;
     }
 
-    _mapParamsToServer(clientType, clientParams) {
-        const map = (CLIENT_PARAMS_TO_SERVER as Record<string, any>)[clientType];
-        if (!map) return clientParams;
-        const out: Record<string, any> = {};
-        for (const [ck, sk] of Object.entries(map)) {
-            if (clientParams[ck] !== undefined) out[sk as string] = clientParams[ck];
-        }
-        return out;
-    }
-
     _timeframeToEnum(tf) {
         // Server's CandleTimeframe enum uses minute counts as numeric values,
         // matching the numeric timeframe the client already tracks.
@@ -565,37 +558,3 @@ export class IndicatorEngine {
 
 }
 
-const CLIENT_KIND_TO_SERVER = {
-    'SMA': 'sma',
-    'EMA': 'ema',
-    'BollingerBands': 'bb',
-    'Envelope': 'envelope',
-    'MACD': 'macd',
-    'RSI': 'rsi',
-    'Stochastic': 'stochastic',
-    'ADX': 'adx',
-    'Alligator': 'alligator',
-    'Ichimoku': 'ichimoku',
-    'ParabolicSAR': 'psar',
-    'RVI': 'rvi',
-    'PPO': 'ppo',
-    'GatorOscillator': 'gator',
-    'Volume': 'volume',
-    'ZigZag': 'zigzag',
-    'Fractals': 'fractals',
-};
-
-const CLIENT_PARAMS_TO_SERVER = {
-    'SMA': { period: 'length' },
-    'EMA': { period: 'length' },
-    'RSI': { period: 'length' },
-    'ADX': { period: 'length' },
-    'BollingerBands': { period: 'length', stdDev: 'width' },
-    'Envelope': { period: 'length', percent: 'shift' },
-    'MACD': { fast: 'short', slow: 'long', signal: 'signal' },
-    'Stochastic': { kPeriod: 'k', dPeriod: 'd' },
-    'ParabolicSAR': { step: 'step', max: 'max' },
-    'ZigZag': { deviation: 'deviation' },
-    'Fractals': { period: 'length' },
-    // Alligator/Ichimoku/RVI/PPO/Gator/Volume rely on server defaults.
-};

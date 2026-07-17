@@ -4,6 +4,7 @@ import { T } from './i18n.js';
 declare const bootstrap: any;
 import { TerminalUtils } from './utils.js';
 import { IndicatorSettings } from './indicators/indicator-settings.js';
+import { humanize } from './indicators/calc/index.js';
 
 export class IndicatorDialog {
     _modalEl: HTMLElement | null;
@@ -183,7 +184,7 @@ export class IndicatorDialog {
                 const step = p.step || 1;
                 const value = currentParams ? (currentParams[p.key] ?? p.default) : p.default;
                 html += `<div class="indicator-param-row">
-                    <label class="indicator-param-label">${T.t(p.label)}</label>
+                    <label class="indicator-param-label">${T.t(p.label || humanize(p.key))}</label>
                     <input type="number" class="form-control form-control-sm indicator-param-input"
                            data-key="${p.key}" value="${value}" min="${p.min}" max="${p.max}" step="${step}" />
                 </div>`;

@@ -1,0 +1,3171 @@
+[
+ {
+  "kind": "SimpleMovingAverage",
+  "name": "SMA",
+  "group": "Trend",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 20,
+    "min": 2,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "ExponentialMovingAverage",
+  "name": "EMA",
+  "group": "Trend",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 20,
+    "min": 2,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "RelativeStrengthIndex",
+  "name": "RSI",
+  "group": "Momentum",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 2,
+    "max": 100
+   }
+  ],
+  "outputs": [
+   "oscillator"
+  ],
+  "scaleRange": {
+   "min": 0,
+   "max": 100
+  },
+  "levels": [
+   30,
+   70
+  ]
+ },
+ {
+  "kind": "BollingerBands",
+  "name": "Bollinger Bands",
+  "group": "Volatility",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 20,
+    "min": 2,
+    "max": 500
+   },
+   {
+    "key": "stdDev",
+    "default": 2,
+    "min": 0.1,
+    "max": 5,
+    "step": 0.1
+   }
+  ],
+  "outputs": [
+   "band"
+  ]
+ },
+ {
+  "kind": "MovingAverageConvergenceDivergence",
+  "name": "MACD",
+  "group": "Momentum",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "fastLength",
+    "default": 12,
+    "min": 2,
+    "max": 200
+   },
+   {
+    "key": "slowLength",
+    "default": 26,
+    "min": 2,
+    "max": 400
+   },
+   {
+    "key": "signalLength",
+    "default": 9,
+    "min": 1,
+    "max": 100
+   }
+  ],
+  "outputs": [
+   "macd-hist"
+  ]
+ },
+ {
+  "kind": "StochasticOscillator",
+  "name": "Stochastic",
+  "group": "Momentum",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "kPeriod",
+    "default": 14,
+    "min": 1,
+    "max": 200
+   },
+   {
+    "key": "dPeriod",
+    "default": 3,
+    "min": 1,
+    "max": 100
+   },
+   {
+    "key": "smooth",
+    "default": 3,
+    "min": 1,
+    "max": 100
+   }
+  ],
+  "outputs": [
+   "dual-line"
+  ],
+  "scaleRange": {
+   "min": 0,
+   "max": 100
+  },
+  "levels": [
+   20,
+   80
+  ]
+ },
+ {
+  "kind": "AverageDirectionalIndex",
+  "name": "ADX",
+  "group": "Trend",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 2,
+    "max": 100
+   }
+  ],
+  "outputs": [
+   "triple-line"
+  ]
+ },
+ {
+  "kind": "AverageTrueRange",
+  "name": "Average True Range",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "WeightedMovingAverage",
+  "name": "Weighted Moving Average",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 20,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "VolumeIndicator",
+  "name": "Volume",
+  "group": "Volume",
+  "pane": "separate",
+  "params": [],
+  "outputs": [
+   "histogram"
+  ]
+ },
+ {
+  "kind": "WilliamsR",
+  "name": "Williams R",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "CommodityChannelIndex",
+  "name": "Commodity Channel Index",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 20,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "Envelope",
+  "name": "Envelope",
+  "group": "Volatility",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 20,
+    "min": 2,
+    "max": 500
+   },
+   {
+    "key": "percent",
+    "default": 2.5,
+    "min": 0.1,
+    "max": 20,
+    "step": 0.1
+   }
+  ],
+  "outputs": [
+   "band"
+  ]
+ },
+ {
+  "kind": "Alligator",
+  "name": "Alligator",
+  "group": "Trend",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "jawLength",
+    "default": 13,
+    "min": 1,
+    "max": 200
+   },
+   {
+    "key": "jawShift",
+    "default": 8,
+    "min": 0,
+    "max": 100
+   },
+   {
+    "key": "teethLength",
+    "default": 8,
+    "min": 1,
+    "max": 200
+   },
+   {
+    "key": "teethShift",
+    "default": 5,
+    "min": 0,
+    "max": 100
+   },
+   {
+    "key": "lipsLength",
+    "default": 5,
+    "min": 1,
+    "max": 200
+   },
+   {
+    "key": "lipsShift",
+    "default": 3,
+    "min": 0,
+    "max": 100
+   }
+  ],
+  "outputs": [
+   "triple-line"
+  ]
+ },
+ {
+  "kind": "ParabolicSar",
+  "name": "Parabolic SAR",
+  "group": "Trend",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "acceleration",
+    "default": 0.02,
+    "min": 0.001,
+    "max": 0.5,
+    "step": 0.001
+   },
+   {
+    "key": "accelerationStep",
+    "default": 0.02,
+    "min": 0.001,
+    "max": 0.5,
+    "step": 0.001
+   },
+   {
+    "key": "accelerationMax",
+    "default": 0.2,
+    "min": 0.01,
+    "max": 1,
+    "step": 0.01
+   }
+  ],
+  "outputs": [
+   "dots"
+  ]
+ },
+ {
+  "kind": "Ichimoku",
+  "name": "Ichimoku",
+  "group": "Trend",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "tenkan",
+    "default": 9,
+    "min": 1,
+    "max": 200
+   },
+   {
+    "key": "kijun",
+    "default": 26,
+    "min": 1,
+    "max": 400
+   },
+   {
+    "key": "senkouB",
+    "default": 52,
+    "min": 1,
+    "max": 400
+   }
+  ],
+  "outputs": [
+   "ichimoku"
+  ]
+ },
+ {
+  "kind": "AwesomeOscillator",
+  "name": "Awesome Oscillator",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "shortLength",
+    "default": 5,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "longLength",
+    "default": 34,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "Aroon",
+  "name": "Aroon",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "AroonOscillator",
+  "name": "Aroon Oscillator",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "AccumulationDistributionLine",
+  "name": "Accumulation Distribution Line",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "BalanceOfPower",
+  "name": "Balance Of Power",
+  "group": "Other",
+  "pane": "separate",
+  "params": [],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "DoubleExponentialMovingAverage",
+  "name": "Double Exponential Moving Average",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 32,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "TripleExponentialMovingAverage",
+  "name": "Triple Exponential Moving Average",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 32,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "HullMovingAverage",
+  "name": "Hull Moving Average",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 10,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "SmoothedMovingAverage",
+  "name": "Smoothed Moving Average",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 32,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "KaufmanAdaptiveMovingAverage",
+  "name": "Kaufman Adaptive Moving Average",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 10,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "fastSc",
+    "default": 2,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "slowSc",
+    "default": 30,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "ZigZag",
+  "name": "ZigZag",
+  "group": "Volatility",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "deviation",
+    "default": 5,
+    "min": 0.1,
+    "max": 50,
+    "step": 0.1
+   }
+  ],
+  "outputs": [
+   "zigzag"
+  ]
+ },
+ {
+  "kind": "Fractals",
+  "name": "Fractals",
+  "group": "Volatility",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 2,
+    "min": 1,
+    "max": 20
+   }
+  ],
+  "outputs": [
+   "fractals"
+  ]
+ },
+ {
+  "kind": "Trix",
+  "name": "Trix",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "Acceleration",
+  "name": "Acceleration",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "shortLength",
+    "default": 5,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "longLength",
+    "default": 34,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "smaLength",
+    "default": 5,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "ArnaudLegouxMovingAverage",
+  "name": "Arnaud Legoux Moving Average",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 9,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "offset",
+    "default": 0.85,
+    "min": 0.001,
+    "max": 1,
+    "step": 0.001
+   },
+   {
+    "key": "sigma",
+    "default": 6,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "BalanceVolume",
+  "name": "Balance Volume",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "BearPower",
+  "name": "Bear Power",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 13,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "BullPower",
+  "name": "Bull Power",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 13,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "ChaikinMoneyFlow",
+  "name": "Chaikin Money Flow",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 20,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "ChaikinVolatility",
+  "name": "Chaikin Volatility",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "emaLength",
+    "default": 10,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "rocLength",
+    "default": 10,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "CenterOfGravityOscillator",
+  "name": "Center Of Gravity Oscillator",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 10,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "ChaikinOscillator",
+  "name": "Chaikin Oscillator",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "fast",
+    "default": 3,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "slow",
+    "default": 10,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "ChandeMomentumOscillator",
+  "name": "Chande Momentum Oscillator",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 15,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "ConnorsRSI",
+  "name": "Connors RSI",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "rsiLength",
+    "default": 3,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "streakLength",
+    "default": 2,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "rocLength",
+    "default": 100,
+    "min": 1,
+    "max": 1000
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "DetrendedPriceOscillator",
+  "name": "Detrended Price Oscillator",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 3,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "DirectionalIndex",
+  "name": "Directional Index",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "EaseOfMovement",
+  "name": "Ease Of Movement",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "EhlersFisherTransform",
+  "name": "Ehlers Fisher Transform",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 10,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "FastStochastic",
+  "name": "Fast Stochastic",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "kPeriod",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "dPeriod",
+    "default": 3,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "ApprovalFlowIndex",
+  "name": "Approval Flow Index",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "AdaptiveLaguerreFilter",
+  "name": "Adaptive Laguerre Filter",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "gamma",
+    "default": 0.8,
+    "min": 0.001,
+    "max": 1,
+    "step": 0.001
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "AdaptivePriceZone",
+  "name": "Adaptive Price Zone",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "period",
+    "default": 5,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "bandPercentage",
+    "default": 2,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "BollingerPercentB",
+  "name": "Bollinger Percent B",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 20,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "stdDevMultiplier",
+    "default": 2,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "BalanceOfMarketPower",
+  "name": "Balance Of Market Power",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "ChoppinessIndex",
+  "name": "Choppiness Index",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "ChandeKrollStop",
+  "name": "Chande Kroll Stop",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "period",
+    "default": 10,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "multiplier",
+    "default": 1.5,
+    "min": 0.001,
+    "max": 30,
+    "step": 0.001
+   },
+   {
+    "key": "stopPeriod",
+    "default": 9,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "ConstanceBrownCompositeIndex",
+  "name": "Constance Brown Composite Index",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "rsiLength",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "rocLength",
+    "default": 9,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "shortRsiLength",
+    "default": 3,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "momentumLength",
+    "default": 3,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "fastSmaLength",
+    "default": 13,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "slowSmaLength",
+    "default": 33,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "CompositeMomentum",
+  "name": "Composite Momentum",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "shortRocLength",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "longRocLength",
+    "default": 28,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "rsiLength",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "fastLength",
+    "default": 12,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "slowLength",
+    "default": 26,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "smaLength",
+    "default": 9,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "DonchianChannels",
+  "name": "Donchian Channels",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 20,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "DeMarker",
+  "name": "De Marker",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "DemandIndex",
+  "name": "Demand Index",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "DisparityIndex",
+  "name": "Disparity Index",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "DetrendedSyntheticPrice",
+  "name": "Detrended Synthetic Price",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "DynamicZonesRSI",
+  "name": "Dynamic Zones RSI",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "oversoldLevel",
+    "default": 20,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "overboughtLevel",
+    "default": 80,
+    "min": 1,
+    "max": 800
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "ElderImpulseSystem",
+  "name": "Elder Impulse System",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "emaLength",
+    "default": 13,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "fastLength",
+    "default": 12,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "slowLength",
+    "default": 26,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "ElderRay",
+  "name": "Elder Ray",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 13,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "ForceIndex",
+  "name": "Force Index",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 13,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "EndpointMovingAverage",
+  "name": "Endpoint Moving Average",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 10,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "ElliotWaveOscillator",
+  "name": "Elliot Wave Oscillator",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "shortPeriod",
+    "default": 5,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "longPeriod",
+    "default": 34,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "ForecastOscillator",
+  "name": "Forecast Oscillator",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "FibonacciRetracement",
+  "name": "Fibonacci Retracement",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 20,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "FractalDimension",
+  "name": "Fractal Dimension",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 30,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "GatorOscillator",
+  "name": "Gator Oscillator",
+  "group": "Momentum",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "jawLength",
+    "default": 13,
+    "min": 1,
+    "max": 200
+   },
+   {
+    "key": "jawShift",
+    "default": 8,
+    "min": 0,
+    "max": 100
+   },
+   {
+    "key": "teethLength",
+    "default": 8,
+    "min": 1,
+    "max": 200
+   },
+   {
+    "key": "teethShift",
+    "default": 5,
+    "min": 0,
+    "max": 100
+   },
+   {
+    "key": "lipsLength",
+    "default": 5,
+    "min": 1,
+    "max": 200
+   },
+   {
+    "key": "lipsShift",
+    "default": 3,
+    "min": 0,
+    "max": 100
+   }
+  ],
+  "outputs": [
+   "dual-hist"
+  ]
+ },
+ {
+  "kind": "FractalAdaptiveMovingAverage",
+  "name": "Fractal Adaptive Moving Average",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 20,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "FiniteVolumeElement",
+  "name": "Finite Volume Element",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 22,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "GopalakrishnanRangeIndex",
+  "name": "Gopalakrishnan Range Index",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "GuppyMultipleMovingAverage",
+  "name": "Guppy Multiple Moving Average",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "Highest",
+  "name": "Highest",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 5,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "HighLowIndex",
+  "name": "High Low Index",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "HarmonicOscillator",
+  "name": "Harmonic Oscillator",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "HurstExponent",
+  "name": "Hurst Exponent",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 100,
+    "min": 1,
+    "max": 1000
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "HistoricalVolatilityRatio",
+  "name": "Historical Volatility Ratio",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "shortPeriod",
+    "default": 5,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "longPeriod",
+    "default": 20,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "IntradayIntensityIndex",
+  "name": "Intraday Intensity Index",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "IntradayMomentumIndex",
+  "name": "Intraday Momentum Index",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "JurikMovingAverage",
+  "name": "Jurik Moving Average",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 20,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "phase",
+    "default": 0,
+    "min": 0,
+    "max": 100
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "KalmanFilter",
+  "name": "Kalman Filter",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "processNoise",
+    "default": 1,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "measurementNoise",
+    "default": 1,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "KeltnerChannels",
+  "name": "Keltner Channels",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 20,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "multiplier",
+    "default": 2,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "KaufmanEfficiencyRatio",
+  "name": "Kaufman Efficiency Ratio",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 10,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "KasePeakOscillator",
+  "name": "Kase Peak Oscillator",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "atrLength",
+    "default": 10,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "KnowSureThing",
+  "name": "Know Sure Thing",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "roc1Length",
+    "default": 10,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "roc2Length",
+    "default": 15,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "roc3Length",
+    "default": 20,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "roc4Length",
+    "default": 30,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "sma1Length",
+    "default": 10,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "sma2Length",
+    "default": 10,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "sma3Length",
+    "default": 10,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "sma4Length",
+    "default": 15,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "signalLength",
+    "default": 9,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "KlingerVolumeOscillator",
+  "name": "Klinger Volume Oscillator",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "shortPeriod",
+    "default": 34,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "longPeriod",
+    "default": 55,
+    "min": 1,
+    "max": 550
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "LinearRegressionForecast",
+  "name": "Linear Regression Forecast",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "Lowest",
+  "name": "Lowest",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 5,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "LunarPhase",
+  "name": "Lunar Phase",
+  "group": "Other",
+  "pane": "separate",
+  "params": [],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "LinearReg",
+  "name": "Linear Reg",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 11,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "LinearRegSlope",
+  "name": "Linear Reg Slope",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 11,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "LaguerreRSI",
+  "name": "Laguerre RSI",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "gamma",
+    "default": 0.7,
+    "min": 0.001,
+    "max": 1,
+    "step": 0.001
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "MovingAverageCrossover",
+  "name": "Moving Average Crossover",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "shortPeriod",
+    "default": 25,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "longPeriod",
+    "default": 50,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "MovingAverageConvergenceDivergenceSignal",
+  "name": "Moving Average Convergence Divergence Signal",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "longLength",
+    "default": 26,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "shortLength",
+    "default": 12,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "signalLength",
+    "default": 9,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "MovingAverageRibbon",
+  "name": "Moving Average Ribbon",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "shortPeriod",
+    "default": 10,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "longPeriod",
+    "default": 100,
+    "min": 1,
+    "max": 1000
+   },
+   {
+    "key": "ribbonCount",
+    "default": 10,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "McClellanOscillator",
+  "name": "Mc Clellan Oscillator",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "shortLength",
+    "default": 19,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "longLength",
+    "default": 39,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "MeanDeviation",
+  "name": "Mean Deviation",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 5,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "Median",
+  "name": "Median",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 5,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "MedianPrice",
+  "name": "Median Price",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "MarketFacilitationIndex",
+  "name": "Market Facilitation Index",
+  "group": "Other",
+  "pane": "separate",
+  "params": [],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "McGinleyDynamic",
+  "name": "Mc Ginley Dynamic",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "MassIndex",
+  "name": "Mass Index",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 25,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "emaLength",
+    "default": 9,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "MarketMeannessIndex",
+  "name": "Market Meanness Index",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 200,
+    "min": 1,
+    "max": 2000
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "MoneyFlowIndex",
+  "name": "Money Flow Index",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "MomentumOfMovingAverage",
+  "name": "Momentum Of Moving Average",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "Momentum",
+  "name": "Momentum",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 5,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "MomentumPinball",
+  "name": "Momentum Pinball",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "NickRypockTrailingReverse",
+  "name": "Nick Rypock Trailing Reverse",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 50,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "multiple",
+    "default": 100,
+    "min": 1,
+    "max": 1000
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "NegativeVolumeIndex",
+  "name": "Negative Volume Index",
+  "group": "Other",
+  "pane": "separate",
+  "params": [],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "OnBalanceVolume",
+  "name": "On Balance Volume",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "OnBalanceVolumeMean",
+  "name": "On Balance Volume Mean",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "OscillatorOfMovingAverage",
+  "name": "Oscillator Of Moving Average",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "shortPeriod",
+    "default": 10,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "longPeriod",
+    "default": 30,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "OptimalTracking",
+  "name": "Optimal Tracking",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "Peak",
+  "name": "Peak",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "deviation",
+    "default": 0.001,
+    "min": 0.001,
+    "max": 1,
+    "step": 0.001
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "PrettyGoodOscillator",
+  "name": "Pretty Good Oscillator",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "PivotPoints",
+  "name": "Pivot Points",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "PassThroughIndicator",
+  "name": "Pass Through Indicator",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "RateOfChange",
+  "name": "Rate Of Change",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 12,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "RelativeMomentumIndex",
+  "name": "Relative Momentum Index",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "momentumPeriod",
+    "default": 5,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "RelativeVigorIndex",
+  "name": "RVI",
+  "group": "Momentum",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 10,
+    "min": 2,
+    "max": 200
+   },
+   {
+    "key": "signalLength",
+    "default": 4,
+    "min": 1,
+    "max": 100
+   }
+  ],
+  "outputs": [
+   "dual-line"
+  ]
+ },
+ {
+  "kind": "RangeActionVerificationIndex",
+  "name": "Range Action Verification Index",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "shortLength",
+    "default": 7,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "longLength",
+    "default": 65,
+    "min": 1,
+    "max": 650
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "RankCorrelationIndex",
+  "name": "Rank Correlation Index",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "RainbowCharts",
+  "name": "Rainbow Charts",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "lines",
+    "default": 10,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "SuperTrend",
+  "name": "Super Trend",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 10,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "multiplier",
+    "default": 3,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "Sum",
+  "name": "Sum",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 15,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "StandardDeviation",
+  "name": "Standard Deviation",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 10,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "StandardError",
+  "name": "Standard Error",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 10,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "Shift",
+  "name": "Shift",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 1,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "SineWave",
+  "name": "Sine Wave",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "SchaffTrendCycle",
+  "name": "Schaff Trend Cycle",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 10,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "shortLength",
+    "default": 23,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "longLength",
+    "default": 50,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "cycleLength",
+    "default": 5,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "signalLength",
+    "default": 3,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "StochasticK",
+  "name": "Stochastic K",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "T3MovingAverage",
+  "name": "T3 Moving Average",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 5,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "volumeFactor",
+    "default": 0.7,
+    "min": 0.001,
+    "max": 1,
+    "step": 0.001
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "LinearRegRSquared",
+  "name": "Linear Reg R Squared",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 10,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "PercentagePriceOscillator",
+  "name": "PPO",
+  "group": "Momentum",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "shortLength",
+    "default": 12,
+    "min": 2,
+    "max": 200
+   },
+   {
+    "key": "longLength",
+    "default": 26,
+    "min": 2,
+    "max": 400
+   },
+   {
+    "key": "signalLength",
+    "default": 9,
+    "min": 1,
+    "max": 100
+   }
+  ],
+  "outputs": [
+   "macd-hist"
+  ]
+ },
+ {
+  "kind": "PercentageVolumeOscillator",
+  "name": "Percentage Volume Oscillator",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "shortPeriod",
+    "default": 12,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "longPeriod",
+    "default": 26,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "PositiveVolumeIndex",
+  "name": "Positive Volume Index",
+  "group": "Other",
+  "pane": "separate",
+  "params": [],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "PsychologicalLine",
+  "name": "Psychological Line",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 12,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "PriceChannels",
+  "name": "Price Channels",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 20,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "PriceVolumeTrend",
+  "name": "Price Volume Trend",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "QStick",
+  "name": "Q Stick",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 15,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "Trough",
+  "name": "Trough",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "deviation",
+    "default": 0.001,
+    "min": 0.001,
+    "max": 1,
+    "step": 0.001
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "TimeWeightedAveragePrice",
+  "name": "Time Weighted Average Price",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "TwiggsMoneyFlow",
+  "name": "Twiggs Money Flow",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 21,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "TrueRange",
+  "name": "True Range",
+  "group": "Other",
+  "pane": "separate",
+  "params": [],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "TrueStrengthIndex",
+  "name": "True Strength Index",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "firstLength",
+    "default": 25,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "secondLength",
+    "default": 13,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "signalLength",
+    "default": 7,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "TypicalPrice",
+  "name": "Typical Price",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "UltimateOscillator",
+  "name": "Ultimate Oscillator",
+  "group": "Other",
+  "pane": "separate",
+  "params": [],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "VerticalHorizontalFilter",
+  "name": "Vertical Horizontal Filter",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 15,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "VortexIndicator",
+  "name": "Vortex Indicator",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "Vidya",
+  "name": "Vidya",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 15,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "VariableMovingAverage",
+  "name": "Variable Moving Average",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 20,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "volatilityIndex",
+    "default": 0.2,
+    "min": 0.001,
+    "max": 1,
+    "step": 0.001
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "VolumeProfileIndicator",
+  "name": "Volume Profile Indicator",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "step",
+    "default": 1,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "VolumeWeightedAveragePrice",
+  "name": "Volume Weighted Average Price",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "VolumeWeightedMovingAverage",
+  "name": "Volume Weighted Moving Average",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 32,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "WaveTrendOscillator",
+  "name": "Wave Trend Oscillator",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "esaPeriod",
+    "default": 10,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "dPeriod",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "averagePeriod",
+    "default": 3,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "WeightedClosePrice",
+  "name": "Weighted Close Price",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "WilderMovingAverage",
+  "name": "Wilder Moving Average",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 32,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "WilliamsAccumulationDistribution",
+  "name": "Williams Accumulation Distribution",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "WilliamsVariableAccumulationDistribution",
+  "name": "Williams Variable Accumulation Distribution",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "WoodiesCCI",
+  "name": "Woodies CCI",
+  "group": "Other",
+  "pane": "separate",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "smaLength",
+    "default": 6,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ },
+ {
+  "kind": "ZeroLagExponentialMovingAverage",
+  "name": "Zero Lag Exponential Moving Average",
+  "group": "Other",
+  "pane": "overlay",
+  "params": [
+   {
+    "key": "length",
+    "default": 14,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "line"
+  ]
+ }
+]
