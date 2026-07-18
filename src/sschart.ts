@@ -328,10 +328,12 @@ class Series {
 // position used by the collision-avoidance pass in drawPriceLines.
 class PriceLine implements IPriceLine {
     private opts: PriceLineOptions;
-    // last drawn label y (eased toward the collision-resolved target),
-    // null until the first frame so the line snaps in place on creation
-    // instead of sliding in from y=0.
+    // last drawn label y = its line's y + labelOffset. The OFFSET (the collision-avoidance shift
+    // away from the line) is what eases, not the absolute y — so the label tracks its own line
+    // instantly when the line moves (zoom / scroll / drag) and only the spread animates.
     displayY: number | null = null;
+    // eased collision offset from the line; null until the first frame (then it snaps, no fly-in).
+    labelOffset: number | null = null;
     constructor(opts: PriceLineOptions, private readonly series: Series) {
         this.opts = { ...opts };
     }
@@ -388,12 +390,25 @@ export interface ChartClick {
     price: number | null;
     time: Time | null;
     point: { x: number; y: number };
+    button: number;   // 0 = left, 2 = right (a host can map buy/sell to the mouse button)
     ctrlKey: boolean;
     shiftKey: boolean;
     altKey: boolean;
     metaKey: boolean;
 }
 type ClickListener = (c: ChartClick) => void;
+// The order-place SIGNAL the chart emits when the user clicks in placement mode (its modifier held).
+// The chart does not form the order — the host maps this to its domain (side by button, qty, colour,
+// send to the venue) and draws the resulting order line via createPriceLine.
+export interface OrderPlace {
+    price: number;
+    button: number;   // 0 = left, 2 = right — a host can map buy/sell to it
+    ctrlKey: boolean;
+    shiftKey: boolean;
+    altKey: boolean;
+    metaKey: boolean;
+}
+type OrderPlaceListener = (e: OrderPlace) => void;
 // lwc-shaped logical range = fractional bar indices. {from:5.5, to:170.2}
 // means "bar 5 plus halfway through bar 6 … bar 170 plus 20%". Used by
 // the terminal to sync multiple panes on the BAR axis (independent of
@@ -494,8 +509,16 @@ class ChartImpl {
     // pointer-down origin, used to tell a click (place) from a drag (pan / line move)
     private downX = 0;
     private downY = 0;
+    private downButton = 0;   // 0 = left, 2 = right — reported on the click so hosts can map buy/sell
     // click subscribers — fired on a press-release that did not move and did not grab a line
     private clickListeners: ((c: ChartClick) => void)[] = [];
+    // order-placement mode: while its modifier is held over the plot the chart shows its own neutral
+    // preview price line tracking the cursor, and on the click it EMITS an order-place SIGNAL
+    // (subscribeOrderPlace) with the price + button — it does not form the order itself.
+    private placement: { modifier: string; color: string; title: string } | null = null;
+    private placementLine: IPriceLine | null = null;
+    private modifierHeld = false;
+    private orderPlaceListeners: ((e: OrderPlace) => void)[] = [];
 
     private readonly padL = 8;
     private padR = 64;        // right price axis
@@ -628,6 +651,57 @@ class ChartImpl {
     }
     subscribeClick(cb: ClickListener): void { this.clickListeners.push(cb); }
     unsubscribeClick(cb: ClickListener): void { this.clickListeners = this.clickListeners.filter((x) => x !== cb); }
+
+    // Enable order-placement mode: while `modifier` (ctrl/shift/alt) is held over the plot the chart
+    // shows a neutral preview price line (its own colour/title) tracking the cursor, and on the click
+    // it emits an OrderPlace signal (subscribeOrderPlace). The chart owns the mode and the preview;
+    // the host owns the order. Pass null to disable.
+    setOrderPlacement(opts: { modifier?: string; color?: string; title?: string } | null): void {
+        this.placement = opts ? { modifier: opts.modifier ?? 'ctrl', color: opts.color ?? '#ffb74d', title: opts.title ?? '⊕ ORDER' } : null;
+        if (!this.placement) this.clearPlacementPreview();
+        this.scheduleDraw();
+    }
+    // Catch the order-place signal (see OrderPlace). Fires on a click in placement mode; the host
+    // forms the order from it.
+    subscribeOrderPlace(cb: OrderPlaceListener): void { this.orderPlaceListeners.push(cb); }
+    unsubscribeOrderPlace(cb: OrderPlaceListener): void { this.orderPlaceListeners = this.orderPlaceListeners.filter((x) => x !== cb); }
+    private modifierMatches(e: { ctrlKey?: boolean; shiftKey?: boolean; altKey?: boolean }): boolean {
+        switch (this.placement?.modifier) {
+            case 'ctrl': return !!e.ctrlKey;
+            case 'shift': return !!e.shiftKey;
+            case 'alt': return !!e.altKey;
+            default: return false;
+        }
+    }
+    private mainSeries(): Series | null {
+        return this.series.find((s) => s.priceScaleId() === 'right') ?? this.series[0] ?? null;
+    }
+    private updatePlacementPreview(): void {
+        const ok = this.placement !== null && this.modifierHeld && this.lineDrag === null &&
+            this.mouseX !== null && this.mouseY !== null &&
+            !this.inTimeGutter(this.mouseY) && !this.inPriceGutter(this.mouseX);
+        const s = this.mainSeries();
+        if (!ok || s === null) { this.clearPlacementPreview(); return; }
+        const p = this.yToPrice(this.mouseY as number, s.priceScaleId());
+        if (p === null) { this.clearPlacementPreview(); return; }
+        const color = this.placement.color;
+        const title = `${this.placement.title} @ ${this.fmtPrice(p, s.opts.priceFormat)}`;
+        if (this.placementLine === null) {
+            try { s.priceScale().applyOptions({ autoScale: false }); } catch { /* */ }
+            this.placementLine = s.createPriceLine({ price: p, color, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, anchored: true, title });
+        } else {
+            this.placementLine.applyOptions({ price: p, color, title });
+        }
+        this.canvas.style.cursor = 'crosshair';
+    }
+    private clearPlacementPreview(): void {
+        if (this.placementLine === null) return;
+        const s = this.mainSeries();
+        try { s?.removePriceLine(this.placementLine); } catch { /* */ }
+        try { s?.priceScale().applyOptions({ autoScale: true }); } catch { /* */ }
+        this.placementLine = null;
+        if (this.canvas.style.cursor === 'crosshair') this.canvas.style.cursor = '';
+    }
     subscribeCrosshairMove(cb: CrosshairListener): void { this.crosshairListeners.push(cb); }
     unsubscribeCrosshairMove(cb: CrosshairListener): void {
         this.crosshairListeners = this.crosshairListeners.filter((x) => x !== cb);
@@ -1152,7 +1226,12 @@ class ChartImpl {
                 const o = pl.raw();
                 if (o.lineVisible === false) continue;
                 if (!Number.isFinite(o.price)) continue;
-                const yNat = this.valueToY(o.price, b);
+                // Pin the line to the SAME bounds the label is kept within (a half-label-height in
+                // from each edge). Otherwise, near an edge, the label stays fully visible while the
+                // line runs to the very edge — so the line ends up above/below its label. Clamping
+                // both identically keeps line and label together; the label text still shows the
+                // true price. In-range lines are unaffected.
+                const yNat = Math.max(this.plotT() + labelH / 2, Math.min(this.plotB() - labelH / 2, this.valueToY(o.price, b)));
                 items.push({ pl, s, o, yLine: yNat, yLabelNatural: yNat, b });
             }
         }
@@ -1189,19 +1268,22 @@ class ChartImpl {
             if (targets[i] > maxY) targets[i] = maxY;
         }
 
-        // Pass 3 — anchored labels SNAP to target (no lag on fast drag);
-        // everything else eases. First frame snaps for any line so a
-        // newly created order doesn't fly in from y=0.
+        // Pass 3 — ease the collision OFFSET (target minus the line's own y), not the absolute y.
+        // The label therefore follows its own line 1:1 when the line moves (zoom / axis stretch /
+        // scroll / drag) with no lag, and only the sideways spread that resolves overlaps animates.
+        // Anchored labels and the first frame snap outright.
         let stillMoving = false;
         for (let i = 0; i < items.length; i++) {
             const pl = items[i].pl;
-            if (pl.displayY === null || anchored[i]) {
-                pl.displayY = targets[i];
+            const targetOffset = targets[i] - items[i].yLine;
+            if (pl.labelOffset === null || anchored[i]) {
+                pl.labelOffset = targetOffset;
             } else {
-                const d = targets[i] - pl.displayY;
-                if (Math.abs(d) < 0.5) pl.displayY = targets[i];
-                else { pl.displayY += d * 0.28; stillMoving = true; }
+                const d = targetOffset - pl.labelOffset;
+                if (Math.abs(d) < 0.5) pl.labelOffset = targetOffset;
+                else { pl.labelOffset += d * 0.28; stillMoving = true; }
             }
+            pl.displayY = items[i].yLine + pl.labelOffset;
         }
 
         // Pass 4 — paint. Spec: line ends at the title pill
@@ -2132,8 +2214,12 @@ class ChartImpl {
         for (const s of this.series) {
             for (const pl of s.priceLines) {
                 if (pl.raw().draggable !== true) continue;
-                const y = this.priceToY(pl.raw().price, s.priceScaleId());
-                if (y === null) continue;
+                const raw = this.priceToY(pl.raw().price, s.priceScaleId());
+                if (raw === null) continue;
+                // Hit-test against the RENDERED y: a line whose price is off-view is pinned to the
+                // edge (plotT/plotB ± half a label height), so grab it where it's actually drawn —
+                // otherwise an order pinned at the top/bottom can't be picked up until you rescale.
+                const y = Math.max(this.plotT() + 9, Math.min(this.plotB() - 9, raw));
                 const d = Math.abs(y - my);
                 if (d <= bestDist) { bestDist = d; best = { series: s, line: pl }; }
             }
@@ -2147,7 +2233,11 @@ class ChartImpl {
             this.mouseX = e.clientX - r.left;
             this.mouseY = e.clientY - r.top;
             if (this.lineDrag) {                        // dragging a resting order line: it follows the cursor
-                const p = this.yToPrice(this.mouseY, this.lineDrag.series.priceScaleId());
+                // Clamp to the plot so the line can't be dragged past the visible price range (the
+                // pointer keeps sending events off-canvas via capture; without this the price
+                // extrapolates beyond the axis and the line/label part ways at the edge).
+                const y = Math.max(this.padT, Math.min(this.plotB(), this.mouseY));
+                const p = this.yToPrice(y, this.lineDrag.series.priceScaleId());
                 if (p !== null) {
                     this.lineDrag.line.applyOptions({ price: p, anchored: true });
                     const cb = this.lineDrag.line.raw().onDrag;
@@ -2179,6 +2269,7 @@ class ChartImpl {
             this.canvas.style.cursor = this.inTimeGutter(this.mouseY) ? 'ew-resize'
                 : this.inPriceGutter(this.mouseX) ? 'ns-resize'
                 : this.hitDraggableLine(this.mouseY, this.mouseX) ? 'ns-resize' : 'default';
+            if (this.placement !== null && this.modifierHeld) this.updatePlacementPreview();   // order-placement preview follows the cursor
             if (this.dragging && this.dragPanEnabled) {
                 const dx = this.mouseX - this.lastDragX;
                 this.lastDragX = this.mouseX;
@@ -2197,6 +2288,7 @@ class ChartImpl {
         this.canvas.addEventListener('pointerleave', () => {
             this.mouseX = null;
             this.mouseY = null;
+            this.clearPlacementPreview();   // no cursor over the plot → no placement preview
             for (const cb of this.crosshairListeners) cb({});
             this.scheduleDraw();
         });
@@ -2224,11 +2316,14 @@ class ChartImpl {
             const r = this.canvas.getBoundingClientRect();
             const mx = e.clientX - r.left;
             const my = e.clientY - r.top;
-            this.downX = mx; this.downY = my; this.pointerDown = true;
+            this.downX = mx; this.downY = my; this.downButton = e.button; this.pointerDown = true;
             // A press on a "✕" close button is handled by the mousedown listener above — don't drag.
             for (const h of this._closeHits) {
                 if (mx >= h.x && mx <= h.x + h.w && my >= h.y && my <= h.y + h.h) return;
             }
+            // Only the left button drags/pans; a right (or middle) press is left to become a click
+            // (a host maps right-click to "sell here", left to "buy here").
+            if (e.button !== 0) return;
             // Grab a draggable order line before any pan / axis-stretch gesture. Freeze the scale
             // and anchor the label for the whole drag so the line stays WYSIWYG under the cursor.
             const hit = this.hitDraggableLine(my, mx);
@@ -2257,7 +2352,9 @@ class ChartImpl {
             this.pointerDown = false;
             // Commit an order-line drag: unfreeze the scale, drop the anchor, notify the host.
             if (this.lineDrag) {
-                const p = this.mouseY !== null ? this.yToPrice(this.mouseY, this.lineDrag.series.priceScaleId()) : null;
+                const p = this.mouseY !== null
+                    ? this.yToPrice(Math.max(this.padT, Math.min(this.plotB(), this.mouseY)), this.lineDrag.series.priceScaleId())
+                    : null;
                 this.lineDrag.line.applyOptions({ anchored: false });
                 try { this.lineDrag.series.priceScale().applyOptions({ autoScale: true }); } catch { /* */ }
                 const cb = this.lineDrag.line.raw().onDragCommit;
@@ -2268,28 +2365,52 @@ class ChartImpl {
             }
             const moved = this.mouseX !== null && this.mouseY !== null &&
                 Math.hypot(this.mouseX - this.downX, this.mouseY - this.downY) > 4;
-            const wasPan = this.dragging || this.priceDragging || this.timeDragging;
             this.dragging = false; this.priceDragging = false; this.timeDragging = false;
-            // A press-release that neither moved nor grabbed a line is a click: report price/time
-            // and modifiers so a host can place a resting order (e.g. Ctrl+click) via the engine.
-            if (e && !moved && !wasPan && this.clickListeners.length > 0 &&
-                this.mouseX !== null && this.mouseY !== null &&
+            // A press-release that did not move and did not grab a line is a click (a pan that never
+            // moved still counts as a click).
+            if (e && !moved && this.mouseX !== null && this.mouseY !== null &&
                 !this.inTimeGutter(this.mouseY) && !this.inPriceGutter(this.mouseX)) {
                 const price = this.yToPrice(this.mouseY, 'right');
-                const time = this.snapTime(this.mouseX);
-                const c: ChartClick = {
-                    price, time: time ?? null, point: { x: this.mouseX, y: this.mouseY },
-                    ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey,
-                };
-                for (const cb of this.clickListeners) { try { cb(c); } catch { /* */ } }
+                if (this.placement !== null && this.modifierMatches(e) && price !== null) {
+                    // Placement-mode click → EMIT the order-place signal (the chart does not form the
+                    // order). Then drop the preview so it doesn't linger on the just-placed spot.
+                    const ev: OrderPlace = {
+                        price, button: this.downButton,
+                        ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey,
+                    };
+                    for (const cb of this.orderPlaceListeners) { try { cb(ev); } catch { /* */ } }
+                    this.clearPlacementPreview();
+                } else if (this.clickListeners.length > 0) {
+                    const time = this.snapTime(this.mouseX);
+                    const c: ChartClick = {
+                        price, time: time ?? null, point: { x: this.mouseX, y: this.mouseY },
+                        button: this.downButton,
+                        ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey,
+                    };
+                    for (const cb of this.clickListeners) { try { cb(c); } catch { /* */ } }
+                }
             }
         };
         // window (not canvas) so a release off the plot still ends the gesture; the pointerDown
         // guard inside finishGesture keeps unrelated global releases from being processed.
         window.addEventListener('pointerup', (e) => finishGesture(e as PointerEvent));
         window.addEventListener('pointercancel', () => finishGesture());
+        // Order-placement mode: pressing/releasing the configured modifier shows/hides the preview
+        // (updated on move too), even without moving the mouse. Losing focus cancels it.
+        window.addEventListener('keydown', (e) => {
+            if (this.placement !== null && !this.modifierHeld && this.modifierMatches(e)) { this.modifierHeld = true; this.updatePlacementPreview(); this.scheduleDraw(); }
+        });
+        window.addEventListener('keyup', (e) => {
+            if (this.placement !== null && this.modifierHeld && !this.modifierMatches(e)) { this.modifierHeld = false; this.clearPlacementPreview(); this.scheduleDraw(); }
+        });
+        window.addEventListener('blur', () => { if (this.modifierHeld) { this.modifierHeld = false; this.clearPlacementPreview(); this.scheduleDraw(); } });
         // Double-click anywhere → fit all data to the full width
         // (the desktop/terminal/Designer chart behaviour).
+        // In placement mode with the modifier held, a right-click is a gesture (e.g. "sell here"),
+        // so suppress the browser context menu and let it land as a click instead.
+        this.canvas.addEventListener('contextmenu', (e) => {
+            if (this.placement !== null && this.modifierHeld) e.preventDefault();
+        });
         this.canvas.addEventListener('dblclick', (e) => { e.preventDefault(); this.fitContent(); });
         {
             this.canvas.addEventListener('wheel', (e) => {

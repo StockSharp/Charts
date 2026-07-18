@@ -202,33 +202,43 @@ function boot() {
         else { timer = setInterval(step, 350); rtBtn.classList.add('on'); }
     });
 
-    // ---- Resting order lines, driven entirely by the chart's OWN order engine — the same one the
-    //      terminal will use. Each line is created `draggable`, so the chart owns the whole gesture:
-    //      hover it (ns-resize cursor), press and drag it up/down (the chart freezes autoscale and
-    //      anchors the label for the duration, so it stays WYSIWYG and the price never drifts off the
-    //      cursor), release to commit. Ctrl+click on empty chart places a NEW order via the chart's
-    //      click event. The "✕" on a line cancels it. The demo supplies only the order data and the
-    //      callbacks — it wires no pointer handlers of its own.
+    // ---- Resting order lines with a buy/sell side, driven by the chart's OWN order engine — the one
+    //      the terminal uses. Each line is `draggable`, so the chart owns the whole gesture: hover it
+    //      (ns-resize), drag it up/down (autoscale frozen + label anchored so it stays WYSIWYG,
+    //      pinned to the edge if it leaves the view), release to commit. The "✕" cancels it.
+    //      Placement is terminal-style: HOLD Ctrl → a neutral amber "⊕ ORDER" preview tracks the
+    //      cursor (side not decided yet); Ctrl+click opens a Buy/Sell chooser at that price — the
+    //      terminal does the same with its right-click "Buy at price / Sell at price" menu.
     (function orderLineDemo() {
         const fmt = (p: number) => p.toFixed(2);
         const snap = (p: number) => Math.round(p * 100) / 100;
+        const BUY = '#00c853';
+        const SELL = '#ff3d57';
 
-        function addOrder(price: number): void {
+        function addOrder(price: number, side: string, color: string): void {
             let line: any;
             line = candleSeries.createPriceLine({
-                price, color: '#4a9eff', lineWidth: 2, axisLabelVisible: true, draggable: true,
-                title: `ORDER @ ${fmt(price)}`,
-                onDrag: (p: number) => line.applyOptions({ title: `ORDER @ ${fmt(p)}` }),   // live label while dragging
-                onDragCommit: (p: number) => line.applyOptions({ title: `ORDER @ ${fmt(p)}` }),   // a terminal would send an order-replace here
-                onClose: () => candleSeries.removePriceLine(line),                          // ✕ cancels the order
+                price, color, lineWidth: 2, axisLabelVisible: true, draggable: true,
+                title: `${side} @ ${fmt(price)}`,
+                onDrag: (p: number) => line.applyOptions({ title: `${side} @ ${fmt(p)}` }),        // live label while dragging
+                onDragCommit: (p: number) => line.applyOptions({ title: `${side} @ ${fmt(p)}` }),  // a terminal would send an order-replace here
+                onClose: () => candleSeries.removePriceLine(line),                                 // ✕ cancels the order
             });
         }
 
-        addOrder(snap(live[live.length - 1]?.close ?? 100));   // one resting order at startup
+        const ref = snap(live[live.length - 1]?.close ?? 100);
+        addOrder(snap(ref - 3), 'Buy', BUY);     // one resting order each side at startup
+        addOrder(snap(ref + 3), 'Sell', SELL);
 
-        // Ctrl+click on the chart → place a NEW resting order at that price (terminal behaviour).
-        chart.subscribeClick((c) => {
-            if (c.ctrlKey && c.price !== null && c.price > 0) addOrder(snap(c.price));
+        // Order placement is the CHART's feature: hold Ctrl and the chart shows its own neutral amber
+        // "⊕ ORDER" preview; on the click it EMITS an OrderPlace signal. The chart does not form the
+        // order — the demo (the host) catches the signal and creates the line, choosing the side from
+        // the mouse button (Ctrl + LEFT → Buy / green, Ctrl + RIGHT → Sell / red).
+        chart.setOrderPlacement({ modifier: 'ctrl' });
+        chart.subscribeOrderPlace((e) => {
+            const price = snap(e.price);
+            if (e.button === 2) addOrder(price, 'Sell', SELL);
+            else addOrder(price, 'Buy', BUY);
         });
     })();
 }
