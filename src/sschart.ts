@@ -665,6 +665,11 @@ class ChartImpl {
     // forms the order from it.
     subscribeOrderPlace(cb: OrderPlaceListener): void { this.orderPlaceListeners.push(cb); }
     unsubscribeOrderPlace(cb: OrderPlaceListener): void { this.orderPlaceListeners = this.orderPlaceListeners.filter((x) => x !== cb); }
+    // The order price line currently being dragged, or null when no line drag is in progress. A host
+    // uses this to skip repainting that line from canonical order data mid-drag — while a drag is
+    // live the line's price is the user's preview, not the server's value, until they release and
+    // onDragCommit fires.
+    draggingLine(): IPriceLine | null { return this.lineDrag?.line ?? null; }
     private modifierMatches(e: { ctrlKey?: boolean; shiftKey?: boolean; altKey?: boolean }): boolean {
         switch (this.placement?.modifier) {
             case 'ctrl': return !!e.ctrlKey;
@@ -2227,6 +2232,16 @@ class ChartImpl {
         return best;
     }
 
+    // True when the cursor is over a price-line "✕" close button. The button is a click target,
+    // not a drag handle, so the hover cursor must read as a button (pointer) — never the ns-resize
+    // arrow the draggable line itself shows.
+    private hitCloseButton(mx: number, my: number): boolean {
+        for (const h of this._closeHits) {
+            if (mx >= h.x && mx <= h.x + h.w && my >= h.y && my <= h.y + h.h) return true;
+        }
+        return false;
+    }
+
     private bindPointer(): void {
         this.canvas.addEventListener('pointermove', (e) => {
             const r = this.canvas.getBoundingClientRect();
@@ -2268,6 +2283,7 @@ class ChartImpl {
             }
             this.canvas.style.cursor = this.inTimeGutter(this.mouseY) ? 'ew-resize'
                 : this.inPriceGutter(this.mouseX) ? 'ns-resize'
+                : this.hitCloseButton(this.mouseX, this.mouseY) ? 'pointer'
                 : this.hitDraggableLine(this.mouseY, this.mouseX) ? 'ns-resize' : 'default';
             if (this.placement !== null && this.modifierHeld) this.updatePlacementPreview();   // order-placement preview follows the cursor
             if (this.dragging && this.dragPanEnabled) {
