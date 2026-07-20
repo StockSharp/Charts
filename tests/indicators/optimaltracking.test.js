@@ -21,14 +21,13 @@ describe('calcOptimalTracking', () => {
         assert.deepStrictEqual(calcOptimalTracking([], {}), []);
     });
 
-    it('bar 0 is the only seed bar (matches .cs Buffer.Count == 1 < Length=2); bar 1+ are filtered', () => {
-        // The .cs PushBacks BEFORE evaluating IsFormed, so right after bar 1
-        // is pushed Buffer.Count == 2 == Length, IsFormed flips true, and bar
-        // 1 already enters the filter branch. Only bar 0 emits the raw
-        // midprice as a seed.
+    it('bar 0 not formed (Length=2) → null; bar 1+ are filtered', () => {
+        // DecimalLengthIndicator IsFormed = Buffer.Count == Length (=2), so the
+        // first bar is not formed and StockSharp reports null; the filter emits
+        // from bar 1 onward.
         const candles = [mk(11, 9, 0), mk(13, 11, 1), mk(14, 12, 2)];
         const r = calcOptimalTracking(candles, {});
-        approxEq(r[0].value, 10); // (11+9)/2 — seed
+        assert.strictEqual(r[0].value, null);
         // r[1] is filtered: alpha*12 + (1-alpha)*10. Just check it's between
         // the seed midprice (10) and the new midprice (12).
         assert.ok(r[1].value > 10 && r[1].value < 12,
@@ -45,7 +44,8 @@ describe('calcOptimalTracking', () => {
         const candles = [];
         for (let i = 0; i < 10; i++) candles.push(mk(v, v, i));
         const r = calcOptimalTracking(candles, {});
-        for (let i = 0; i < 10; i++) approxEq(r[i].value, v);
+        assert.strictEqual(r[0].value, null); // Length=2: first bar not formed
+        for (let i = 1; i < 10; i++) approxEq(r[i].value, v);
     });
 
     it('hand-computed first filtered value at bar 1', () => {
@@ -82,7 +82,7 @@ describe('calcOptimalTracking', () => {
             mk(15, 13, 3),
         ];
         const r = calcOptimalTracking(candles, {});
-        approxEq(r[0].value, 10);
+        assert.strictEqual(r[0].value, null); // Length=2: first bar not formed
         // r[1] is no longer the raw midprice — it's the first filtered value
         // (see "hand-computed first filtered value at bar 1" above). Just
         // assert it's between 10 and 12.

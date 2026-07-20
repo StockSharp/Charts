@@ -2,14 +2,9 @@
 // Trailing minimum of the input price stream over `length` bars. Mirror
 // of Highest. Aligned 1:1 with input candles.
 //
-// Although Lowest.cs reads `input.ToCandle().LowPrice`, the indicator
-// inherits the default [IndicatorIn(typeof(DecimalIndicatorValue))]
-// attribute from BaseIndicator — so the canonical test path feeds raw
-// close prices. When ToCandle() is invoked on a DecimalIndicatorValue,
-// the helper synthesises a candle with OHLC all equal to the decimal
-// (LowPrice == ClosePrice). The indicator therefore effectively runs
-// on close prices in the canonical test path; we match that by reading
-// candle.close.
+// Lowest.cs reads `input.ToCandle().LowPrice` — on the chart's candle feed that
+// is the bar LOW (not the close). DecimalLengthIndicator: IsFormed only once
+// `length` values are buffered, so nothing is emitted before index `length - 1`.
 //
 // Default length: 5 (matches the .cs default).
 
@@ -47,7 +42,7 @@ export function calcLowest(candles, params) {
         let bad = false;
         for (let j = i - length + 1; j <= i; j++) {
             const c = candles[j];
-            const cl = c && c.close;
+            const cl = c && c.low;
             if (typeof cl !== 'number' || !Number.isFinite(cl)) { bad = true; break; }
             if (cl < lo) lo = cl;
         }

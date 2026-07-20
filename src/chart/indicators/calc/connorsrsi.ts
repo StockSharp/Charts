@@ -254,22 +254,21 @@ export function calcConnorsRSI(candles, params) {
     // The bottleneck is rocLength on both fronts → first IsFormed at index = rocLength.
     const firstFormed = Math.max(rsiLength, streakLength, rocLength);
 
+    // All FOUR inner lines (Rsi, UpDownRsi, RocRsi, CrsiLine) are Added — and
+    // therefore dumped — ONLY inside the combined `!rocValue.IsEmpty &&
+    // Rsi.IsFormed && UpDownRsi.IsFormed && RocRsi.IsFormed && _roc.IsFormed`
+    // gate, so every line shares the SAME warm-up (bar firstFormed), not each
+    // sub-RSI's own. Gate all four identically.
     for (let i = 0; i < n; i++) {
+        if (i < firstFormed) continue;
         const a = rsi1[i];
         const b = rsi2[i];
         const c = rsi3[i];
-        if (typeof a === 'number' && Number.isFinite(a)) {
-            rsiOut[i] = { time: times[i], value: a };
-        }
-        if (typeof b === 'number' && Number.isFinite(b)) {
-            updownOut[i] = { time: times[i], value: b };
-        }
-        if (typeof c === 'number' && Number.isFinite(c)) {
-            rocrsiOut[i] = { time: times[i], value: c };
-        }
-        if (i < firstFormed) continue;
         if (typeof a !== 'number' || typeof b !== 'number' || typeof c !== 'number' ||
             !Number.isFinite(a) || !Number.isFinite(b) || !Number.isFinite(c)) continue;
+        rsiOut[i] = { time: times[i], value: a };
+        updownOut[i] = { time: times[i], value: b };
+        rocrsiOut[i] = { time: times[i], value: c };
         crsiOut[i] = { time: times[i], value: (a + b + c) / 3 };
     }
     return { rsi: rsiOut, updown: updownOut, rocrsi: rocrsiOut, crsi: crsiOut };

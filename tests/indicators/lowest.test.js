@@ -1,6 +1,6 @@
-// Lowest: shape, warm-up, hand-computed reference vector. Operates on
-// candle.close (Lowest.cs reads LowPrice but the canonical input is a
-// DecimalIndicatorValue that synthesises LowPrice == ClosePrice).
+// Lowest: trailing min of the candle LOW over `length` bars (StockSharp
+// Lowest.cs reads input.ToCandle().LowPrice). Not formed — emits nothing —
+// before index length-1.
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
@@ -36,22 +36,21 @@ describe('calcLowest', () => {
         assert.notStrictEqual(out[2].value, null);
     });
 
-    it('hand-computed length=3 reference (descending then mixed)', () => {
-        // closes:           5, 4, 3, 2, 6, 5, 7
-        // length=3 window covers indices i-2..i:
-        //   i=2: min(5,4,3) = 3
-        //   i=3: min(4,3,2) = 2
-        //   i=4: min(3,2,6) = 2
-        //   i=5: min(2,6,5) = 2
-        //   i=6: min(6,5,7) = 5
+    it('hand-computed length=3 reference over LOWS (lows = close - 1)', () => {
+        // closes: 5,4,3,2,6,5,7  ->  lows: 4,3,2,1,5,4,6
+        //   i=2: min(4,3,2) = 2
+        //   i=3: min(3,2,1) = 1
+        //   i=4: min(2,1,5) = 1
+        //   i=5: min(1,5,4) = 1
+        //   i=6: min(5,4,6) = 4
         const out = calcLowest(makeCloses([5, 4, 3, 2, 6, 5, 7]), { length: 3 });
         assert.strictEqual(out[0].value, null);
         assert.strictEqual(out[1].value, null);
-        assert.strictEqual(out[2].value, 3);
-        assert.strictEqual(out[3].value, 2);
-        assert.strictEqual(out[4].value, 2);
-        assert.strictEqual(out[5].value, 2);
-        assert.strictEqual(out[6].value, 5);
+        assert.strictEqual(out[2].value, 2);
+        assert.strictEqual(out[3].value, 1);
+        assert.strictEqual(out[4].value, 1);
+        assert.strictEqual(out[5].value, 1);
+        assert.strictEqual(out[6].value, 4);
     });
 
     it('time passes through unchanged', () => {
@@ -63,9 +62,9 @@ describe('calcLowest', () => {
     });
 
     it('default length=5 when params omitted', () => {
-        // 5 distinct closes → first 4 null, then global min.
+        // closes 10,8,6,4,2 -> lows 9,7,5,3,1; first 4 null, then global min low = 1.
         const out = calcLowest(makeCloses([10, 8, 6, 4, 2]));
         for (let i = 0; i < 4; i++) assert.strictEqual(out[i].value, null);
-        assert.strictEqual(out[4].value, 2);
+        assert.strictEqual(out[4].value, 1);
     });
 });

@@ -1,6 +1,9 @@
-// Adaptive Laguerre Filter — 4-stage Laguerre cascade.
-// Tests: empty input, invalid gamma → all-nulls, output shape, convergence
-// on a constant series, and a regression lock-in on a small known vector.
+// Adaptive Laguerre Filter (ALF) — 4-stage Laguerre cascade.
+// StockSharp flips IsFormed on the first bar where the filtered value >= price
+// (i.e. when the lagging filter first catches up to / crosses the price), and
+// reports the earlier bars as not-formed (null). On a purely rising or constant
+// series the lagging filter never reaches the price, so the indicator never
+// forms and every output is null.
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
@@ -34,43 +37,29 @@ describe('calcAdaptiveLaguerreFilter', () => {
         }
     });
 
-    it('output shape: length matches input, time passed through, value at bar 0 is finite', () => {
+    it('monotonic rising series never forms → all null (length/time preserved)', () => {
         const candles = makeCandles([10, 11, 12, 13, 14]);
         const r = calcAdaptiveLaguerreFilter(candles, { gamma: 0.5 });
         assert.strictEqual(r.length, candles.length);
         for (let i = 0; i < candles.length; i++) {
             assert.strictEqual(r[i].time, candles[i].time);
-            assert.ok(typeof r[i].value === 'number' && Number.isFinite(r[i].value),
-                      `bar ${i} value should be finite`);
+            assert.strictEqual(r[i].value, null); // lagging filter never reaches price
         }
     });
 
-    it('constant series → filter converges to that constant', () => {
+    it('constant series never crosses → all null', () => {
         const closes = new Array(200).fill(10);
         const r = calcAdaptiveLaguerreFilter(makeCandles(closes), { gamma: 0.8 });
-        // After ~200 bars with gamma=0.8 we should be very close to 10.
-        approxEq(r[199].value, 10, 1e-6);
+        for (const p of r) assert.strictEqual(p.value, null);
     });
 
-    it('first-bar value matches hand calc (gamma=0.8, price=10)', () => {
-        // l0 = 0.2*10 + 0.8*0 = 2
-        // l1 = -0.8*2 + 2 + 0.8*0 = 0.4
-        // l2 = -0.8*0.4 + 0.4 + 0.8*0 = 0.08
-        // l3 = -0.8*0.08 + 0.08 + 0.8*0 = 0.016
-        // filt = (2 + 0.8 + 0.16 + 0.016) / 6 = 2.976 / 6 = 0.496
-        const r = calcAdaptiveLaguerreFilter(makeCandles([10]), { gamma: 0.8 });
-        approxEq(r[0].value, 0.496, 1e-12);
-    });
-
-    it('regression: locked-in value on a small ramp', () => {
-        // Captured from a clean run of the implementation; locks the
-        // recurrence so anyone editing the coefficients sees a failure.
-        const r = calcAdaptiveLaguerreFilter(makeCandles([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
-                                             { gamma: 0.5 });
-        // Hand-derived: each step is linear in the prior 4 state vars +
-        // current price; over 10 bars the math is dull but determined.
-        // Lock the last bar.
-        assert.ok(typeof r[9].value === 'number' && Number.isFinite(r[9].value));
-        approxEq(r[9].value, 7.523193359375, 1e-9);
+    it('forms when price dips below the filter; regression lock-in on a dip series', () => {
+        // Price zig-zags, so the lagging filter crosses the price and the indicator
+        // forms at bar 4. Vector captured from a clean run (matches the live C# dump).
+        const dip = [10, 12, 14, 10, 8, 10, 12, 14, 10, 8, 10, 12, 14];
+        const r = calcAdaptiveLaguerreFilter(makeCandles(dip), { gamma: 0.5 });
+        for (let i = 0; i < 4; i++) assert.strictEqual(r[i].value, null); // warm-up
+        approxEq(r[4].value, 8.733072916666666, 1e-6);
+        approxEq(r[12].value, 11.337437947591146, 1e-6);
     });
 });

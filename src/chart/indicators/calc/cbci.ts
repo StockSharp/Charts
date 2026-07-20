@@ -6,33 +6,36 @@
 //   rsiRoc      = ROC(rsi, RocLength)                // default 9
 //   rsiMomentum = SMA(shortRsi, MomentumLength)      // default 3
 //
-//   composite   = rsiRoc + rsiMomentum               // main line
+//   composite   = rsiRoc + rsiMomentum               // main line (CompositeIndexLine)
 //   fastSma     = SMA(composite, FastSmaLength)      // default 13
 //   slowSma     = SMA(composite, SlowSmaLength)      // default 33
 //
-// Warm-up cascade (with defaults):
-//   - rsi:         first non-null at index 14
-//   - shortRsi:    first non-null at index 3
-//   - rsiRoc:      needs rsi at i and i-9 → first non-null at 14+9 = 23
-//   - rsiMomentum: needs shortRsi at i-2..i → first non-null at 3+2 = 5
-//   - composite:   max(23, 5) = 23
-//   - fastSma:     23 + 12 = 35
-//   - slowSma:     23 + 32 = 55
+// CRITICAL — StockSharp's RelativeStrengthIndex (SMMA-based) returns a value
+// from bar 1 (its warm-up emits partial Buffer.Sum/Length averages, IsEmpty is
+// false), so the ROC and SMA that consume the RSI are fed those PARTIAL RSI
+// values from bar 1 — NOT only from the RSI's IsFormed bar. That is why the
+// composite appears far earlier than a naive "RSI null until length" port would
+// produce. The .cs Adds all three lines only inside the combined gate
+//   _rsi.IsFormed && _shortRsi.IsFormed && _rsiRoc.IsFormed && _rsiMomentum.IsFormed
+// so the composite (CompositeIndexLine, a pass-through, formed immediately) is
+// emitted from the bar where the SLOWEST of those forms:
+//   - rsi:         IsFormed at bar RsiLength                        (14)
+//   - shortRsi:    IsFormed at bar ShortRsiLength                   (3)
+//   - rsiRoc:      Momentum.CalcIsFormed = Buffer.Count > RocLength,
+//                  fed from bar 1 → IsFormed at bar RocLength + 1    (10)
+//   - rsiMomentum: SMA(3) fed from bar 1 → IsFormed at MomentumLength (3)
+//   → combinedBar = max(14, 3, 10, 3) = 14
+// FastSma/SlowSma are then fed the composite from combinedBar and their lines
+// are gated on their own IsFormed (windowed SMA), landing at combinedBar+12 = 26
+// and combinedBar+32 = 46.
+//
+// ROC math (Momentum base, Length=RocLength, capacity RocLength+1):
+//   roc[i] = 100 * (rsi[i] - rsi[i-RocLength]) / rsi[i-RocLength].
 //
 // Output shape: { composite, fastSma, slowSma } — three IndicatorPoint[]
-// aligned 1:1 with input candles. fastSma/slowSma stay null until their
-// own warm-ups inside the composite series clear.
-//
-// .cs deviation: the .cs framework feeds the ROC/SMA inner indicators
-// even during RSI warm-up (with empty values that decode to 0). That's
-// an artefact of `BaseIndicator` lifecycle, not part of the formula —
-// the actual gate `_rsi.IsFormed && _shortRsi.IsFormed && _rsiRoc.IsFormed
-// && _rsiMomentum.IsFormed` combined with ROC's `Buffer[0] != 0` guard
-// means the first meaningful composite lands at bar 14+9 = 23 anyway.
-// Our JS port computes the same numeric output but skips the no-op
-// "feed-0-during-warmup" cycles entirely.
+// aligned 1:1 with input candles.
 
-import { simpleMA } from './helpers.js';
+import { simpleMA, smoothedMA, partialSeedSMA } from './helpers.js';
 
 /**
  * @typedef {object} CandlePoint
@@ -53,46 +56,43 @@ import { simpleMA } from './helpers.js';
  */
 
 /**
- * Wilder-RSI over a numeric closes array (returns (number|null)[]).
- * Matches calc/rsi.js seeding: SMA of first `length` deltas (lands at
- * index = length), then Wilder smoothing.
+ * Partial-seed (SMMA-based) RSI matching StockSharp RelativeStrengthIndex.cs,
+ * but WITHOUT the IsFormed gate — it returns the partial RSI from bar 1 (the
+ * value the .cs actually feeds into the ROC/SMA consumers during warm-up).
  * @param {(number|null)[]} closes
  * @param {number} length
  * @returns {(number|null)[]}
  */
-function wilderRsi(closes, length) {
+function partialRsi(closes, length) {
     const n = closes.length;
     const out = new Array(n);
     for (let i = 0; i < n; i++) out[i] = null;
-    if (length <= 0 || n <= length) return out;
+    if (length <= 0 || n < 2) return out;
 
-    let gainSum = 0;
-    let lossSum = 0;
-    let seedOk = true;
-    for (let i = 1; i <= length; i++) {
+    const gains = new Array(n - 1);
+    const losses = new Array(n - 1);
+    for (let i = 1; i < n; i++) {
         const prev = closes[i - 1];
         const curr = closes[i];
-        if (prev === null || curr === null) { seedOk = false; break; }
+        if (typeof prev !== 'number' || !Number.isFinite(prev) ||
+            typeof curr !== 'number' || !Number.isFinite(curr)) {
+            gains[i - 1] = null;
+            losses[i - 1] = null;
+            continue;
+        }
         const d = curr - prev;
-        if (d > 0) gainSum += d;
-        else lossSum += -d;
+        gains[i - 1] = d > 0 ? d : 0;
+        losses[i - 1] = d < 0 ? -d : 0;
     }
-    if (!seedOk) return out;
 
-    let avgG = gainSum / length;
-    let avgL = lossSum / length;
-    out[length] = avgL === 0 ? 100 : 100 - 100 / (1 + avgG / avgL);
-
-    for (let i = length + 1; i < n; i++) {
-        const prev = closes[i - 1];
-        const curr = closes[i];
-        if (prev === null || curr === null) { out[i] = null; continue; }
-        const d = curr - prev;
-        const g = d > 0 ? d : 0;
-        const l = d < 0 ? -d : 0;
-        avgG = (avgG * (length - 1) + g) / length;
-        avgL = (avgL * (length - 1) + l) / length;
-        out[i] = avgL === 0 ? 100 : 100 - 100 / (1 + avgG / avgL);
+    const avgG = smoothedMA(gains, length);
+    const avgL = smoothedMA(losses, length);
+    for (let k = 0; k < n - 1; k++) {
+        const g = avgG[k];
+        const l = avgL[k];
+        if (g === null || l === null) continue;
+        const sum = g + l;
+        out[k + 1] = sum === 0 ? 50 : 100 * g / sum;
     }
     return out;
 }
@@ -135,10 +135,11 @@ export function calcConstanceBrownCompositeIndex(candles, params) {
         closes[i] = typeof c === 'number' && Number.isFinite(c) ? c : null;
     }
 
-    const rsi = wilderRsi(closes, rsiLength);
-    const shortRsi = wilderRsi(closes, shortRsiLength);
+    // Partial-seed RSIs (fed to the ROC/SMA from bar 1, as the .cs does).
+    const rsi = partialRsi(closes, rsiLength);
+    const shortRsi = partialRsi(closes, shortRsiLength);
 
-    // ROC of RSI: (rsi[i] - rsi[i-rocLength]) / rsi[i-rocLength] * 100.
+    // ROC(RocLength) of the RSI: 100 * (rsi[i] - rsi[i-RocLength]) / rsi[i-RocLength].
     const roc = new Array(n);
     for (let i = 0; i < n; i++) roc[i] = null;
     for (let i = rocLength; i < n; i++) {
@@ -148,14 +149,16 @@ export function calcConstanceBrownCompositeIndex(candles, params) {
         roc[i] = (cur - old) / old * 100;
     }
 
-    // SMA of shortRsi with momentumLength.
-    const momentum = simpleMA(shortRsi.map(v => v === null ? NaN : v), momentumLength);
-    // simpleMA returns null for windows containing NaN — perfect for warm-up.
+    // Momentum = partial-seed SMA(MomentumLength) of the short RSI.
+    const momentum = partialSeedSMA(shortRsi, momentumLength);
 
-    // Composite line.
+    // The composite (and the SMAs downstream) are Added only inside the combined
+    // all-formed gate; the slowest inner is the RSI (bar RsiLength) for defaults.
+    const combinedBar = Math.max(rsiLength, shortRsiLength, rocLength + 1, momentumLength);
+
     const compVals = new Array(n);
     for (let i = 0; i < n; i++) compVals[i] = NaN;
-    for (let i = 0; i < n; i++) {
+    for (let i = combinedBar; i < n; i++) {
         const r = roc[i];
         const m = momentum[i];
         if (r === null || m === null) continue;
@@ -163,7 +166,8 @@ export function calcConstanceBrownCompositeIndex(candles, params) {
         composite[i] = { time: candles[i].time, value: compVals[i] };
     }
 
-    // FastSma / SlowSma over the composite series.
+    // FastSma/SlowSma: windowed SMA of the composite (dumper gates them on their
+    // own SimpleMovingAverage.IsFormed, i.e. the post-partial-seed windowed value).
     const fast = simpleMA(compVals, fastSmaLength);
     const slow = simpleMA(compVals, slowSmaLength);
     for (let i = 0; i < n; i++) {

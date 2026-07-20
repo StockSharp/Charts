@@ -82,12 +82,19 @@ export function calcTrueStrengthIndex(candles, params) {
     }
     const signalRaw = emaArray(tsiForSignal, signalLength);
 
+    // The dumped lines are gated on their inner IsFormed flags, NOT on when the
+    // partial-seed EMAs first produce a value. The Tsi line is emitted from
+    // Line.IsFormed (bar lineFormedAt); the Signal EMA is fed the tsi only from
+    // that bar, so it forms — and its line is emitted — at bar
+    // lineFormedAt + signalLength - 1.
+    const signalFormedAt = lineFormedAt + signalLength - 1;
+
     const tsi = new Array(n);
     const signal = new Array(n);
     for (let i = 0; i < n; i++) {
         const t = candles[i].time;
-        tsi[i] = { time: t, value: tsiRaw[i] };
-        signal[i] = { time: t, value: signalRaw[i] };
+        tsi[i] = { time: t, value: i >= lineFormedAt ? tsiRaw[i] : null };
+        signal[i] = { time: t, value: i >= signalFormedAt ? signalRaw[i] : null };
     }
     return { tsi, signal };
 }

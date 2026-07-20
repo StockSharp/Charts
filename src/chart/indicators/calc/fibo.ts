@@ -16,12 +16,13 @@
 // can label each line without re-deriving them. Adding new levels in the
 // future is a single-line change here plus rolling renderer code.
 //
-// .cs deviation note: the .cs class internally uses `Highest`/`Lowest`
-// helpers which include the *current* bar in their rolling window
-// (PushBack-then-Max). We reproduce that exact semantics: the trailing
-// window for bar `i` spans `[i-length+1 .. i]`, inclusive, so the first
-// non-null output lands at index `length - 1` (matches CalcIsFormed
-// returning true once both Highest and Lowest have `length` samples).
+// Warm-up note: each FibonacciLevel inner is a pass-through that is IsFormed
+// from its first process, and the dumped lines are gated on THAT (not on the
+// outer's Highest/Lowest being formed). Highest/Lowest themselves return their
+// running max/min from bar 0 (PushBack-then-Max over the up-to-`length` buffer),
+// so every level line is emitted from bar 0 with an EXPANDING window that only
+// becomes a full trailing `[i-length+1 .. i]` window once `length` bars exist.
+// We reproduce that: the window for bar `i` spans `[max(0, i-length+1) .. i]`.
 
 /**
  * @typedef {object} CandlePoint
@@ -74,11 +75,11 @@ export function calcFibonacciRetracement(candles, params) {
 
     if (length <= 0) return out;
 
-    for (let i = length - 1; i < n; i++) {
+    for (let i = 0; i < n; i++) {
         let hi = -Infinity;
         let lo = +Infinity;
         let bad = false;
-        for (let j = i - length + 1; j <= i; j++) {
+        for (let j = Math.max(0, i - length + 1); j <= i; j++) {
             const c = candles[j];
             const h = c && c.high;
             const l = c && c.low;

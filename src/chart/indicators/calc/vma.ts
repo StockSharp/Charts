@@ -100,17 +100,15 @@ export function calcVMA(candles, params) {
         if (!isInitialized) {
             buf.push(c);
             bufSum += c;
-            // No capacity check yet — first PushBack only.
             prevFinalValue = bufSum / buf.length;
             isInitialized = true;
-            out[i] = { time: candles[i].time, value: prevFinalValue };
+            // Not formed until stdDev forms (index Length) — StockSharp nulls the warm-up.
             continue;
         }
 
         const std = processStdDev(c);
         if (!std.formed) {
-            // stdDev not yet formed → return _prevFinalValue, no Buffer push.
-            out[i] = { time: candles[i].time, value: prevFinalValue };
+            // stdDev not yet formed → StockSharp reports not-formed (null).
             continue;
         }
 

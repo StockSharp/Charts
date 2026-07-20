@@ -53,46 +53,12 @@
  * @typedef {{time: string|number, value: number|null, state?: string}} ElderPoint
  */
 
-/**
- * EMA on a numeric series, SMA-seeded (matches calcEMA semantics).
- * @param {(number|null|undefined)[]} values
- * @param {number} length
- * @returns {(number|null)[]}
- */
-function emaArray(values, length) {
-    const n = values.length;
-    const out = new Array(n);
-    if (n === 0 || length <= 0) {
-        for (let i = 0; i < n; i++) out[i] = null;
-        return out;
-    }
-    const k = 2 / (length + 1);
-    let seedSum = 0;
-    let seedCount = 0;
-    let seedDone = false;
-    let prev = 0;
-    for (let i = 0; i < n; i++) {
-        const v = values[i];
-        const ok = typeof v === 'number' && Number.isFinite(v);
-        if (!seedDone) {
-            if (!ok) { out[i] = null; continue; }
-            seedSum += v;
-            seedCount++;
-            if (seedCount === length) {
-                prev = seedSum / length;
-                out[i] = prev;
-                seedDone = true;
-            } else {
-                out[i] = null;
-            }
-            continue;
-        }
-        if (!ok) { out[i] = null; continue; }
-        prev = v * k + prev * (1 - k);
-        out[i] = prev;
-    }
-    return out;
-}
+// StockSharp EMA/MACD emit partial (Buffer.Sum/Length) values during warm-up, and
+// ElderImpulse reads their GetCurrentValue() — the last emitted value, partials
+// included — as the previous EMA/MACD. So we seed the EMAs partially (non-null from
+// bar 0), not with an SMA seed that nulls the warm-up, or the previous-MACD comparison
+// on the first formed bar would be wrong.
+import { partialSeedEMA } from './helpers.js';
 
 /**
  * @param {CandlePoint[]} candles
@@ -114,9 +80,9 @@ export function calcElderImpulse(candles, params) {
     const closes = new Array(n);
     for (let i = 0; i < n; i++) closes[i] = candles[i] && candles[i].close;
 
-    const emaSeries = emaArray(closes, emaLen);
-    const fastSeries = emaArray(closes, fastLen);
-    const slowSeries = emaArray(closes, slowLen);
+    const emaSeries = partialSeedEMA(closes, emaLen);
+    const fastSeries = partialSeedEMA(closes, fastLen);
+    const slowSeries = partialSeedEMA(closes, slowLen);
 
     const macdLine = new Array(n);
     for (let i = 0; i < n; i++) {
@@ -125,7 +91,11 @@ export function calcElderImpulse(candles, params) {
         macdLine[i] = (a === null || b === null) ? null : a - b;
     }
 
+    // Both inner indicators are formed only from here: Ema at emaLen-1, and MACD when
+    // its long EMA forms at slowLen-1. StockSharp emits Blue/Red/Green from that bar on.
+    const formBar = Math.max(emaLen - 1, slowLen - 1);
     for (let i = 1; i < n; i++) {
+        if (i < formBar) continue;
         const ema = emaSeries[i];
         const emaPrev = emaSeries[i - 1];
         const macd = macdLine[i];

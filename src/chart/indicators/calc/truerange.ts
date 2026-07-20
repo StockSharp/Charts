@@ -1,6 +1,7 @@
 // True Range — JS port of D:\stocksharp\StockSharp (GitHub)\Algo.Indicators\TrueRange.cs.
-// Deviations from .cs: none — first bar uses (high - low) because there is
-// no previous candle, subsequent bars use max(|h-l|, |prevClose-h|, |prevClose-l|).
+// TR[i] = max(|h-l|, |prevClose-h|, |prevClose-l|) for i >= 1. The first bar has no
+// previous candle, so TrueRange.cs is NOT formed there (IsFormed flips to true only on
+// the second candle) — StockSharp reports it as not-formed, so index 0 is emitted as null.
 //
 // @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
 // @typedef {{time:number|string,value:number|null}} Point
@@ -29,16 +30,17 @@ export function calcTrueRange(candles, _params) {
             // do not advance prevClose on bad bar
             continue;
         }
-        let tr;
         if (prevClose === null) {
-            tr = h - l;
-        } else {
-            const a = h - l;
-            const b = Math.abs(prevClose - h);
-            const d = Math.abs(prevClose - l);
-            tr = a > b ? a : b;
-            if (d > tr) tr = d;
+            // First candle: no previous close -> TrueRange.cs is not formed here.
+            out[i] = { time: t, value: null };
+            if (typeof cl === 'number' && Number.isFinite(cl)) prevClose = cl;
+            continue;
         }
+        const a = h - l;
+        const b = Math.abs(prevClose - h);
+        const d = Math.abs(prevClose - l);
+        let tr = a > b ? a : b;
+        if (d > tr) tr = d;
         out[i] = { time: t, value: tr };
         if (typeof cl === 'number' && Number.isFinite(cl)) prevClose = cl;
     }

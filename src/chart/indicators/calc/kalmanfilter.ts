@@ -58,6 +58,7 @@ export function calcKalmanFilter(candles, params) {
     if (processNoise <= 0) processNoise = 1e-12;
     if (measurementNoise <= 0) measurementNoise = 1e-12;
 
+    const length = params && Number.isFinite(params.length) && params.length > 0 ? (params.length | 0) : 10;
     if (!Array.isArray(candles) || candles.length === 0) return [];
 
     const n = candles.length;
@@ -66,6 +67,7 @@ export function calcKalmanFilter(candles, params) {
 
     let lastEstimate: number | null = null;
     let errorCovariance = 1;
+    let validCount = 0;
 
     for (let i = 0; i < n; i++) {
         const c = candles[i] && candles[i].close;
@@ -73,19 +75,22 @@ export function calcKalmanFilter(candles, params) {
             // Bad bar: keep state, emit null.
             continue;
         }
+        validCount++;
+        let estimate;
         if (lastEstimate === null) {
             lastEstimate = c;
             errorCovariance = 1;
-            out[i] = { time: candles[i].time, value: c };
-            continue;
+            estimate = c;
+        } else {
+            const priorEstimate = lastEstimate;
+            const priorErr = errorCovariance + processNoise;
+            const k = priorErr / (priorErr + measurementNoise);
+            estimate = priorEstimate + k * (c - priorEstimate);
+            errorCovariance = (1 - k) * priorErr;
+            lastEstimate = estimate;
         }
-        const priorEstimate = lastEstimate;
-        const priorErr = errorCovariance + processNoise;
-        const k = priorErr / (priorErr + measurementNoise);
-        const newEstimate = priorEstimate + k * (c - priorEstimate);
-        errorCovariance = (1 - k) * priorErr;
-        lastEstimate = newEstimate;
-        out[i] = { time: candles[i].time, value: newEstimate };
+        // Not formed until `length` values processed (DecimalLengthIndicator).
+        if (validCount >= length) out[i] = { time: candles[i].time, value: estimate };
     }
 
     return out;

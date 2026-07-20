@@ -15,17 +15,15 @@ describe('calcT3', () => {
     });
 
     it('all bars null until EMA chain + 10-bar settling forms', () => {
-        // length=2 → C# EMA emits partial Buffer.Sum/Length from bar 0,
-        // so each cascade level produces non-null from bar 0 and IsFormed
-        // at bar length-1=1. All six EMAs form simultaneously at bar 1.
-        // The outer indicator then waits the 10-bar `_defaultWarmUpPeriod`
-        // (decrementing on bars 1..10), so first emitted bar is bar 11.
+        // length=2 → all six EMAs form at bar length-1=1. The outer indicator then
+        // decrements the 10-bar `_defaultWarmUpPeriod` on bars 1..10 and (matching
+        // the .cs) tests IsFormed on the same bar, so the first emitted bar is 10.
         const closes = Array.from({ length: 18 }, (_, i) => 100 + i);
         const r = calcT3(closes.map(mk), { length: 2, volumeFactor: 0.7 });
-        for (let i = 0; i < 11; i++) {
+        for (let i = 0; i < 10; i++) {
             assert.strictEqual(r[i].value, null, `bar ${i} should be null, got ${r[i].value}`);
         }
-        assert.notStrictEqual(r[11].value, null);
+        assert.notStrictEqual(r[10].value, null);
     });
 
     it('flat data → T3 equals constant (after warm-up)', () => {

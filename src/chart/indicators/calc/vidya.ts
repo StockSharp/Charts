@@ -108,15 +108,16 @@ export function calcVidya(candles, params) {
 
         // Vidya step.
         if (!isFormed) {
-            // PushBack into own Buffer (capacity=length, but we won't exceed
-            // here because IsFormed flips true exactly when Buffer.Count
-            // reaches length).
             buf.push(c);
             bufSum += c;
             if (buf.length > length) bufSum -= buf.shift()!;
             prevFinalValue = bufSum / length;
-            if (buf.length >= length) isFormed = true;
-            out[i] = { time: candles[i].time, value: prevFinalValue };
+            // Not formed until the Buffer holds `length` closes; StockSharp reports
+            // the partial-seed bars as not-formed (null) and emits only the SMA seed.
+            if (buf.length >= length) {
+                isFormed = true;
+                out[i] = { time: candles[i].time, value: prevFinalValue };
+            }
             continue;
         }
 

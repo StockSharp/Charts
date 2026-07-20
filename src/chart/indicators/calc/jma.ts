@@ -93,9 +93,12 @@ export function calcJurikMovingAverage(candles, params) {
         if (!formed) {
             prevMa1 = c;
             prevMa2 = c;
-            out[i] = { time: candles[i].time, value: c };
-            // IsFormed flips once we've consumed `length` warm-up bars.
-            if (i + 1 >= length) formed = true;
+            // Not formed until `length` warm-up bars consumed (DecimalLengthIndicator);
+            // StockSharp nulls the earlier bars, so only the last warm-up bar emits.
+            if (i + 1 >= length) {
+                out[i] = { time: candles[i].time, value: c };
+                formed = true;
+            }
             continue;
         }
         const ma1 = prevMa1 + beta * (c - prevMa1);

@@ -15,21 +15,21 @@ describe('calcTrueStrengthIndex', () => {
     });
 
     it('warm-up bars are null on both series', () => {
-        // With C# partial-seed EMA semantics each inner EMA emits Buffer.Sum/
-        // Length from its first input. The first momentum is computed at bar
-        // 1, so tsi emits from bar 1 onward. Signal only receives values
-        // once Line.IsFormed (bar secondLength=3) per the Sequence-mode
-        // gate in .cs BaseComplexIndicator.
+        // The dumped lines are gated on their inner IsFormed flags. The Tsi
+        // Line forms once its double-smoothing EMAs (fed from bar 1) have
+        // secondLength inputs → bar secondLength=3. The Signal EMA is fed the
+        // tsi only from that bar (Sequence-mode gate) and forms signalLength
+        // bars later → bar secondLength + signalLength - 1 = 4.
         const closes = Array.from({ length: 20 }, (_, i) => 100 + i);
         const r = calcTrueStrengthIndex(closes.map(mk), { firstLength: 3, secondLength: 3, signalLength: 2 });
-        assert.strictEqual(r.tsi[0].value, null);
+        for (let i = 0; i < 3; i++) assert.strictEqual(r.tsi[i].value, null, `tsi[${i}]`);
         let firstNonNull = -1;
         for (let i = 0; i < 20; i++) if (r.tsi[i].value !== null) { firstNonNull = i; break; }
-        assert.strictEqual(firstNonNull, 1);
-        // signal lags TSI: it only sees tsi values from bar secondLength=3.
+        assert.strictEqual(firstNonNull, 3);
+        // signal lags TSI: fed tsi from bar 3, forms at bar 3 + 2 - 1 = 4.
         let firstSignal = -1;
         for (let i = 0; i < 20; i++) if (r.signal[i].value !== null) { firstSignal = i; break; }
-        assert.ok(firstSignal >= 3, `signal seeds at ${firstSignal}, expected >= 3`);
+        assert.strictEqual(firstSignal, 4);
     });
 
     it('monotonic increasing closes → TSI converges to +100', () => {

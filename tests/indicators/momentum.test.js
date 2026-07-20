@@ -1,4 +1,6 @@
-// Momentum tests.
+// Momentum tests. StockSharp Momentum is formed only when Buffer.Count > Length
+// (capacity Length+1), so the first non-null lands at index `length`; earlier bars
+// are null.
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
@@ -13,29 +15,28 @@ function makeCandles(closes) {
 }
 
 describe('calcMomentum', () => {
-    it('length=3 over [1,2,3,4,5,6,7]', () => {
-        // .cs buffer capacity = 4. Trace:
-        //  i=0 push 1, buf=[1], val = 1-1 = 0.
-        //  i=1 push 2, buf=[1,2], val = 2-1 = 1.
-        //  i=2 push 3, buf=[1,2,3], val = 3-1 = 2.
-        //  i=3 push 4, buf=[1,2,3,4] (full), val = 4-1 = 3.
-        //  i=4 push 5, buf evicts 1 → [2,3,4,5], val = 5-2 = 3.
-        //  i=5 push 6, evict 2 → [3,4,5,6], val = 6-3 = 3.
-        //  i=6 push 7, evict 3 → [4,5,6,7], val = 7-4 = 3.
+    it('length=3 over [1,2,3,4,5,6,7] — null until formed at index 3', () => {
+        // capacity = 4; formed once buf holds 4 values (Buffer.Count > 3), i.e. index 3.
+        //  i=0..2: null (warm-up)
+        //  i=3 buf=[1,2,3,4]  val = 4-1 = 3
+        //  i=4 evict 1 → [2,3,4,5], val = 5-2 = 3
+        //  i=5 → [3,4,5,6], val = 6-3 = 3
+        //  i=6 → [4,5,6,7], val = 7-4 = 3
         const out = calcMomentum(makeCandles([1, 2, 3, 4, 5, 6, 7]), { length: 3 });
-        assert.deepStrictEqual(out.map(p => p.value), [0, 1, 2, 3, 3, 3, 3]);
+        assert.deepStrictEqual(out.map(p => p.value), [null, null, null, 3, 3, 3, 3]);
     });
 
-    it('constant series → 0 momentum throughout', () => {
+    it('constant series → 0 once formed, null during warm-up', () => {
         const out = calcMomentum(makeCandles([5, 5, 5, 5, 5]), { length: 2 });
-        for (const p of out) assert.strictEqual(p.value, 0);
+        // length=2 → capacity 3, formed at index 2.
+        assert.deepStrictEqual(out.map(p => p.value), [null, null, 0, 0, 0]);
     });
 
-    it('default length=5 — first 5 bars compare to buf[0] which is closer than length back', () => {
+    it('default length=5 — first non-null lands at index 5', () => {
         const closes = [10, 11, 12, 13, 14, 15];
-        const out = calcMomentum(makeCandles(closes)); // default length=5
-        // capacity=6. All 6 fit. Buf[0]=10 throughout.
-        assert.deepStrictEqual(out.map(p => p.value), [0, 1, 2, 3, 4, 5]);
+        const out = calcMomentum(makeCandles(closes)); // default length=5, capacity=6
+        // buf fills to 6 only at index 5: 15 - buf[0]=10 = 5.
+        assert.deepStrictEqual(out.map(p => p.value), [null, null, null, null, null, 5]);
     });
 
     it('empty input → empty output', () => {

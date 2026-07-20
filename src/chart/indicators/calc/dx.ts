@@ -1,29 +1,41 @@
 // Directional Index (DX) — Welles Wilder.
-// Port of StockSharp Algo.Indicators DirectionalIndex.cs (note: that .cs's
-// "DirectionalIndex" class is the DI+/DI- pair plus the DX line, WITHOUT
-// the second Wilder smoothing that would produce the full ADX.) Use adx.js
-// when you want the smoothed ADX line as well — this calc is the
-// pre-smoothing pipeline shared with that ADX implementation.
+// Port of StockSharp Algo.Indicators DirectionalIndex.cs and the DiPart /
+// DiPlus / DiMinus / AverageTrueRange chain it drives.
 //
-// Pipeline (matches DiPart.cs / DiPlus.cs / DiMinus.cs internally used by
-// DirectionalIndex.cs):
-//   1. For i ≥ 1, compute +DM, −DM, TR (true range).
-//        upMove   = high[i] - high[i-1]
-//        downMove = low[i-1] - low[i]
-//        +DM      = (upMove   > downMove && upMove   > 0) ? upMove   : 0
-//        −DM      = (downMove > upMove   && downMove > 0) ? downMove : 0
-//        TR       = max(high-low, |high-prevClose|, |low-prevClose|)
-//   2. Wilder-smooth +DM, −DM, TR over `length`.
-//   3. +DI = 100 * sm(+DM) / sm(TR), same for −DI.
-//   4. DX = 100 * |+DI − −DI| / (+DI + −DI)   (0 when sum is 0)
+// C# pipeline (bar-for-bar):
+//   DiPart holds an AverageTrueRange and a WilderMovingAverage, both Length=L.
+//     - AverageTrueRange processes the TrueRange of EVERY bar (TR[0]=high-low),
+//       i.e. it is a WilderMovingAverage over TR starting at bar 0.
+//     - The directional-movement WilderMovingAverage is fed +DM / −DM starting
+//       at bar 1 (it needs the previous candle).
+//     +DI = 100 * WilderMA(+DM) / ATR   (−DI symmetric); 0 when ATR is 0.
+//   Both WilderMovingAverage instances are EXPANDING averages during warm-up
+//   (divisor = running count 1,2,3,… capped at L), not SMA-seeded — see
+//   helpers.wilderWMA, which reproduces WilderMovingAverage.cs exactly.
 //
-// Default Length in StockSharp's DiPart.cs is 5 (DirectionalIndex.cs does
-// NOT override that default), but per the task the JS default is **14** —
-// the canonical Wilder convention used by every charting package and by
-// adx.js in this folder. Override via params.length if you need 5.
+//   DiPart.IsFormed lags one bar: it flips true only once BOTH inner MAs are
+//   formed, tested at the START of the next bar. The +DM MA is fed from bar 1,
+//   so it is formed after bar L, and DiPart therefore emits +DI/−DI from bar
+//   L+1. The dumped DiPlus/DiMinus lines are gated on that IsFormed, so the JS
+//   port nulls +DI/−DI before bar L+1 to match.
+//
+//   DX = 100 * |+DI − −DI| / (+DI + −DI)  (0 when the sum is 0).
+//
+// +DM / −DM (DiPlus.cs / DiMinus.cs):
+//   upMove   = high[i] - high[i-1]
+//   downMove = low[i-1] - low[i]
+//   +DM = (upMove   > downMove && upMove   > 0) ? upMove   : 0
+//   −DM = (downMove > upMove   && downMove > 0) ? downMove : 0
+//   TR  = max(high-low, |high-prevClose|, |low-prevClose|)   (bar 0: high-low)
+//
+// Default Length in StockSharp's DiPart.cs is 5, but DirectionalIndex is used
+// by AverageDirectionalIndex with Length=14 (the canonical Wilder default),
+// which is the JS default here. Override via params.length.
 //
 // Output shape: `{ plusDI, minusDI, dx }`, each an IndicatorPoint[] aligned
 // 1:1 with input candles.
+
+import { wilderWMA } from './helpers.js';
 
 /**
  * @typedef {object} CandlePoint
@@ -44,44 +56,45 @@
  */
 
 /**
- * Wilder smoothing tolerant of a leading null prefix. Seeds with the SMA
- * of the first `length` consecutive non-null finite samples, then
- * `wma[i] = (wma[i-1] * (length-1) + x[i]) / length`. Mirrors the helper
- * inlined in adx.js (kept local here so dx.js doesn't depend on adx.js).
- * @param {(number|null)[]} values
- * @param {number} length
- * @returns {(number|null)[]}
+ * Compute the shared +DM / −DM / TR raw series for the DMI/ADX chain.
+ * TR is populated from bar 0 (high-low); +DM/−DM start at bar 1.
+ * @param {CandlePoint[]} candles
+ * @returns {{plusDM: (number|null)[], minusDM: (number|null)[], tr: (number|null)[]}}
  */
-function wilderSmoothFlexible(values, length) {
-    const n = values.length;
-    const out = new Array(n);
-    if (n === 0 || length <= 0) {
-        for (let i = 0; i < n; i++) out[i] = null;
-        return out;
-    }
-    let seedSum = 0;
-    let seedCount = 0;
-    let prev = 0;
-    let seeded = false;
+export function dmiRaw(candles) {
+    const n = candles.length;
+    const plusDM = new Array(n);
+    const minusDM = new Array(n);
+    const tr = new Array(n);
     for (let i = 0; i < n; i++) {
-        const v = values[i];
-        const ok = typeof v === 'number' && Number.isFinite(v);
-        if (!seeded) {
-            if (!ok) { seedSum = 0; seedCount = 0; out[i] = null; continue; }
-            seedSum += v;
-            seedCount++;
-            if (seedCount === length) {
-                prev = seedSum / length;
-                out[i] = prev;
-                seeded = true;
-            } else out[i] = null;
+        const c = candles[i];
+        const h = c && c.high;
+        const l = c && c.low;
+        const hlOk = typeof h === 'number' && Number.isFinite(h) && typeof l === 'number' && Number.isFinite(l);
+        if (i === 0) {
+            plusDM[0] = null;
+            minusDM[0] = null;
+            tr[0] = hlOk ? h - l : null;
             continue;
         }
-        if (!ok) { out[i] = null; continue; }
-        prev = (prev * (length - 1) + v) / length;
-        out[i] = prev;
+        const p = candles[i - 1];
+        const pc = p && p.close;
+        const ph = p && p.high;
+        const pl = p && p.low;
+        if (!hlOk ||
+            typeof ph !== 'number' || !Number.isFinite(ph) ||
+            typeof pl !== 'number' || !Number.isFinite(pl) ||
+            typeof pc !== 'number' || !Number.isFinite(pc)) {
+            plusDM[i] = null; minusDM[i] = null; tr[i] = null;
+            continue;
+        }
+        const upMove = h - ph;
+        const downMove = pl - l;
+        plusDM[i] = (upMove > downMove && upMove > 0) ? upMove : 0;
+        minusDM[i] = (downMove > upMove && downMove > 0) ? downMove : 0;
+        tr[i] = Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc));
     }
-    return out;
+    return { plusDM, minusDM, tr };
 }
 
 /**
@@ -97,36 +110,15 @@ export function calcDX(candles, params) {
     }
 
     const n = candles.length;
-    const plusDM = new Array(n);
-    const minusDM = new Array(n);
-    const tr = new Array(n);
-    plusDM[0] = null; minusDM[0] = null; tr[0] = null;
-    for (let i = 1; i < n; i++) {
-        const c = candles[i];
-        const p = candles[i - 1];
-        const h = c && c.high;
-        const l = c && c.low;
-        const pc = p && p.close;
-        const ph = p && p.high;
-        const pl = p && p.low;
-        if (typeof h !== 'number' || !Number.isFinite(h) ||
-            typeof l !== 'number' || !Number.isFinite(l) ||
-            typeof ph !== 'number' || !Number.isFinite(ph) ||
-            typeof pl !== 'number' || !Number.isFinite(pl) ||
-            typeof pc !== 'number' || !Number.isFinite(pc)) {
-            plusDM[i] = null; minusDM[i] = null; tr[i] = null;
-            continue;
-        }
-        const upMove = h - ph;
-        const downMove = pl - l;
-        plusDM[i] = (upMove > downMove && upMove > 0) ? upMove : 0;
-        minusDM[i] = (downMove > upMove && downMove > 0) ? downMove : 0;
-        tr[i] = Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc));
-    }
+    const { plusDM, minusDM, tr } = dmiRaw(candles);
 
-    const smPlus = wilderSmoothFlexible(plusDM, length);
-    const smMinus = wilderSmoothFlexible(minusDM, length);
-    const smTR = wilderSmoothFlexible(tr, length);
+    const smPlus = wilderWMA(plusDM, length);
+    const smMinus = wilderWMA(minusDM, length);
+    const smTR = wilderWMA(tr, length);
+
+    // DiPart.IsFormed flips one bar after the +DM MA forms (fed from bar 1 →
+    // formed after bar L), so the emitted +DI/−DI lines start at bar L+1.
+    const firstFormed = length + 1;
 
     const plusDI = new Array(n);
     const minusDI = new Array(n);
@@ -136,7 +128,7 @@ export function calcDX(candles, params) {
         const sp = smPlus[i];
         const sm = smMinus[i];
         const st = smTR[i];
-        if (sp === null || sm === null || st === null || st === 0) {
+        if (i < firstFormed || sp === null || sm === null || st === null || st === 0) {
             plusDI[i] = { time: t, value: null };
             minusDI[i] = { time: t, value: null };
             dx[i] = { time: t, value: null };

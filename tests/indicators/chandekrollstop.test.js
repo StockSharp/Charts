@@ -27,14 +27,14 @@ describe('calcChandeKrollStop', () => {
     });
 
     it('candles fewer than warm-up → all-null on both lines', () => {
-        // default: period=10, stopPeriod=9 → warm-up index = 10+9-2 = 17.
-        // 12 candles → all null.
+        // default period=10: lines are gated on Highest/Lowest.IsFormed (bar 9),
+        // so fewer than `period` candles → all null.
         const rows = [];
-        for (let i = 0; i < 12; i++) rows.push([10 + i, 8 + i]);
+        for (let i = 0; i < 8; i++) rows.push([10 + i, 8 + i]);
         const r = calcChandeKrollStop(makeCandles(rows), {});
-        assert.strictEqual(r.longStop.length, 12);
-        assert.strictEqual(r.shortStop.length, 12);
-        for (let i = 0; i < 12; i++) {
+        assert.strictEqual(r.longStop.length, 8);
+        assert.strictEqual(r.shortStop.length, 8);
+        for (let i = 0; i < 8; i++) {
             assert.strictEqual(r.longStop[i].value, null);
             assert.strictEqual(r.shortStop[i].value, null);
         }
@@ -53,19 +53,20 @@ describe('calcChandeKrollStop', () => {
         }
     });
 
-    it('warm-up: first non-null at period + stopPeriod - 2', () => {
-        // period=3, stopPeriod=2 → first non-null at index 3.
+    it('warm-up: first non-null at period - 1 (partial-seed SMA)', () => {
+        // period=3 → Highest/Lowest form at bar 2; the partial-seed SMA emits a
+        // (growing) value from that same bar, so first non-null is index 2.
         const rows = [];
         for (let i = 0; i < 8; i++) rows.push([10 + i, 8 + i]);
         const r = calcChandeKrollStop(makeCandles(rows), {
             period: 3, multiplier: 1, stopPeriod: 2,
         });
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < 2; i++) {
             assert.strictEqual(r.longStop[i].value, null);
             assert.strictEqual(r.shortStop[i].value, null);
         }
-        assert.notStrictEqual(r.longStop[3].value, null);
-        assert.notStrictEqual(r.shortStop[3].value, null);
+        assert.notStrictEqual(r.longStop[2].value, null);
+        assert.notStrictEqual(r.shortStop[2].value, null);
     });
 
     it('hand-computed: period=2, multiplier=1, stopPeriod=2', () => {
@@ -80,7 +81,9 @@ describe('calcChandeKrollStop', () => {
         //   bar 2: maxH=12, minL=9, diff=3 → stopLong=12-3=9, stopShort=9+3=12
         //   bar 3: maxH=13, minL=10, diff=3 → stopLong=13-3=10, stopShort=10+3=13
         //
-        // StopPeriod=2 SMA, first non-null at bar 2:
+        // StopPeriod=2 partial-seed SMA (Buffer.Sum / StopPeriod), emitting from
+        // bar 1 (Period-1) where Highest/Lowest first form:
+        //   bar 1: longStop = 8/2 = 4,     shortStop = 11/2 = 5.5   (partial seed)
         //   bar 2: longStop = (8+9)/2 = 8.5, shortStop = (11+12)/2 = 11.5
         //   bar 3: longStop = (9+10)/2 = 9.5, shortStop = (12+13)/2 = 12.5
         const rows = [[10, 8], [11, 9], [12, 10], [13, 11]];
@@ -88,7 +91,8 @@ describe('calcChandeKrollStop', () => {
             period: 2, multiplier: 1, stopPeriod: 2,
         });
         assert.strictEqual(r.longStop[0].value, null);
-        assert.strictEqual(r.longStop[1].value, null);
+        approxEq(r.longStop[1].value, 4);
+        approxEq(r.shortStop[1].value, 5.5);
         approxEq(r.longStop[2].value, 8.5);
         approxEq(r.shortStop[2].value, 11.5);
         approxEq(r.longStop[3].value, 9.5);

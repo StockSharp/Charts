@@ -61,49 +61,46 @@ export function calcEOM(candles, params) {
     // _prevHigh / _prevLow are updated EVERY bar (regardless of the
     // good/gap branch) on IsFinal — i.e., we always use the immediate
     // previous candle as `prev`. We mirror that here by reading candles[i-1].
-    const buf = new Array(length);
-    let bufHead = 0; // next slot to overwrite
-    let bufCount = 0;
+    // Explicit _prevHigh/_prevLow state, mirroring EaseOfMovement.cs. Key quirk:
+    // once the indicator is formed it `return`s from the emv branch and so NEVER
+    // reaches the `_prevHigh = candle.HighPrice` update below — meaning from the
+    // first formed bar onward the mid-point move is measured against a FROZEN
+    // previous candle (the bar just before forming), which is why the value
+    // trends rather than staying a bounded SMA. The buffer itself is windowed.
+    let prevHigh = 0;
+    let prevLow = 0;
+    const buf = [];
     let bufSum = 0;
 
-    for (let i = 1; i < n; i++) {
+    for (let i = 0; i < n; i++) {
         const c = candles[i];
-        const p = candles[i - 1];
         const h = c && c.high;
         const l = c && c.low;
-        const ph = p && p.high;
-        const pl = p && p.low;
         const v = c && c.volume;
-        if (typeof h !== 'number' || !Number.isFinite(h) ||
-            typeof l !== 'number' || !Number.isFinite(l) ||
-            typeof ph !== 'number' || !Number.isFinite(ph) ||
-            typeof pl !== 'number' || !Number.isFinite(pl) ||
-            typeof v !== 'number' || !Number.isFinite(v)) {
-            continue; // skip; don't push, don't emit
-        }
-        const range = h - l;
-        if (range === 0 || v === 0) continue; // gap branch: no push, no emit
+        const finite = typeof h === 'number' && Number.isFinite(h)
+            && typeof l === 'number' && Number.isFinite(l)
+            && typeof v === 'number' && Number.isFinite(v);
+        const cl = finite ? h - l : 0;
 
-        const midMove = (h + l) / 2 - (ph + pl) / 2;
-        // emvRaw = midMove / boxRatio = midMove * range / volume
-        const emv = midMove * range / v;
-
-        // Push to circular buffer (evict the oldest when full).
-        if (bufCount < length) {
-            buf[bufHead] = emv;
-            bufHead = (bufHead + 1) % length;
-            bufCount++;
+        // The .cs guards range (cl != 0) but not volume; a zero-volume bar would
+        // throw DivideByZero there. We guard it too and degrade to a gap (null).
+        if (finite && prevHigh !== 0 && prevLow !== 0 && cl !== 0 && v !== 0) {
+            const midMove = (h + l) / 2 - (prevHigh + prevLow) / 2;
+            const emv = midMove * cl / v;
+            buf.push(emv);
             bufSum += emv;
-        } else {
-            bufSum -= buf[bufHead];
-            buf[bufHead] = emv;
-            bufHead = (bufHead + 1) % length;
-            bufSum += emv;
+            if (buf.length > length) bufSum -= buf.shift();
+            if (buf.length >= length) {
+                // IsFormed -> emit and, like the .cs, return WITHOUT updating _prev.
+                out[i] = { time: c.time, value: bufSum / length };
+                continue;
+            }
         }
-
-        // Emit only once Buffer.Count >= Length (mirrors .cs IsFormed gate).
-        if (bufCount >= length) {
-            out[i] = { time: c.time, value: bufSum / length };
+        // Not returned early -> update _prev (the .cs does this on every IsFinal bar
+        // that does not return from the formed branch).
+        if (finite) {
+            prevHigh = h;
+            prevLow = l;
         }
     }
     return out;

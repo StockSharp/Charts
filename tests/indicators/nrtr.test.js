@@ -1,4 +1,6 @@
-// NickRypockTrailingReverse tests.
+// NickRypockTrailingReverse tests. DecimalLengthIndicator: not formed (null)
+// until `length` values are buffered; the state machine still advances during
+// warm-up, only the output is gated.
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
@@ -14,44 +16,31 @@ function makeCandles(closes) {
 
 describe('calcNickRypockTrailingReverse', () => {
     it('matches the explicit state-machine trace on length=2, multiple=100', () => {
-        // multiple raw=100 ⇒ /1000 = 0.1.
-        // Trace (verified by hand against the .cs):
-        // i=0, p=10: k=10 → k'=(10+0)/2 *0.1... actually k=(k+(p-k)/L)*mult.
-        //   Init: k=10, highP=10, lowP=10. k=(10+0/2)*0.1=1.
-        //   trend=0: both branches.
-        //   up: reverse=10-1=9, p(10)<=9? no → newTrend=+1.
-        //   down: reverse=10+1=11, p(10)>=11? no → newTrend=-1.
-        //   trend=-1. out=11.
-        // i=1, p=11: k=(1+(11-1)/2)*0.1=0.6.
-        //   trend=-1: only down branch. p<lowP(10)? no. reverse=10+0.6=10.6.
-        //   p(11)>=10.6? yes → newTrend=+1, highP=11, reverse=11-0.6=10.4.
-        //   trend=+1. out=10.4.
-        // i=2, p=12: k=(0.6+(12-0.6)/2)*0.1=0.63.
-        //   trend=+1: only up branch. p>highP(11)? yes → highP=12.
-        //   reverse=12-0.63=11.37. p<=11.37? no → newTrend=+1. out=11.37.
+        // length=2 → index 0 is warm-up (null); state still advances. Trace of the
+        // reverse line (verified by hand against the .cs): out[1]=10.4, out[2]=11.37.
         const out = calcNickRypockTrailingReverse(
             makeCandles([10, 11, 12]),
             { length: 2, multiple: 100 }
         );
         assert.strictEqual(out.length, 3);
-        assert.ok(Math.abs(out[0].value - 11) < 1e-9);
+        assert.strictEqual(out[0].value, null); // warm-up (Buffer.Count 1 < Length 2)
         assert.ok(Math.abs(out[1].value - 10.4) < 1e-9);
         assert.ok(Math.abs(out[2].value - 11.37) < 1e-9);
     });
 
     it('clamps multiple ≤ 1 to 1 (per .cs setter)', () => {
-        // multiple=0 → clamped to 1 → /1000 = 0.001.
         const out0 = calcNickRypockTrailingReverse(makeCandles([10, 10, 10]), { length: 2, multiple: 0 });
         const out1 = calcNickRypockTrailingReverse(makeCandles([10, 10, 10]), { length: 2, multiple: 1 });
         assert.deepStrictEqual(out0.map(p => p.value), out1.map(p => p.value));
     });
 
-    it('emits a value for every candle (no warm-up null window)', () => {
+    it('warm-up (first length-1) null, then a finite reverse line', () => {
         const out = calcNickRypockTrailingReverse(makeCandles([1, 2, 3, 4, 5]), { length: 3, multiple: 50 });
-        // multiple=50 → clamped to 50/1000=0.05.
-        for (const p of out) {
-            assert.notStrictEqual(p.value, null);
-            assert.ok(Number.isFinite(p.value));
+        assert.strictEqual(out[0].value, null);
+        assert.strictEqual(out[1].value, null);
+        for (let i = 2; i < out.length; i++) {
+            assert.notStrictEqual(out[i].value, null);
+            assert.ok(Number.isFinite(out[i].value));
         }
     });
 
@@ -75,6 +64,8 @@ describe('calcNickRypockTrailingReverse', () => {
         for (let i = 0; i < 60; i++) closes.push(100 + Math.sin(i / 5) * 5);
         const out = calcNickRypockTrailingReverse(makeCandles(closes));
         assert.strictEqual(out.length, 60);
-        for (const p of out) assert.ok(Number.isFinite(p.value));
+        // Warm-up (first 49) null; from index 49 the reverse line is finite.
+        for (let i = 0; i < 49; i++) assert.strictEqual(out[i].value, null);
+        for (let i = 49; i < 60; i++) assert.ok(Number.isFinite(out[i].value));
     });
 });

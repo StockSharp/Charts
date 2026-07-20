@@ -82,12 +82,16 @@ describe('calcEOM', () => {
         for (let i = 0; i < candles.length; i++) assert.strictEqual(r[i].time, candles[i].time);
     });
 
-    it('constant midpoint progression with constant range/volume → EOM constant', () => {
+    it('linear midpoint progression → EOM trends up (frozen-prev quirk)', () => {
+        // Once formed the .cs stops updating _prevHigh/_prevLow, so from bar 3 the
+        // mid-point move is measured against the frozen bar-2 candle and grows each
+        // bar (1, 2, 3, ...), which is why EOM trends instead of staying at 0.02.
         const rows = [];
         for (let i = 0; i < 10; i++) rows.push([10 + i, 8 + i, 100]); // midpoint advances by 1 each bar
         const candles = makeCandles(rows);
         const r = calcEOM(candles, { length: 3 });
-        // raw[i>=1] = 1 * 2 / 100 = 0.02; SMA of constant = 0.02 once formed.
-        for (let i = 3; i < 10; i++) approxEq(r[i].value, 0.02);
+        approxEq(r[3].value, 0.02);       // buffer [0.02, 0.02, 0.02]
+        approxEq(r[4].value, 0.08 / 3);   // [0.02, 0.02, 0.04]
+        approxEq(r[5].value, 0.12 / 3);   // [0.02, 0.04, 0.06]
     });
 });

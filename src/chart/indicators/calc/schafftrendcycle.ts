@@ -60,72 +60,69 @@ export function calcSchaffTrendCycle(candles, params) {
         hist[i] = (h && typeof h.value === 'number' && Number.isFinite(h.value)) ? h.value : null;
     }
 
-    // 2) normalise hist over rolling `length` window
-    const norm = new Array(n);
+    // Faithful port of the .cs OnProcessDecimal state machine:
+    //   _buffer          : last `length` CLOSES (min/max used to normalise macdHist)
+    //   StochasticK(5)   : 100 * (raw - Lowest) / (Highest - Lowest) over its own window
+    //   base EMA(length) : final smoothing of the StochasticK output
+    const closeBuf = [];       // last `length` closes
+    const stochBuf = [];       // StochasticK window of raw values (cap cycleLength)
+    let stochKFormed = false;
     let prevStochK = 0;
-    for (let i = 0; i < n; i++) {
-        if (i < length - 1 || hist[i] === null) { norm[i] = null; continue; }
-        let lo = +Infinity;
-        let hi = -Infinity;
-        let bad = false;
-        for (let k = i - length + 1; k <= i; k++) {
-            const v = hist[k];
-            if (v === null) { bad = true; break; }
-            if (v < lo) lo = v;
-            if (v > hi) hi = v;
-        }
-        if (bad) { norm[i] = null; continue; }
-        const den = hi - lo;
-        norm[i] = den === 0 ? null : (hist[i] - lo) / den;
-    }
 
-    // 3) StochasticK with length = cycleLength over `norm` series (high=low=close=norm)
-    const stochK = new Array(n);
-    for (let i = 0; i < n; i++) {
-        if (i < (length - 1) + (cycleLength - 1)) { stochK[i] = null; continue; }
-        let lo = +Infinity;
-        let hi = -Infinity;
-        let bad = false;
-        for (let k = i - cycleLength + 1; k <= i; k++) {
-            const v = norm[k];
-            if (v === null) { bad = true; break; }
-            if (v < lo) lo = v;
-            if (v > hi) hi = v;
-        }
-        if (bad) { stochK[i] = null; continue; }
-        const close = norm[i];
-        const diff = hi - lo;
-        if (diff === 0) {
-            // .cs: when buffer max == min in step 2, reuse _prevStochK and
-            // skip StochasticK.Process. Approximate by reusing previous K.
-            stochK[i] = prevStochK;
-        } else {
-            stochK[i] = 100 * (close - lo) / diff;
-        }
-        prevStochK = stochK[i];
-    }
-
-    // 4) EMA(stochK, length) — seeded with SMA of first `length` finite values.
-    const k = 2 / (length + 1);
+    const kEma = 2 / (length + 1);
     let seedSum = 0;
     let seedCount = 0;
     let seedDone = false;
-    let prev = 0;
+    let emaPrev = 0;
+
     for (let i = 0; i < n; i++) {
-        const v = stochK[i];
-        if (v === null || !Number.isFinite(v)) continue;
+        // The .cs pushes the close every final bar, before anything else.
+        const close = candles[i] && candles[i].close;
+        if (typeof close === 'number' && Number.isFinite(close)) {
+            closeBuf.push(close);
+            if (closeBuf.length > length) closeBuf.shift();
+        }
+
+        const macdHist = hist[i];
+        if (macdHist === null) continue; // Macd not formed -> STC null
+
+        let minC = +Infinity;
+        let maxC = -Infinity;
+        for (const c of closeBuf) { if (c < minC) minC = c; if (c > maxC) maxC = c; }
+        const den = maxC - minC;
+
+        let stochK;
+        if (den === 0) {
+            // .cs: reuse _prevStochK and DO NOT advance StochasticK.
+            stochK = prevStochK;
+        } else {
+            const raw = (macdHist - minC) / den;
+            stochBuf.push(raw);
+            if (stochBuf.length > cycleLength) stochBuf.shift();
+            let minS = +Infinity;
+            let maxS = -Infinity;
+            for (const s of stochBuf) { if (s < minS) minS = s; if (s > maxS) maxS = s; }
+            const diffS = maxS - minS;
+            stochK = diffS === 0 ? 0 : 100 * (raw - minS) / diffS;
+            if (stochBuf.length >= cycleLength) stochKFormed = true;
+        }
+
+        if (!stochKFormed) continue; // StochasticK not formed -> STC null
+        prevStochK = stochK;
+
+        // base EMA(length) of the StochasticK output, SMA-seeded.
         if (!seedDone) {
-            seedSum += v;
+            seedSum += stochK;
             seedCount++;
             if (seedCount === length) {
-                prev = seedSum / length;
-                out[i] = { time: candles[i].time, value: prev };
+                emaPrev = seedSum / length;
                 seedDone = true;
+                out[i] = { time: candles[i].time, value: emaPrev };
             }
             continue;
         }
-        prev = v * k + prev * (1 - k);
-        out[i] = { time: candles[i].time, value: prev };
+        emaPrev = stochK * kEma + emaPrev * (1 - kEma);
+        out[i] = { time: candles[i].time, value: emaPrev };
     }
 
     return out;

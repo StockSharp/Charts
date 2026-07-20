@@ -26,13 +26,13 @@ function approxEq(actual, expected, eps = 1e-9) {
 }
 
 describe('calcADX', () => {
-    it('empty candles → {adx:[], plusDI:[], minusDI:[]}', () => {
+    it('empty candles → {adx:[], dx:[], plusDI:[], minusDI:[]}', () => {
         const r = calcADX([], { length: 14 });
-        assert.deepStrictEqual(r, { adx: [], plusDI: [], minusDI: [] });
+        assert.deepStrictEqual(r, { adx: [], dx: [], plusDI: [], minusDI: [] });
     });
 
     it('candle count too small for warm-up → every value null on all three series', () => {
-        // length=14 needs 2*14 - 1 = 27 candles for the first non-null ADX.
+        // length=14 needs 2*14 = 28 candles for the first non-null ADX.
         const hlc = [];
         for (let i = 0; i < 5; i++) hlc.push([i + 1, i, i + 0.5]);
         const r = calcADX(makeCandles(hlc), { length: 14 });
@@ -54,31 +54,33 @@ describe('calcADX', () => {
         assert.strictEqual(r.minusDI.length, candles.length);
     });
 
-    it('length=2 on a strictly rising series saturates +DI=200/3, -DI=0, ADX=100', () => {
-        // h_i = i+1, l_i = i, c_i = i+0.5 → upMove=1, downMove=-1, +DM=1, -DM=0
-        // TR = max(1, |h-prev_close|, |l-prev_close|) = max(1, 1.5, 0.5) = 1.5
-        // smPlusDM = smMinusDM-stays-0, smTR = 1.5 (constant after seed)
-        // +DI = 100 * 1 / 1.5 = 200/3; -DI = 0; DX = 100; ADX saturates to 100.
+    it('length=2 on a strictly rising series → -DI=0, DX=ADX=100, +DI per expanding Wilder', () => {
+        // h_i = i+1, l_i = i, c_i = i+0.5 → upMove=1, downMove=-1, +DM=1, -DM=0.
+        // TR[0]=high-low=1, TR[i>=1]=max(1,1.5,0.5)=1.5. Both DM and TR are
+        // smoothed by the EXPANDING WilderMovingAverage, so smTR is not yet
+        // saturated to 1.5 in the first bars:
+        //   smTR: 1 (i0), 1.25 (i1), 1.375 (i2), 1.4375 (i3), ...
+        //   smPlusDM: 1 from i1 onward (constant +DM=1).
+        // Since -DM=0 → -DI=0 → DX=100 (constant), and ADX = WilderMA(DX=100)=100.
         const hlc = [];
         for (let i = 0; i < 8; i++) hlc.push([i + 1, i, i + 0.5]);
         const r = calcADX(makeCandles(hlc), { length: 2 });
 
-        // +DI/-DI warm-up: smoothing seeds at i=2 (first non-null DM at i=1,
-        // need 2 values).
+        // DiPart.IsFormed → +DI/−DI/DX emitted from bar length+1 = 3.
         assert.strictEqual(r.plusDI[0].value, null);
         assert.strictEqual(r.plusDI[1].value, null);
-        approxEq(r.plusDI[2].value, 200 / 3);
-        approxEq(r.plusDI[3].value, 200 / 3);
-        assert.strictEqual(r.minusDI[2].value, 0);
+        assert.strictEqual(r.plusDI[2].value, null);
+        approxEq(r.plusDI[3].value, 100 / 1.4375); // 100 * smPlus(1) / smTR(1.4375)
         assert.strictEqual(r.minusDI[3].value, 0);
+        // DX = 100 whenever +DI>0 and -DI=0.
+        assert.strictEqual(r.dx[2].value, null);
+        approxEq(r.dx[3].value, 100);
 
-        // ADX warm-up: DX is null until i=2, then seeded over length=2 more
-        // values → first non-null ADX at i=3.
-        assert.strictEqual(r.adx[0].value, null);
-        assert.strictEqual(r.adx[1].value, null);
-        assert.strictEqual(r.adx[2].value, null);
-        approxEq(r.adx[3].value, 100);
+        // ADX: DX (=100) is fed only once DX is formed (bar 3), so the ADX
+        // WilderMA forms at bar diFirst + length - 1 = 4, then stays 100.
+        assert.strictEqual(r.adx[3].value, null);
         approxEq(r.adx[4].value, 100);
+        approxEq(r.adx[5].value, 100);
     });
 
     it('time field passed through unchanged on all three series', () => {
@@ -93,11 +95,12 @@ describe('calcADX', () => {
         }
     });
 
-    it('default length=14 produces null at index < 27 and a number from index 27 onward', () => {
+    it('default length=14 produces null at index < 28 and a number from index 28 onward', () => {
         const hlc = [];
-        for (let i = 0; i < 30; i++) hlc.push([i + 1, i, i + 0.5]);
+        for (let i = 0; i < 32; i++) hlc.push([i + 1, i, i + 0.5]);
         const r = calcADX(makeCandles(hlc));
-        assert.strictEqual(r.adx[26].value, null);
-        assert.notStrictEqual(r.adx[27].value, null);
+        // ADX first appears at diFirst + length - 1 = 15 + 13 = 28.
+        assert.strictEqual(r.adx[27].value, null);
+        assert.notStrictEqual(r.adx[28].value, null);
     });
 });

@@ -80,6 +80,10 @@ export function calcFractalDimension(candles, params) {
         buffer.push(c);
         if (buffer.length > length) buffer.shift();
 
+        // Not formed until the buffer holds `length` closes (DecimalLengthIndicator
+        // IsFormed = Buffer.Count == Length) — null the warm-up to match StockSharp.
+        if (buffer.length < length) continue;
+
         if (buffer.length < 2) {
             out[i] = { time: candles[i].time, value: 1.5 };
             continue;

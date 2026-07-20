@@ -110,7 +110,9 @@ export function calcEhlerFisher(candles, params) {
 
         const fisher = 0.5 * Math.log((1 + value) / (1 - value));
         main[i] = { time: candles[i].time, value: fisher };
-        if (haveFisher) trigger[i] = { time: candles[i].time, value: prevFisher };
+        // TriggerLine = previous MainLine; on the first formed bar the .cs previous
+        // value is the initial 0, so emit it (do not gate on a prior fisher existing).
+        trigger[i] = { time: candles[i].time, value: prevFisher };
 
         prevValue = value;
         prevFisher = fisher;

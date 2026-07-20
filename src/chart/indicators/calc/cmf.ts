@@ -3,14 +3,12 @@
 //   MFV = MFM * volume
 //   CMF[i] = Σ MFV over last N bars / Σ volume over last N bars
 //
-// Port of StockSharp Algo.Indicators ChaikinMoneyFlow.cs WITH ONE FIX:
-// the .cs buffer caches the per-bar `moneyFlowVolume` and then subtracts
-// `oldValue = Buffer.Front()` from both `_moneyFlowVolumeSum` AND
-// `_volumeSum`, which is wrong for the volume denominator — `_volumeSum`
-// should be decremented by the old bar's *volume*, not its MFV. The Algo
-// suite has an open issue around this; here we keep two rolling sums
-// (MFV + volume) and decrement the volume sum with the actual oldest
-// bar volume. CMF outputs match the standard definition (Σ MFV / Σ vol).
+// Port of StockSharp Algo.Indicators ChaikinMoneyFlow.cs, INCLUDING its quirk:
+// the .cs buffer caches the per-bar `moneyFlowVolume` and on eviction subtracts
+// `oldValue = Buffer.Front()` (the old MFV) from BOTH `_moneyFlowVolumeSum` and
+// `_volumeSum` — i.e. the volume denominator is decremented by the old bar's MFV,
+// not its volume. This is arguably a bug, but to match the live C# bar-for-bar we
+// replicate it exactly (subtract the old MFV from the volume sum too).
 //
 // `length` default 20. Warm-up: first (length-1) outputs are null.
 // Σvolume == 0 in the window → CMF = 0 (matches the .cs guard).
@@ -80,10 +78,11 @@ export function calcCMF(candles, params) {
         }
         if (i >= length) {
             const dm = mfv[i - length];
-            const dv = vol[i - length];
             if (Number.isFinite(dm)) {
                 mfvSum -= dm;
-                volSum -= dv;
+                // Replicate the .cs: it subtracts the old MFV (Buffer.Front) from the
+                // volume sum too, NOT the old bar's volume.
+                volSum -= dm;
             } else {
                 invalid--;
             }

@@ -112,10 +112,8 @@ export function calcTrix(candles, params) {
             continue;
         }
         if (prev === null) {
-            // First formed bar: Trix.cs emits 10 * roc where roc=0 (see comment).
-            if (v !== 0) {
-                out[i] = { time: candles[i].time, value: 0 };
-            }
+            // First ROC(1) input — Momentum Buffer.Count is 1 < 2, so ROC is not
+            // formed yet and StockSharp reports null; just latch prev for next bar.
             prev = v;
             continue;
         }

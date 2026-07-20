@@ -25,15 +25,33 @@ describe('calcKasePeakOscillator', () => {
     it('warm-up: null until ATR(atrLength) is formed', () => {
         const candles = [];
         for (let i = 0; i < 5; i++) candles.push(mk(2 + i * 0.1, 1, 1.5, i));
-        const r = calcKasePeakOscillator(candles, { atrLength: 4 });
-        // csATR fills its Wilder buffer at bar atrLength-1 (TR[0]=high-low
-        // seed, count grows 1→atrLength). Bars 0..2 null.
+        // shortPeriod/longPeriod=1 → the Part wrappers form immediately, so the
+        // only warm-up is the ATR: csATR fills its Wilder buffer at bar
+        // atrLength-1 (TR[0]=high-low seed, count grows 1→atrLength). Bars 0..2
+        // null; first emitted bar is atrLength-1 = 3.
+        const r = calcKasePeakOscillator(candles, { atrLength: 4, shortPeriod: 1, longPeriod: 1 });
         for (let i = 0; i < 3; i++) {
             assert.strictEqual(r.shortTerm[i].value, null);
             assert.strictEqual(r.longTerm[i].value, null);
         }
         assert.notStrictEqual(r.shortTerm[3].value, null);
         assert.notStrictEqual(r.longTerm[3].value, null);
+    });
+
+    it('line gating: ShortTerm/LongTerm Part lengths delay each line', () => {
+        // Defaults ShortPeriod=9, LongPeriod=18, ATR(10) → the Parts are fed from
+        // bar atrLength-1 = 9, so ShortTerm forms at 9+9-1=17 and LongTerm at
+        // 9+18-1=26. Lines are null before those bars.
+        const candles = [];
+        for (let i = 0; i < 30; i++) {
+            const base = 100 + Math.sin(i / 4) * 10;
+            candles.push(mk(base + 1, base - 1, base + Math.cos(i / 5), i));
+        }
+        const r = calcKasePeakOscillator(candles, {});
+        assert.strictEqual(r.shortTerm[16].value, null);
+        assert.notStrictEqual(r.shortTerm[17].value, null);
+        assert.strictEqual(r.longTerm[25].value, null);
+        assert.notStrictEqual(r.longTerm[26].value, null);
     });
 
     it('output shapes match input length; timestamps pass through', () => {
@@ -51,9 +69,10 @@ describe('calcKasePeakOscillator', () => {
     it('first emitted bar (i == atrLength-1): short == long (both buffers have 1 item, same value)', () => {
         const candles = [];
         for (let i = 0; i < 6; i++) candles.push(mk(2 + i, 1 + i, 1.5 + i, i));
-        const r = calcKasePeakOscillator(candles, { atrLength: 4 });
-        // At i=atrLength-1=3, peakBuffer and valleyBuffer each hold one item;
-        // den1 == den2, minValley == valleyBuf[0]. So short == long.
+        // Part lengths=1 so both lines emit from bar atrLength-1=3, where the
+        // peak/valley buffers each hold one item → den1 == den2 and
+        // minValley == valleyBuf[0], so short == long.
+        const r = calcKasePeakOscillator(candles, { atrLength: 4, shortPeriod: 1, longPeriod: 1 });
         approxEq(r.shortTerm[3].value, r.longTerm[3].value);
     });
 
@@ -63,7 +82,9 @@ describe('calcKasePeakOscillator', () => {
             const base = 100 + Math.sin(i / 4) * 10;
             candles.push(mk(base + 1, base - 1, base + Math.cos(i / 5), i));
         }
-        const r = calcKasePeakOscillator(candles, { atrLength: 10 });
+        // Part lengths=1 so both lines emit from ATR-formed bar (9); check the
+        // values are finite once emitted (no NaN/Infinity from the divisions).
+        const r = calcKasePeakOscillator(candles, { atrLength: 10, shortPeriod: 1, longPeriod: 1 });
         for (let i = 10; i < 30; i++) {
             assert.ok(Number.isFinite(r.shortTerm[i].value));
             assert.ok(Number.isFinite(r.longTerm[i].value));

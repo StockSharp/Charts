@@ -27,13 +27,11 @@ describe('calcQStick', () => {
         assert.deepStrictEqual(calcQStick([], { length: 5 }), []);
     });
 
-    it('length=3 partial-window averages from bar 0 (sum / Length)', () => {
-        // diffs (open-close): 10-5=5, 20-10=10, 30-20=10, 40-30=10, 50-40=10
-        // bar 0: sum=5,  out = 5/3
-        // bar 1: sum=15, out = 15/3 = 5
-        // bar 2: sum=25, out = 25/3
-        // bar 3: window slides — drop 5, add 10. sum=30. out = 30/3 = 10
-        // bar 4: drop 10, add 10. sum=30. out = 10
+    it('length=3 — warm-up null until formed, then sliding SMA of diffs', () => {
+        // diffs (open-close): 5,10,10,10,10; SMA not formed until index 2 (length-1).
+        // bar 2: sum=25 → 25/3
+        // bar 3: drop 5, add 10 → 30/3 = 10
+        // bar 4: 30/3 = 10
         const out = calcQStick(makeCandles([
             { o: 10, c: 5 },
             { o: 20, c: 10 },
@@ -42,8 +40,8 @@ describe('calcQStick', () => {
             { o: 50, c: 40 },
         ]), { length: 3 });
         assert.strictEqual(out.length, 5);
-        approxEq(out[0].value, 5 / 3);
-        approxEq(out[1].value, 5);
+        assert.strictEqual(out[0].value, null);
+        assert.strictEqual(out[1].value, null);
         approxEq(out[2].value, 25 / 3);
         approxEq(out[3].value, 10);
         approxEq(out[4].value, 10);
@@ -60,10 +58,9 @@ describe('calcQStick', () => {
         approxEq(out[0].value, 9);
     });
 
-    it('default length=15 — first output is (open[0]-close[0])/15', () => {
+    it('default length=15 — a single candle is not formed → null', () => {
         const out = calcQStick(makeCandles([{ o: 6832, c: 6927 }]));
-        // (6832 - 6927) / 15 = -95 / 15 ≈ -6.333
-        approxEq(out[0].value, (6832 - 6927) / 15);
+        assert.strictEqual(out[0].value, null);
     });
 
     it('NaN open or close on a bar → null until it drops out of the window', () => {

@@ -108,14 +108,11 @@ export function calcT3(candles, params) {
         const allFormed = formedBar >= 0 && i >= formedBar
             && e1[i] !== null && e2[i] !== null && e3[i] !== null
             && e4[i] !== null && e5[i] !== null && e6[i] !== null;
-        if (warmUp > 0) {
-            if (allFormed) warmUp--;
-            // IsFormed is false while warmUp > 0; emit null.
-            continue;
-        }
-        // warmUp == 0; emit if EMAs still good.
-        if (e1[i] === null || e2[i] === null || e3[i] === null
-            || e4[i] === null || e5[i] === null || e6[i] === null) continue;
+        // Mirror the .cs order: decrement the warm-up counter first, then test
+        // IsFormed (allFormed && warmUp == 0) on the SAME bar — so the bar where
+        // warmUp reaches 0 already emits (previously it was one bar too late).
+        if (warmUp > 0 && allFormed) warmUp--;
+        if (!(allFormed && warmUp === 0)) continue;
         out[i] = {
             time: candles[i].time,
             value: c1 * e6[i]! + c2 * e5[i]! + c3 * e4[i]! + c4 * e3[i]!,

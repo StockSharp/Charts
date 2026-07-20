@@ -42,12 +42,13 @@ describe('calcConstanceBrownCompositeIndex', () => {
     });
 
     it('candles fewer than warm-up → every value null on all lines', () => {
-        // defaults: rsi=14, roc=9 → composite first non-null at 23.
-        // 15 candles is below the composite threshold.
+        // defaults: the composite is gated on all inner IsFormed, the slowest of
+        // which is RSI(14) → first non-null at bar 14. 14 candles (indices 0..13)
+        // is below that threshold.
         const closes = [];
-        for (let i = 0; i < 15; i++) closes.push(10 + i);
+        for (let i = 0; i < 14; i++) closes.push(10 + i);
         const r = calcConstanceBrownCompositeIndex(makeCandles(closes), {});
-        for (let i = 0; i < 15; i++) {
+        for (let i = 0; i < 14; i++) {
             assert.strictEqual(r.composite[i].value, null);
             assert.strictEqual(r.fastSma[i].value, null);
             assert.strictEqual(r.slowSma[i].value, null);
@@ -63,17 +64,19 @@ describe('calcConstanceBrownCompositeIndex', () => {
         for (const p of r.slowSma) assert.strictEqual(p.value, null);
     });
 
-    it('warm-up: composite first non-null lands at rsiLength + rocLength', () => {
+    it('warm-up: composite lands at the combined all-formed bar', () => {
         // Small params: rsiLength=3, rocLength=2, shortRsiLength=2,
-        // momentumLength=2 → composite first non-null at index 3+2 = 5.
+        // momentumLength=2. Since the RSIs feed the ROC/SMA their partial values
+        // from bar 1, combinedBar = max(rsiLength, shortRsiLength, rocLength+1,
+        // momentumLength) = max(3, 2, 3, 2) = 3 → first non-null at index 3.
         const closes = [];
         for (let i = 0; i < 15; i++) closes.push(10 + i + (i % 2));
         const r = calcConstanceBrownCompositeIndex(makeCandles(closes), {
             rsiLength: 3, rocLength: 2, shortRsiLength: 2, momentumLength: 2,
             fastSmaLength: 2, slowSmaLength: 3,
         });
-        for (let i = 0; i < 5; i++) assert.strictEqual(r.composite[i].value, null);
-        assert.notStrictEqual(r.composite[5].value, null);
+        for (let i = 0; i < 3; i++) assert.strictEqual(r.composite[i].value, null);
+        assert.notStrictEqual(r.composite[3].value, null);
     });
 
     it('regression: locked-in value on a small known vector', () => {

@@ -87,6 +87,7 @@ export function calcNickRypockTrailingReverse(candles, params) {
     let lowPrice = 0;
     let newTrend = 0;
     let trend = 0;
+    let validCount = 0;
 
     for (let i = 0; i < n; i++) {
         const p = candles[i] && candles[i].close;
@@ -128,7 +129,10 @@ export function calcNickRypockTrailingReverse(candles, params) {
         }
         if (newTrend !== 0) trend = newTrend;
 
-        out[i] = { time: candles[i].time, value: reverse };
+        validCount++;
+        // Not formed until `length` values buffered (DecimalLengthIndicator);
+        // StockSharp reports the warm-up as not-formed (null).
+        out[i] = { time: candles[i].time, value: validCount >= length ? reverse : null };
     }
     return out;
 }

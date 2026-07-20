@@ -2,6 +2,10 @@
 // vector below is a REGRESSION LOCK-IN (verified against StockSharp .cs
 // behaviour once); do NOT try to re-derive these numbers from first
 // principles or third-party Jurik docs — the .cs is a simplified variant.
+//
+// JMA is a DecimalLengthIndicator: not formed until `length` warm-up bars are
+// consumed, so the first length-1 outputs are null; the last warm-up bar (index
+// length-1) emits its close, then the recurrence runs from index length.
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
@@ -24,24 +28,22 @@ describe('calcJurikMovingAverage', () => {
         assert.deepStrictEqual(calcJurikMovingAverage([], {}), []);
     });
 
-    it('warm-up: first `length` outputs equal the close (no leading null block)', () => {
-        // The .cs returns `price` during warm-up — there is no null gate
-        // like SMA/EMA. Verify the first `length` outputs match closes.
+    it('warm-up: first length-1 outputs null, then close, then recurrence', () => {
         const closes = [5, 7, 11, 13, 17, 19, 23, 29];
         const candles = closes.map(mk);
         const r = calcJurikMovingAverage(candles, { length: 4, phase: 0 });
-        for (let i = 0; i < 4; i++) {
-            approxEq(r[i].value, closes[i]);
-        }
+        assert.strictEqual(r[0].value, null);
+        assert.strictEqual(r[1].value, null);
+        assert.strictEqual(r[2].value, null);
+        approxEq(r[3].value, closes[3]); // last warm-up bar emits its close (13)
         // From bar 4 onward the recurrence kicks in — value differs from close.
-        // (Close is 17, JMA should be < 17 since prices are rising.)
         assert.notStrictEqual(r[4].value, 17);
     });
 
     it('regression lock-in: length=5, phase=0 over a known 20-bar ramp+dip+ramp', () => {
-        // Reference vector verified against the StockSharp .cs runtime. If
-        // this test fails, do NOT just re-bless the numbers — re-run the
-        // .cs to confirm the new vector matches before updating.
+        // Reference vector verified against the StockSharp .cs runtime. length=5,
+        // so indices 0..3 are warm-up null; index 4 is the latched close (14),
+        // and the recurrence values from index 5 on are unchanged by the gate.
         const closes = [10, 11, 12, 13, 14, 15, 14, 13, 12, 11, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
         const expected = [
             10,
@@ -69,22 +71,23 @@ describe('calcJurikMovingAverage', () => {
         const r = calcJurikMovingAverage(candles, { length: 5, phase: 0 });
         assert.strictEqual(r.length, expected.length);
         for (let i = 0; i < expected.length; i++) {
-            approxEq(r[i].value, expected[i], 1e-9);
+            if (i < 4) assert.strictEqual(r[i].value, null);
+            else approxEq(r[i].value, expected[i], 1e-9);
         }
     });
 
-    it('flat input → output stays at the constant', () => {
+    it('flat input → output stays at the constant (after warm-up)', () => {
         const candles = [];
         for (let i = 0; i < 30; i++) candles.push(mk(42, i));
         const r = calcJurikMovingAverage(candles, { length: 10, phase: 0 });
-        for (const p of r) approxEq(p.value, 42, 1e-12);
+        for (let i = 0; i < 9; i++) assert.strictEqual(r[i].value, null);
+        for (let i = 9; i < 30; i++) approxEq(r[i].value, 42, 1e-12);
     });
 
     it('phase out of [-100, 100] is clamped (does not throw)', () => {
         const candles = [mk(1, 0), mk(2, 1), mk(3, 2)];
         const r1 = calcJurikMovingAverage(candles, { length: 2, phase: 500 });
         const r2 = calcJurikMovingAverage(candles, { length: 2, phase: -500 });
-        // Just verify we got finite numbers, no throw.
         for (const p of r1) assert.ok(p.value === null || Number.isFinite(p.value));
         for (const p of r2) assert.ok(p.value === null || Number.isFinite(p.value));
     });

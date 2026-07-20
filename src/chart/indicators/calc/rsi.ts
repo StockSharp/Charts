@@ -75,6 +75,10 @@ export function calcRSI(candles, params) {
     // so the result of avgG[k-1] / avgL[k-1] is placed at out[k]. Out[0]
     // remains null (no delta for the first candle).
     for (let k = 0; k < n - 1; k++) {
+        // Not formed until the gain/loss SMMA has buffered `length` values (its
+        // (k+1)-th call happens on candle[k+1]); StockSharp reports null/IsFormed=false
+        // for the whole warm-up, so emit nothing before out[length].
+        if (k < length - 1) continue;
         const g = avgG[k];
         const l = avgL[k];
         if (g === null || l === null) continue;

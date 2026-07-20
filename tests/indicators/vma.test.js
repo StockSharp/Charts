@@ -20,19 +20,20 @@ describe('calcVMA', () => {
         assert.deepStrictEqual(calcVMA([], { length: 3 }), []);
     });
 
-    it('bar 0 emits close[0]; bars 1..length-1 mirror close[0] until stdDev forms', () => {
-        // length=3 → stdDev forms at bar 3 (needs 3 inputs starting at bar 1).
+    it('warm-up null until stdDev forms (bar length), then variable smoothing', () => {
+        // length=3 → not formed until stdDev forms at bar 3; StockSharp nulls bars 0..2.
         const out = calcVMA(mk([10, 11, 12, 13, 14]), { length: 3 });
-        assert.strictEqual(out[0].value, 10);
-        assert.strictEqual(out[1].value, 10);
-        assert.strictEqual(out[2].value, 10);
-        // Bar 3 is the first variable-smoothing step.
-        assert.ok(out[3].value !== null);
+        assert.strictEqual(out[0].value, null);
+        assert.strictEqual(out[1].value, null);
+        assert.strictEqual(out[2].value, null);
+        assert.ok(Math.abs(out[3].value - 11.481851104594815) < 1e-9);
+        assert.ok(Math.abs(out[4].value - 12.727657766902565) < 1e-9);
     });
 
-    it('flat closes → stdDev=0 ⇒ vi=0 ⇒ VMA pinned to close[0]', () => {
+    it('flat closes → warm-up null, then VMA pinned to the constant', () => {
         const out = calcVMA(mk([5, 5, 5, 5, 5, 5]), { length: 3 });
-        for (let i = 0; i < out.length; i++) {
+        for (let i = 0; i < 3; i++) assert.strictEqual(out[i].value, null);
+        for (let i = 3; i < out.length; i++) {
             assert.ok(Math.abs(out[i].value - 5) < 1e-12, `bar ${i} = ${out[i].value}`);
         }
     });

@@ -73,6 +73,10 @@ import { csATR } from './helpers.js';
 export function calcKasePeakOscillator(candles, params) {
     // ATR length hardcoded in .cs to 10; allow override here for testing.
     const atrLength = params && Number.isFinite(params.atrLength) ? (params.atrLength | 0) : 10;
+    // ShortTerm/LongTerm are KasePeakOscillatorPart (DecimalLengthIndicator)
+    // wrappers; their Length gates the dumped lines. Defaults 9 / 18.
+    const shortPeriod = params && Number.isFinite(params.shortPeriod) ? (params.shortPeriod | 0) : 9;
+    const longPeriod = params && Number.isFinite(params.longPeriod) ? (params.longPeriod | 0) : 18;
 
     if (!Array.isArray(candles) || candles.length === 0) {
         return { shortTerm: [], longTerm: [] };
@@ -94,6 +98,10 @@ export function calcKasePeakOscillator(candles, params) {
     // atrLength-1). csATR emits non-null from bar 0 (partial cumulative
     // average), so gate explicitly to skip the early bars.
     const atrFormedFrom = atrLength - 1;
+    // The ShortTerm/LongTerm Parts are fed the oscillator only from that bar,
+    // and their lines are gated on the Part IsFormed (Length inputs later).
+    const shortFormedAt = atrFormedFrom + shortPeriod - 1;
+    const longFormedAt = atrFormedFrom + longPeriod - 1;
 
     // Rolling buffers of capacity 2 (peak/valley over the last 2 bars).
     const peakBuf: number[] = [];
@@ -146,8 +154,8 @@ export function calcKasePeakOscillator(candles, params) {
         const sho = den1 !== 0 ? 100 * (cl - minValley) / den1 : 0;
         const lon = den2 !== 0 ? 100 * (cl - valleyBuf[0]) / den2 : 0;
 
-        shortTerm[i] = { time: candles[i].time, value: sho };
-        longTerm[i] = { time: candles[i].time, value: lon };
+        shortTerm[i] = { time: candles[i].time, value: i >= shortFormedAt ? sho : null };
+        longTerm[i] = { time: candles[i].time, value: i >= longFormedAt ? lon : null };
     }
 
     return { shortTerm, longTerm };

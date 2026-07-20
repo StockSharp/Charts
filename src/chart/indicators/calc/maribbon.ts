@@ -12,6 +12,15 @@
 // last entry below LongPeriod (e.g. Short=10, Long=99, Count=10 → step=9,
 // lengths = [10,19,28,37,46,55,64,73,82,91]). We replicate that exactly.
 //
+// IMPORTANT — the complex indicator runs in ComplexIndicatorModes.Sequence, so
+// the SMAs are CASCADED, not applied independently to the close: SMA[k] smooths
+// the OUTPUT of SMA[k-1], and BaseComplexIndicator.OnProcess feeds SMA[k] only
+// on bars where every earlier SMA is already IsFormed (it breaks the chain at
+// the first unformed inner). So SMA[0]=SMA(close) forms first; SMA[1] then gets
+// SMA[0]'s formed output and forms len[1] bars later; and so on, the warm-up
+// accumulating down the ribbon. Each line is gated (nulled) until its own SMA
+// is formed. We simulate that stateful cascade bar-by-bar below.
+//
 // `Reset()` enforces RibbonCount >= 2 and Short/Long >= 1 — we mirror with
 // `throw new Error()` on invalid params to fail loudly during dev (the
 // renderer should never feed bad params, but tests can hit it).
@@ -20,8 +29,6 @@
 //   { lengths: number[], averages: IndicatorPoint[][] }
 // where averages[i] is the SMA series for lengths[i]. Each series has
 // length == candles.length; first (lengths[i] - 1) entries are null.
-
-import { simpleMA } from './helpers.js';
 
 /**
  * @typedef {object} CandlePoint
@@ -65,15 +72,35 @@ export function calcMovingAverageRibbon(candles, params) {
     }
 
     const n = candles.length;
-    const closes = new Array(n);
-    for (let i = 0; i < n; i++) closes[i] = candles[i] && candles[i].close;
+
+    // Stateful partial-seed SMAs (SimpleMovingAverage.cs = Buffer.Sum / Length),
+    // one per ribbon length. Post-form the value equals a windowed SMA; the
+    // partial-seed phase is never emitted (gated on `formed`) nor fed downstream
+    // (the cascade only advances once a stage is formed).
+    const state = lengths.map((L) => ({ L, buf: [], sum: 0, formed: false }));
+    const pushSMA = (st, v) => {
+        st.buf.push(v);
+        st.sum += v;
+        if (st.buf.length > st.L) st.sum -= st.buf.shift();
+        st.formed = st.buf.length === st.L;
+        return st.sum / st.L;
+    };
 
     const averages = new Array(ribbonCount);
-    for (let s = 0; s < ribbonCount; s++) {
-        const ma = simpleMA(closes, lengths[s]);
-        const series = new Array(n);
-        for (let i = 0; i < n; i++) series[i] = { time: candles[i].time, value: ma[i] };
-        averages[s] = series;
+    for (let s = 0; s < ribbonCount; s++) averages[s] = new Array(n);
+
+    for (let i = 0; i < n; i++) {
+        const t = candles[i].time;
+        const close = candles[i] && candles[i].close;
+        let input = close;
+        let broke = !(typeof input === 'number' && Number.isFinite(input));
+        for (let k = 0; k < ribbonCount; k++) {
+            if (broke) { averages[k][i] = { time: t, value: null }; continue; }
+            const r = pushSMA(state[k], input);
+            averages[k][i] = { time: t, value: state[k].formed ? r : null };
+            if (!state[k].formed) broke = true; // later stages not fed this bar
+            else input = r;
+        }
     }
     return { lengths, averages };
 }

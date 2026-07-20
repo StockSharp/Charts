@@ -70,12 +70,12 @@ describe('calcStochastic', () => {
         approxEq(r.d[4].value, 250 / 3);
     });
 
-    it('flat high==low window emits %K=100 (range-zero fallback)', () => {
+    it('flat high==low window emits %K=0 (StochasticK.cs range-zero)', () => {
         const candles = makeCandles([
             [5, 5, 5], [5, 5, 5], [5, 5, 5],
         ]);
         const r = calcStochastic(candles, { kPeriod: 3, dPeriod: 1, smooth: 1 });
-        assert.strictEqual(r.k[2].value, 100);
+        assert.strictEqual(r.k[2].value, 0);
     });
 
     it('time field passed through unchanged on both series', () => {

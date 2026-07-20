@@ -76,7 +76,9 @@ export function calcQStick(candles, params) {
             else sum -= drop;
         }
 
-        if (invalid > 0) {
+        if (invalid > 0 || i < length - 1) {
+            // Not formed until `length` diffs are buffered (StockSharp SMA reports
+            // IsFormed only then), so null the warm-up.
             out[i] = { time: candles[i].time, value: null };
         } else {
             // Divide by Length (not by actual count). Matches C# SMA semantics.

@@ -7,10 +7,10 @@ const assert = require('node:assert/strict');
 const { calcIchimoku } = require('../../src/chart/indicators/calc/ichimoku.js');
 
 function makeCandles(hl) {
-    // close = midpoint of [h, l] so that close-based max/min math stays
-    // self-explanatory: max close over a window = max midpoint, min close = min
-    // midpoint. The high/low fields are populated for completeness but our
-    // calc is close-based (mirrors the StockSharp reference data).
+    // The calc takes rolling max(high)/min(low) (mirrors StockSharp's
+    // IchimokuLine). These fixtures use monotone highs/lows, so the high/low
+    // midpoint equals the close midpoint and the hand math below stays simple;
+    // close is set to (h+l)/2 only for readability.
     return hl.map(([h, l], i) => ({
         time: `2025-01-01T00:${String(i).padStart(2, '0')}:00Z`,
         open: (h + l) / 2,
@@ -46,7 +46,7 @@ describe('calcIchimoku', () => {
         }
     });
 
-    it('length larger than candle count → tenkan/kijun/senkouA/senkouB null; chikou = close[i]', () => {
+    it('length larger than candle count → all five lines null', () => {
         const candles = makeCandles([[2, 1], [3, 2], [4, 3]]);
         const r = calcIchimoku(candles, { tenkan: 9, kijun: 26, senkouB: 52 });
         for (let i = 0; i < 3; i++) {
@@ -54,8 +54,8 @@ describe('calcIchimoku', () => {
             assert.strictEqual(r.kijun[i].value, null);
             assert.strictEqual(r.senkouA[i].value, null);
             assert.strictEqual(r.senkouB[i].value, null);
-            // Chikou is just close[i] (StockSharp's IchimokuChinkouLine).
-            assert.strictEqual(r.chikou[i].value, candles[i].close);
+            // Chikou (Length = kijun = 26) is still warming up at 3 bars → null.
+            assert.strictEqual(r.chikou[i].value, null);
         }
     });
 
@@ -76,33 +76,40 @@ describe('calcIchimoku', () => {
         approxEq(r.kijun[4].value, 2.5);
     });
 
-    it('senkouA = (tenkan+kijun)/2 shifted forward by `kijun`', () => {
+    it('senkouA = (tenkan+kijun)/2 forward-shifted by `kijun` (first raw emitted twice)', () => {
         const hl = [];
         for (let i = 1; i <= 20; i++) hl.push([i, i - 1]);
         const candles = makeCandles(hl);
-        const kijunLen = 5;
-        const r = calcIchimoku(candles, { tenkan: 3, kijun: kijunLen, senkouB: 7 });
-        // senkouA[i] = (tenkan[i-kijun] + kijun[i-kijun]) / 2
-        // First i where both are non-null and i-kijun >= 4 (kijun warm-up) → i = 9.
-        for (let i = 0; i < kijunLen + 4; i++) {
-            // until i-kijun reaches the kijun warm-up boundary (4), senkouA is null
+        const tenkanLen = 3, kijunLen = 5;
+        const r = calcIchimoku(candles, { tenkan: tenkanLen, kijun: kijunLen, senkouB: 7 });
+        // senkouA raw = (tenkan+kijun)/2 is valid from max(tenkan,kijun)-1 = 4.
+        // The .cs SenkouA line only starts emitting at rawFirst + (kijun-1) = 8
+        // and outputs the oldest buffered raw (a kijun-bar forward shift), which
+        // makes the first raw value appear twice (bars 8 and 9).
+        const rawFirst = Math.max(tenkanLen, kijunLen) - 1; // 4
+        const firstEmit = rawFirst + (kijunLen - 1); // 8
+        for (let i = 0; i < firstEmit; i++) {
             assert.strictEqual(r.senkouA[i].value, null, `senkouA[${i}] should be null`);
         }
-        const src = 9 - kijunLen; // = 4
-        const expected = (r.tenkan[src].value + r.kijun[src].value) / 2;
-        approxEq(r.senkouA[9].value, expected);
+        const raw4 = (r.tenkan[4].value + r.kijun[4].value) / 2;
+        approxEq(r.senkouA[8].value, raw4);
+        approxEq(r.senkouA[9].value, raw4); // duplicated first raw
+        const raw5 = (r.tenkan[5].value + r.kijun[5].value) / 2;
+        approxEq(r.senkouA[10].value, raw5);
     });
 
-    it('chikou = close at the current bar (no forward look-ahead)', () => {
+    it('chikou = close, gated until the kijun buffer fills', () => {
         const hl = [];
         for (let i = 1; i <= 10; i++) hl.push([i, i - 1]);
         const candles = makeCandles(hl);
-        const r = calcIchimoku(candles, { tenkan: 2, kijun: 3, senkouB: 5 });
-        // IchimokuChinkouLine.cs returns close directly — chikou[i] = close[i].
-        // The visual back-shift by `kijun` is applied chart-side.
+        const kijunLen = 3;
+        const r = calcIchimoku(candles, { tenkan: 2, kijun: kijunLen, senkouB: 5 });
+        // IchimokuChinkouLine (Length = kijun) returns close directly, but the
+        // line stays null until its buffer fills (bar kijun-1); the visual
+        // back-shift by `kijun` is applied chart-side.
         for (let i = 0; i < candles.length; i++) {
-            assert.strictEqual(r.chikou[i].value, candles[i].close,
-                `chikou[${i}] should equal close[${i}]`);
+            const expected = i >= kijunLen - 1 ? candles[i].close : null;
+            assert.strictEqual(r.chikou[i].value, expected, `chikou[${i}]`);
         }
     });
 

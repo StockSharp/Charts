@@ -10,10 +10,18 @@
 // = EsaPeriod + DPeriod - 1 boundary. EMA seeding here follows StockSharp:
 // seed with SMA of first N finite samples (same as ema.js/macd.js helper).
 //
+// wt2 is a SimpleMovingAverage (partial-seed: Buffer.Sum / AveragePeriod) and
+// its WaveTrendLine wrapper is formed the moment it is first fed (once `d` is
+// formed), so wt2 is non-null from the SAME bar as wt1 with a growing
+// partial-seed average — NOT a windowed SMA that only starts AveragePeriod-1
+// bars later. Use partialSeedSMA for it.
+//
 // Deviations from .cs: none.
 //
 // @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
 // @typedef {{time:number|string,value:number|null}} Point
+
+import { partialSeedSMA } from './helpers.js';
 
 function emaArr(values, length) {
     const n = values.length;
@@ -37,26 +45,6 @@ function emaArr(values, length) {
         if (!ok) { out[i] = null; continue; }
         prev = v * k + prev * (1 - k);
         out[i] = prev;
-    }
-    return out;
-}
-
-function smaArr(values, length) {
-    const n = values.length;
-    const out = new Array(n);
-    if (n === 0 || length <= 0) { for (let i = 0; i < n; i++) out[i] = null; return out; }
-    let sum = 0, invalid = 0;
-    for (let i = 0; i < n; i++) {
-        const v = values[i];
-        const ok = typeof v === 'number' && Number.isFinite(v);
-        if (ok) sum += v; else invalid++;
-        if (i >= length) {
-            const drop = values[i - length];
-            const dropOk = typeof drop === 'number' && Number.isFinite(drop);
-            if (dropOk) sum -= drop; else invalid--;
-        }
-        if (i < length - 1) out[i] = null;
-        else out[i] = invalid === 0 ? sum / length : null;
     }
     return out;
 }
@@ -105,7 +93,7 @@ export function calcWaveTrend(candles, params) {
         if (tp[i] === null || esa[i] === null || d[i] === null || d[i] === 0) ci[i] = null;
         else ci[i] = (tp[i] - esa[i]) / (0.015 * d[i]);
     }
-    const ciSma = smaArr(ci, averagePeriod);
+    const ciSma = partialSeedSMA(ci, averagePeriod);
 
     for (let i = 0; i < n; i++) {
         if (ci[i] !== null) wt1[i] = { time: candles[i].time, value: ci[i] };

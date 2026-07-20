@@ -1,7 +1,11 @@
 // Stochastic Oscillator (Lane).
 // fastK[i]  = 100 * (close[i] − lowestLow(kPeriod)) / (highestHigh(kPeriod) − lowestLow(kPeriod))
-// %K[i]     = SMA(fastK, smooth)           ("slow stochastic" smoothing)
+// %K[i]     = SMA(fastK, smooth)           (smooth = 1 → raw %K, matching C#)
 // %D[i]     = SMA(%K,    dPeriod)
+//
+// C# parity: StockSharp's StochasticOscillator.K is a raw StochasticK (no %K
+// smoothing) and %D = SMA(3) of that raw %K, so the default `smooth` is 1.
+// StochasticK.cs also returns 0 (not 100) when the high==low range is zero.
 //
 // Param keys match indicator-settings.js's Stochastic entry: kPeriod / dPeriod
 // / smooth. The renderer (case 'Stochastic' in indicator-renderer.js)
@@ -35,7 +39,7 @@ import { simpleMA } from './helpers.js';
 export function calcStochastic(candles, params) {
     const kPeriod = params && Number.isFinite(params.kPeriod) ? (params.kPeriod | 0) : 14;
     const dPeriod = params && Number.isFinite(params.dPeriod) ? (params.dPeriod | 0) : 3;
-    const smooth = params && Number.isFinite(params.smooth) ? (params.smooth | 0) : 3;
+    const smooth = params && Number.isFinite(params.smooth) ? (params.smooth | 0) : 1;
 
     if (!Array.isArray(candles) || candles.length === 0) {
         return { k: [], d: [] };
@@ -65,10 +69,8 @@ export function calcStochastic(candles, params) {
         }
         const range = hi - lo;
         if (range === 0) {
-            // Conventional Stochastic fallback: when high == low across the
-            // whole window, %K is undefined; emit 100 (top of range) — that's
-            // what StockSharp does too rather than 50/0.
-            fastK[i] = 100;
+            // StochasticK.cs returns 0 when high == low over the window.
+            fastK[i] = 0;
         } else {
             fastK[i] = 100 * (close - lo) / range;
         }

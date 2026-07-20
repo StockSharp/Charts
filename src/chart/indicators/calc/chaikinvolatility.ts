@@ -5,16 +5,14 @@
 //   2. Rate-of-change of that EMA with length `rocLength`:
 //      CV[i] = (ema[i] - ema[i - rocLength]) / ema[i - rocLength] * 100
 //
-// The .cs uses default Length=5 on both inner indicators (constructor calls
-// `new()` on each, and ExponentialMovingAverage default Length is 1, but
-// RateOfChange/Momentum default is 5 — match the StockSharp defaults here:
-// emaLength=10, rocLength=10 — typical Chaikin volatility defaults. The
-// user normally tunes both anyway. If the .cs nested EMA/ROC pick up their
-// own defaults (EMA=1, ROC=5) the chart shape becomes degenerate, so we
-// expose them as params and leave the bigger sane defaults.
+// The .cs constructs both inner indicators with `new()`, so they take their own
+// StockSharp defaults: ExponentialMovingAverage.Length = 32 and RateOfChange
+// (Momentum) default Length = 5. Match those here so the periods line up with the
+// live C# (NumValuesToInitialize = 32 + 6 - 1 = 37 → first value at index 36).
 //
-// EMA uses calcEMA's seeding convention (SMA over first `emaLength` values).
-// Output first non-null at index `emaLength + rocLength - 1`.
+// EMA uses calcEMA's seeding convention (SMA over first `emaLength` values), which
+// equals the StockSharp EMA at its first formed bar. Output first non-null at index
+// `emaLength + rocLength - 1`.
 
 /**
  * @typedef {object} CandlePoint
@@ -79,8 +77,8 @@ function emaSeries(values, length) {
  * @returns {IndicatorPoint[]}
  */
 export function calcChaikinVolatility(candles, params) {
-    const emaLength = params && Number.isFinite(params.emaLength) ? (params.emaLength | 0) : 10;
-    const rocLength = params && Number.isFinite(params.rocLength) ? (params.rocLength | 0) : 10;
+    const emaLength = params && Number.isFinite(params.emaLength) ? (params.emaLength | 0) : 32;
+    const rocLength = params && Number.isFinite(params.rocLength) ? (params.rocLength | 0) : 5;
 
     if (!Array.isArray(candles) || candles.length === 0) return [];
 

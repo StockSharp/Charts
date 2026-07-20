@@ -6,30 +6,24 @@
 //                   shifted forward by `kijun` bars
 //   Chikou (Chinkou) = close at the current bar — see note below.
 //
-// Source-price note: StockSharp's IchimokuLine takes its inputs via
-// `input.ToCandle()` and reads (HighPrice, LowPrice), so a naive port
-// would use high/low for the max/min. However the reference data file
-// (Tests/Resources/IndicatorsData/Ichimoku.txt) was generated against a
-// build that fed the candle's `ClosePrice` (via the indicator's `Source`
-// projection — i.e. ToDecimal(Source) → close by default) into the
-// rolling max/min. To match the parity reference exactly we compute the
-// midpoint over closes; this is also the more common Ichimoku-in-the-wild
-// definition (web charts, MT4, etc. all use high/low — some
-// `hl2` for tenkan/kijun midpoint, MT4 native uses high/low). We chose
-// the close-based variant to keep parity green.
+// Source-price note: StockSharp's IchimokuLine reads its inputs via
+// `input.ToCandle()` and takes the rolling max of HighPrice / min of
+// LowPrice — so Tenkan/Kijun/SenkouB midpoints are computed over HIGH/LOW,
+// not the close. We match the live C# and do the same (verified bar-for-bar
+// against Algo.Indicators).
 //
-// Forward shift semantics match the Alligator: a value computed for bar k
-// is plotted at bar k+kijun. For our output we don't synthesise future bars
-// past `candles.length-1`; the leading `kijun` bars of each Senkou series
-// are null, and Senkou values that would land beyond the last candle are
-// simply dropped (caller can extend later if it wants to draw into the
-// future).
+// Forward-shift semantics: SenkouA/SenkouB buffer their raw value each final
+// bar and emit the oldest once the buffer has grown to `kijun` slots — a
+// `kijun`-bar forward shift. Emission starts one bar before the buffer is
+// full, so the first raw value is output twice; `shiftForward` reproduces
+// that exactly (see its doc). Values that would land past the last candle
+// are dropped (caller can extend into the future if it wants).
 //
-// Chikou: StockSharp's IchimokuChinkouLine.cs returns `candle.ClosePrice`
-// directly — i.e. the current bar's close, NOT a close from `kijun` bars
-// ahead. The visual "shift backward by kijun" is purely a presentation
-// concern (chart-side), not part of the indicator output. We mirror the
-// .cs and emit close[i] at bar i for the chikou series.
+// Chikou: IchimokuChinkouLine.cs returns `candle.ClosePrice` directly — the
+// current bar's close, NOT a close from `kijun` bars ahead; the visual
+// back-shift is chart-side only. The line is a DecimalLengthIndicator with
+// Length = kijun, so it stays null until its buffer fills (bar kijun-1),
+// then emits close[i].
 
 /**
  * @typedef {object} CandlePoint
@@ -70,10 +64,12 @@ function midpointSeries(candles, length) {
         let bad = false;
         for (let j = i - length + 1; j <= i; j++) {
             const c = candles[j];
-            const cl = c && c.close;
-            if (typeof cl !== 'number' || !Number.isFinite(cl)) { bad = true; break; }
-            if (cl > hi) hi = cl;
-            if (cl < lo) lo = cl;
+            const h = c && c.high;
+            const l = c && c.low;
+            if (typeof h !== 'number' || !Number.isFinite(h) ||
+                typeof l !== 'number' || !Number.isFinite(l)) { bad = true; break; }
+            if (h > hi) hi = h;
+            if (l < lo) lo = l;
         }
         out[i] = bad ? null : (hi + lo) / 2;
     }
@@ -107,10 +103,22 @@ export function calcIchimoku(candles, params) {
     const kijunRaw = midpointSeries(candles, kijunLen);
     const senkouBRaw = midpointSeries(candles, senkouBLen);
 
+    // Senkou A raw = (Tenkan + Kijun) / 2, valid only once BOTH lines are
+    // formed (i.e. from max(tenkanLen, kijunLen) - 1). Senkou B raw is the
+    // senkouB-window midpoint (valid from senkouBLen - 1).
+    const senkouARaw = new Array(n);
+    for (let k = 0; k < n; k++) {
+        senkouARaw[k] = (tenkanRaw[k] !== null && kijunRaw[k] !== null)
+            ? (tenkanRaw[k] + kijunRaw[k]) / 2
+            : null;
+    }
+    const rawFirstA = Math.max(tenkanLen, kijunLen) - 1;
+    const rawFirstB = senkouBLen - 1;
+
     const tenkan = new Array(n);
     const kijun = new Array(n);
-    const senkouA = new Array(n);
-    const senkouB = new Array(n);
+    const senkouA = shiftForward(candles, senkouARaw, rawFirstA, kijunLen);
+    const senkouB = shiftForward(candles, senkouBRaw, rawFirstB, kijunLen);
     const chikou = new Array(n);
 
     for (let i = 0; i < n; i++) {
@@ -118,31 +126,46 @@ export function calcIchimoku(candles, params) {
         tenkan[i] = { time: t, value: tenkanRaw[i] };
         kijun[i] = { time: t, value: kijunRaw[i] };
 
-        // Senkou A: SMA-of-two of (Tenkan, Kijun) computed at bar i-kijun,
-        // plotted at bar i.
-        const src = i - kijunLen;
-        if (src >= 0 && tenkanRaw[src] !== null && kijunRaw[src] !== null) {
-            senkouA[i] = { time: t, value: (tenkanRaw[src] + kijunRaw[src]) / 2 };
-        } else {
-            senkouA[i] = { time: t, value: null };
-        }
-
-        // Senkou B: midpoint over `senkouB` bars computed at bar i-kijun,
-        // plotted at bar i.
-        if (src >= 0 && senkouBRaw[src] !== null) {
-            senkouB[i] = { time: t, value: senkouBRaw[src] };
-        } else {
-            senkouB[i] = { time: t, value: null };
-        }
-
-        // Chikou: close at the current bar (mirrors IchimokuChinkouLine.cs).
-        // No forward look-up; the visual back-shift is applied chart-side.
+        // Chikou (IchimokuChinkouLine, Length = kijun): returns the current
+        // close, but the dumper gates each inner line on its own IsFormed, so
+        // the line stays null until the buffer fills (bar kijunLen-1).
         const cc = candles[i] && candles[i].close;
         chikou[i] = {
             time: t,
-            value: (typeof cc === 'number' && Number.isFinite(cc)) ? cc : null,
+            value: (i >= kijunLen - 1 && typeof cc === 'number' && Number.isFinite(cc)) ? cc : null,
         };
     }
 
     return { tenkan, kijun, senkouA, senkouB, chikou };
+}
+
+/**
+ * Forward-shift a Senkou raw series exactly as StockSharp's
+ * IchimokuSenkouA/BLine do it. Both lines buffer their raw value each final
+ * bar (starting at `rawFirst`) and only start EMITTING once the buffer has
+ * grown to `kijun` slots, then output the oldest buffered value (a `kijun`-bar
+ * forward shift). Two consequences we reproduce bar-for-bar:
+ *   - the first emit is at bar `rawFirst + (kijun - 1)`;
+ *   - because the emit begins one bar before the buffer is full, the very
+ *     first raw value is output TWICE (bars firstEmit and firstEmit+1) — i.e.
+ *     the shifted source index is clamped at the bottom to `rawFirst`.
+ * @param {CandlePoint[]} candles
+ * @param {(number|null)[]} raw
+ * @param {number} rawFirst first index at which `raw` is non-null
+ * @param {number} kijun forward-shift length (Kijun.Length)
+ * @returns {IndicatorPoint[]}
+ */
+function shiftForward(candles, raw, rawFirst, kijun) {
+    const n = candles.length;
+    const out = new Array(n);
+    const firstEmit = rawFirst + (kijun - 1);
+    for (let i = 0; i < n; i++) {
+        const t = candles[i].time;
+        if (i < firstEmit) { out[i] = { time: t, value: null }; continue; }
+        let src = i - kijun;
+        if (src < rawFirst) src = rawFirst;
+        const v = raw[src];
+        out[i] = { time: t, value: (typeof v === 'number' && Number.isFinite(v)) ? v : null };
+    }
+    return out;
 }

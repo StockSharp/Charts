@@ -24,7 +24,7 @@ export function calcRelativeMomentumIndex(candles, params) {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 14;
     const momentumPeriod = params && Number.isFinite(params.momentum)
         ? (params.momentum | 0)
-        : (params && Number.isFinite(params.momentumPeriod) ? (params.momentumPeriod | 0) : 5);
+        : (params && Number.isFinite(params.momentumPeriod) ? (params.momentumPeriod | 0) : 3);
 
     if (!Array.isArray(candles) || candles.length === 0) return [];
 

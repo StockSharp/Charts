@@ -6,17 +6,13 @@
 //   - Buffer capacity = Length + 1 (`GetCapacity() => Length + 1`).
 //   - CalcIsFormed: Buffer.Count > Length (i.e. requires Length+1 pushes).
 //   - On each input, returns `newValue - Buffer[0]`.
-//   - Before .cs is formed it still returns `newValue - Buffer[0]` if
-//     `Buffer.Count > 0`; we mirror this — even the very first bar emits
-//     `close[0] - close[0] == 0` because Buffer[0] is the value we just
-//     pushed.
 //
 // Once the buffer is full (capacity Length+1), Buffer[0] is the close
 // `Length` bars ago, giving the canonical `close[i] - close[i-Length]`.
 //
-// Deviation vs .cs: none. The .cs IsFormed gate doesn't suppress output;
-// it's only informational. We emit values from the first bar onward exactly
-// as the .cs does.
+// Warm-up: StockSharp reports the pre-form values as not-formed (IsFormed is
+// `Buffer.Count > Length`), so nothing is emitted before index `length` — we
+// gate output on the buffer being full to match that.
 
 /**
  * @typedef {object} CandlePoint
@@ -59,9 +55,11 @@ export function calcMomentum(candles, params) {
         }
         buf.push(price);
         if (buf.length > capacity) buf.shift();
-        // .cs: return newValue - Buffer[0]. Buffer[0] after push is the
-        // oldest of up to `Length+1` values.
-        out[i] = { time: candles[i].time, value: price - buf[0] };
+        // Formed only once the buffer holds Length+1 values (Buffer.Count > Length);
+        // before that StockSharp reports not-formed, so emit null.
+        out[i] = buf.length > length
+            ? { time: candles[i].time, value: price - buf[0] }
+            : { time: candles[i].time, value: null };
     }
     return out;
 }

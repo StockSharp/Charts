@@ -10,19 +10,25 @@
 //
 // Defaults: Period=10, Multiplier=1.5, StopPeriod=9.
 //
-// Warm-up: Highest/Lowest form at bar Period-1. The downstream SMA only
-// receives values from there on; it needs StopPeriod inputs to form, so
-// first non-null output lands at bar (Period-1) + (StopPeriod-1) =
-// Period + StopPeriod - 2.
+// Warm-up: Highest/Lowest form at bar Period-1, and the .cs Adds (and dumps)
+// the SMA lines gated on Highest/Lowest.IsFormed — NOT on the SMA's own formed
+// flag. The inner SMA is a SimpleMovingAverage (partial-seed: Buffer.Sum /
+// StopPeriod from its first input), so the output is non-null from bar
+// Period-1 with a growing partial-seed average, becoming a true windowed SMA at
+// bar (Period-1)+(StopPeriod-1). We reproduce that with partialSeedSMA.
 //
 // Output shape: { longStop, shortStop }, each IndicatorPoint[] aligned
 // 1:1 with input candles.
+//
+// Uses partialSeedSMA (helpers) for the StopPeriod smoothing.
 //
 // .cs deviation: the .cs labels the result entries as `Highest` and
 // `Lowest` (the inner indicator keys), but the VALUES stored there are
 // the SMA of stopLong / stopShort respectively. We name them more
 // intuitively here (`longStop` / `shortStop`) to match common Chande
 // Kroll documentation, while keeping the formula identical.
+
+import { partialSeedSMA } from './helpers.js';
 
 /**
  * @typedef {object} CandlePoint
@@ -91,23 +97,18 @@ export function calcChandeKrollStop(candles, params) {
         stopShorts[i] = minL + diff * multiplier;
     }
 
-    // SMA over StopPeriod values of stopLongs[] / stopShorts[]. Note the
-    // SMA only starts consuming at bar period-1, so its own warm-up
-    // window of StopPeriod starts there. Manual sliding-sum that
-    // handles NaN by aborting that window.
-    for (let i = (period - 1) + (stopPeriod - 1); i < n; i++) {
-        let sumL = 0, sumS = 0;
-        let bad = false;
-        for (let j = i - stopPeriod + 1; j <= i; j++) {
-            const sl = stopLongs[j];
-            const ss = stopShorts[j];
-            if (!Number.isFinite(sl) || !Number.isFinite(ss)) { bad = true; break; }
-            sumL += sl;
-            sumS += ss;
-        }
-        if (bad) continue;
-        longStop[i] = { time: candles[i].time, value: sumL / stopPeriod };
-        shortStop[i] = { time: candles[i].time, value: sumS / stopPeriod };
+    // Partial-seed SMA (SimpleMovingAverage.cs: Buffer.Sum / StopPeriod) over
+    // the stopLong/stopShort streams. Since these are NaN before bar period-1,
+    // partialSeedSMA skips them without advancing the buffer, so the first
+    // finite sample is at bar period-1 and the output is non-null (a growing
+    // partial-seed average) from there — matching the .cs gate on
+    // Highest/Lowest.IsFormed rather than on the SMA's own formed flag.
+    const smaLong = partialSeedSMA(stopLongs, stopPeriod);
+    const smaShort = partialSeedSMA(stopShorts, stopPeriod);
+    for (let i = 0; i < n; i++) {
+        const t = candles[i].time;
+        if (smaLong[i] !== null) longStop[i] = { time: t, value: smaLong[i] };
+        if (smaShort[i] !== null) shortStop[i] = { time: t, value: smaShort[i] };
     }
 
     return { longStop, shortStop };

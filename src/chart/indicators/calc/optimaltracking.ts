@@ -117,10 +117,12 @@ export function calcOptimalTracking(candles, _params) {
         }
 
         prevAverage = average;
-        pushedCount++; // bounded growth; meaning is "have we accumulated 2+ valid bars"
-        if (pushedCount > 2) pushedCount = 2; // saturate — we only care about the < 2 / >= 2 gate
+        pushedCount++;
+        if (pushedCount > 2) pushedCount = 2;
 
-        out[i] = { time: c.time, value: result };
+        // Not formed until Buffer.Count == Length (=2): StockSharp nulls the first
+        // bar, so emit only from the second valid bar onward.
+        out[i] = { time: c.time, value: pushedCount >= 2 ? result : null };
     }
 
     return out;

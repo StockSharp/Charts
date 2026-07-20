@@ -54,6 +54,7 @@ export function calcAdaptiveLaguerreFilter(candles, params) {
 
     const gamma1 = 1 - gamma;
     let l0 = 0, l1 = 0, l2 = 0, l3 = 0;
+    let formed = false;
 
     for (let i = 0; i < n; i++) {
         const c = candles[i];
@@ -68,7 +69,10 @@ export function calcAdaptiveLaguerreFilter(candles, params) {
         l3 = -gamma * l2 + l2 + gamma * l3;
 
         const v = (l0 + 2 * l1 + 2 * l2 + l3) / 6;
-        out[i] = { time: c.time, value: v };
+        // StockSharp flips IsFormed on the first bar where filt >= price and reports
+        // the earlier bars as not-formed (null); the filter state still advances.
+        if (!formed && v >= price) formed = true;
+        if (formed) out[i] = { time: c.time, value: v };
     }
 
     return out;

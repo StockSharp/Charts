@@ -37,27 +37,26 @@ describe('calcTrix', () => {
         for (const p of out) assert.strictEqual(p.value, null);
     });
 
-    it('first non-null at index 3*(length - 1)', () => {
-        // length=3 → first non-null at i=6 (when ema3 first forms). The
-        // first formed sample mirrors Trix.cs's `10 * ROC(...)` where the
-        // ROC.Buffer has just one element so result=0 and Trix=0.
+    it('first non-null at index 3*length - 2 (ROC(1) formed)', () => {
+        // length=3 → ema3 first forms at 3*(length-1)=6, but ROC(1) needs a second
+        // input, so Trix.cs is not formed until index 3*length-2 = 7 (StockSharp
+        // nulls the earlier bars, including the first ROC bar where Momentum==0).
         const closes = [];
         for (let i = 1; i <= 12; i++) closes.push(i);
         const out = calcTrix(makeCandles(closes), { length: 3 });
-        for (let i = 0; i < 6; i++) assert.strictEqual(out[i].value, null);
-        // index 6 is the first formed bar; Trix.cs emits 0 there.
-        assert.strictEqual(out[6].value, 0);
-        // index 7 onwards holds the actual rate-of-change values.
-        assert.notStrictEqual(out[7].value, null);
+        for (let i = 0; i < 7; i++) assert.strictEqual(out[i].value, null);
+        approxEq(out[7].value, 250);
+        approxEq(out[8].value, 200);
     });
 
     it('flat close series → Trix = 0 once warm (no rate of change)', () => {
         const closes = [];
         for (let i = 0; i < 20; i++) closes.push(42);
         const out = calcTrix(makeCandles(closes), { length: 3 });
-        // First non-null at i=6 (Trix.cs emits 0 there). From there on
-        // ema3 stays at 42 and (ema3[i]-ema3[i-1])/ema3[i-1] = 0.
-        for (let i = 6; i < closes.length; i++) approxEq(out[i].value, 0);
+        // First non-null at i=7 (3*length-2). From there on ema3 stays at 42 and
+        // (ema3[i]-ema3[i-1])/ema3[i-1] = 0.
+        for (let i = 0; i < 7; i++) assert.strictEqual(out[i].value, null);
+        for (let i = 7; i < closes.length; i++) approxEq(out[i].value, 0);
     });
 
     it('time field passed through unchanged', () => {

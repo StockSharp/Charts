@@ -1,8 +1,6 @@
-// Highest: trailing max of close price, no warm-up null gate.
-// The C# Highest.cs reads input.ToCandle().HighPrice, but the canonical
-// indicator-input is DecimalIndicatorValue (BaseIndicator default), so
-// ToCandle() synthesises a candle with HighPrice == ClosePrice. We
-// therefore drive the indicator off candle.close.
+// Highest: trailing max of the candle HIGH over `length` bars (StockSharp
+// Highest.cs reads input.ToCandle().HighPrice). DecimalLengthIndicator, so it
+// is not formed — and emits nothing — before index length-1.
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
@@ -20,43 +18,29 @@ describe('calcHighest', () => {
         assert.deepStrictEqual(calcHighest([], { length: 5 }), []);
     });
 
-    it('length-too-big (length > candles.length) → each output = max of all closes up to that bar', () => {
-        // .cs does NOT gate on IsFormed, so we emit from bar 0.
-        // length=100, closes = [1,3,2,5,4]
+    it('length-too-big (length > candles.length) → never formed → all null', () => {
         const candles = makeCloses([1, 3, 2, 5, 4]);
         const r = calcHighest(candles, { length: 100 });
-        assert.strictEqual(r[0].value, 1);
-        assert.strictEqual(r[1].value, 3);
-        assert.strictEqual(r[2].value, 3);
-        assert.strictEqual(r[3].value, 5);
-        assert.strictEqual(r[4].value, 5);
+        for (const p of r) assert.strictEqual(p.value, null);
     });
 
-    it('reference vector: length=3, sliding max of closes', () => {
+    it('reference vector: length=3, sliding max of HIGHS (highs = close + 0.5)', () => {
         const closes = [1, 3, 2, 5, 4, 1, 2];
         const candles = makeCloses(closes);
         const r = calcHighest(candles, { length: 3 });
-        // window [start..i] of size <= 3
-        const expected = [
-            1,                 // [1]
-            3,                 // [1,3]
-            3,                 // [1,3,2]
-            5,                 // [3,2,5]
-            5,                 // [2,5,4]
-            5,                 // [5,4,1]
-            4,                 // [4,1,2]
-        ];
+        // highs = [1.5,3.5,2.5,5.5,4.5,1.5,2.5]; warm-up (index 0,1) is null.
+        const expected = [null, null, 3.5, 5.5, 5.5, 5.5, 4.5];
         for (let i = 0; i < closes.length; i++) {
             assert.strictEqual(r[i].value, expected[i]);
         }
     });
 
-    it('length=1 → output equals the bar close itself', () => {
+    it('length=1 → output equals the bar HIGH itself', () => {
         const closes = [10, 20, 5, 15];
         const candles = makeCloses(closes);
         const r = calcHighest(candles, { length: 1 });
         for (let i = 0; i < closes.length; i++) {
-            assert.strictEqual(r[i].value, closes[i]);
+            assert.strictEqual(r[i].value, closes[i] + 0.5);
         }
     });
 
