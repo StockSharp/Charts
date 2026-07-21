@@ -12,6 +12,8 @@
 // Dependency-free, pure 2D canvas — a faithful behavioural fit for
 // what the app actually consumes.
 
+import { calculateBarStepPx } from './series-spacing.js';
+
 export type Time = number; // UNIX seconds (the only form the app feeds)
 
 export interface WhitespaceData { time: Time }
@@ -1558,18 +1560,10 @@ class ChartImpl {
             if (lf !== null && lt !== null && lt > lf)
                 return this.plotW() / (lt - lf);
         }
-        // median spacing of the densest series, projected to pixels
-        let best = 0;
-        for (const s of this.series) {
-            if (s.data.length < 2 || s.kind === 'VolumeProfile') continue;
-            const t0 = s.data[0].time;
-            const t1 = s.data[s.data.length - 1].time;
-            if (!Number.isFinite(t0) || !Number.isFinite(t1)) continue;   // VP-like: no time → don't poison
-            const dt = (t1 - t0) / (s.data.length - 1);
-            const px = (dt / (this.viewTo - this.viewFrom || 1)) * this.plotW();
-            if (Number.isFinite(px)) best = Math.max(best, px);
-        }
-        return best > 0 ? best : 6;
+        // Use the densest time series. Sparse overlays such as Fractals have
+        // only a handful of points across the whole range and must not widen
+        // every candle/histogram slot underneath them.
+        return calculateBarStepPx(this.series, this.viewTo - this.viewFrom, this.plotW());
     }
 
     private drawSeries(s: Series, b: { min: number; max: number }): void {

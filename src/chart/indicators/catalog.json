@@ -586,9 +586,10 @@
   "params": [
    {
     "key": "length",
-    "default": 2,
-    "min": 1,
-    "max": 20
+    "default": 5,
+    "min": 3,
+    "max": 99,
+    "step": 2
    }
   ],
   "outputs": [

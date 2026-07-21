@@ -352,7 +352,12 @@ export class ChartLegend {
                 const ve = v as HTMLElement;
                 const key = ve.dataset.key!;
                 const raw = ind.values[key];
-                if (raw == null) { ve.textContent = ''; return; }
+                if (raw == null) {
+                    // A sparse single-output indicator still needs its name on
+                    // candles where it has no marker/value.
+                    ve.textContent = singleVal ? `${ind.name}: --` : '';
+                    return;
+                }
                 // Single-output keeps "NAME: value"; multi-output prints
                 // just the number (the name is already once at row start).
                 const text = TerminalUtils.formatPrice(raw);

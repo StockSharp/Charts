@@ -229,6 +229,11 @@ export class IndicatorEngine {
             return;
         }
         if (!data) return;
+        // Sparse indicators return ShiftedIndicatorValue semantics: the value
+        // is confirmed on the current bar but belongs to an earlier bar.
+        // Apply that bar shift before warm-up/null filtering so Fractals and
+        // ZigZag markers land on the actual pivot, like the desktop chart.
+        data = this._applyPointShifts(data);
         // Calc functions emit `{time, value:null}` for warm-up bars (the first
         // `length-1` outputs for SMA, length deltas for RSI, etc.). The chart
         // happily renders null as 0, which produces a visible vertical jump from
@@ -293,19 +298,20 @@ export class IndicatorEngine {
             }
         } else {
             const keys = Object.keys(data);
-            // Walk by time of the longest series and gather values across all
-            // sub-series. The calc layer guarantees same length across keys
-            // for multi-output indicators.
-            const base = data[keys[0]] || [];
-            for (let i = 0; i < base.length; i++) {
-                const values: Record<string, number> = {};
-                let any = false;
-                for (const k of keys) {
-                    const v = data[k][i]?.value;
-                    if (v != null) { values[k] = Number(v); any = true; }
+            // Merge by timestamp, not array index. After null stripping sparse
+            // outputs (Fractals up/down) have different lengths and timestamps.
+            const byTime = new Map<number, Record<string, number>>();
+            for (const key of keys) {
+                for (const point of data[key] || []) {
+                    if (point?.value == null) continue;
+                    const time = this._toSec(point.time);
+                    let values = byTime.get(time);
+                    if (!values) byTime.set(time, values = {});
+                    values[key] = Number(point.value);
                 }
-                if (any) out.push({ time: this._toSec(base[i].time), values });
             }
+            for (const [time, values] of byTime) out.push({ time, values });
+            out.sort((a, b) => a.time - b.time);
         }
         return out;
     }
@@ -374,10 +380,11 @@ export class IndicatorEngine {
 
     getIndicators() { return this._indicators.slice(); }
 
-    // Called by chart-legend on crosshair hover. When `time` is provided
-    // we look up the latest bar at-or-before that time in each indicator's
-    // cached history; without it (or on a miss) we fall back to the most
-    // recent known values so the legend is never blank.
+    // Called by chart-legend on crosshair hover. A supplied `time` means the
+    // value must belong to that exact candle. Carrying the previous value
+    // forward is wrong for sparse studies (Fractals, pivots, signals): it makes
+    // the legend describe a marker from another bar. Without a hover time we
+    // still show the most recently formed value.
     getValuesAt(time) {
         const result: any[] = [];
         for (const entry of this._indicators) {
@@ -405,20 +412,40 @@ export class IndicatorEngine {
     }
 
     _pickValues(entry, time) {
-        // No hover time, or no history buffered — return the latest.
-        if (time == null || !entry._points || entry._points.length === 0) {
-            return entry._lastValues || null;
-        }
-        const arr = entry._points;
-        // Binary search for the greatest time ≤ target.
-        let lo = 0, hi = arr.length - 1, best = -1;
+        if (time == null) return this._completeLegendValues(entry, entry._lastValues);
+
+        const arr = entry._points || [];
+        const target = this._toSec(time);
+        // Binary search for this exact candle. Continuous indicators normally
+        // have a point on every formed bar; sparse/shifted indicators do not.
+        let lo = 0, hi = arr.length - 1;
         while (lo <= hi) {
             const mid = (lo + hi) >> 1;
-            if (arr[mid].time <= time) { best = mid; lo = mid + 1; }
+            if (arr[mid].time === target) {
+                return this._completeLegendValues(entry, arr[mid].values);
+            }
+            if (arr[mid].time < target) lo = mid + 1;
             else hi = mid - 1;
         }
-        if (best < 0) return arr[0].values;
-        return arr[best].values;
+
+        // Keep the output schema stable even when this candle has no value.
+        // In particular Fractals alternates between `{up}` and `{down}` points;
+        // returning both keys keeps legend DOM and painter colours aligned.
+        return this._completeLegendValues(entry, null);
+    }
+
+    _completeLegendValues(entry, values) {
+        const keys = Array.isArray(entry.outputNames) && entry.outputNames.length > 0
+            ? entry.outputNames
+            : Object.keys(values || {});
+        if (keys.length === 0) return null;
+
+        const complete: Record<string, number | null> = {};
+        for (const key of keys) {
+            const value = values && values[key];
+            complete[key] = value == null ? null : Number(value);
+        }
+        return complete;
     }
 
     // Called by the wsClient client when the hub pushes a point for one of our subs.
@@ -482,6 +509,24 @@ export class IndicatorEngine {
             return rawTime - shift * tfSec;
         }
         return rawTime;
+    }
+
+    _applyPointShifts(data) {
+        const shiftPoint = (point: any) => {
+            const shift = Number(point?.shift) || 0;
+            if (shift <= 0) return point;
+            return { ...point, time: this._shiftTime(this._toSec(point.time), shift) };
+        };
+
+        if (Array.isArray(data)) return data.map(shiftPoint);
+        if (data && typeof data === 'object') {
+            const shifted: Record<string, any> = {};
+            for (const key of Object.keys(data)) {
+                shifted[key] = Array.isArray(data[key]) ? data[key].map(shiftPoint) : data[key];
+            }
+            return shifted;
+        }
+        return data;
     }
 
     _historyToRendererShape(history) {

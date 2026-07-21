@@ -9,6 +9,7 @@ global.SSChart = {
 };
 
 const { IndicatorRenderer } = require('../src/chart/indicators/indicator-renderer.js');
+const { IndicatorEngine } = require('../src/chart/indicators/indicator-engine.js');
 const { getClientCatalog } = require('../src/chart/indicators/calc/index.js');
 const {
     hasIndicatorPainter,
@@ -101,6 +102,8 @@ describe('indicator painters', () => {
         assert.equal(sma.painter, undefined);
         assert.equal(catalog.find(entry => entry.id === 'BollingerBands').painter, 'band');
         assert.equal(catalog.find(entry => entry.id === 'VolumeIndicator').painter, 'volume');
+        const fractals = catalog.find(entry => entry.id === 'Fractals');
+        assert.deepEqual(fractals.params[0], { key: 'length', default: 5, min: 3, max: 99, step: 2 });
     });
 
     it('uses catalog-selected built-ins for bands and volume', () => {
@@ -174,5 +177,81 @@ describe('indicator painters', () => {
             console.warn = originalWarn;
         }
         assert.equal(chart.added[0].definition.type, 'Line');
+    });
+
+    it('aligns shifted sparse values and legend with the exact pivot bars', () => {
+        const engine = new IndicatorEngine();
+        const candles = Array.from({ length: 6 }, (_, i) => ({
+            time: 1_700_000_000 + i * 60,
+            open: 1,
+            high: 2,
+            low: 0,
+            close: 1,
+        }));
+        engine.setCandles(candles);
+
+        const shifted = engine._applyPointShifts({
+            up: [{ time: candles[4].time, value: 5, shift: 2 }],
+            down: [{ time: candles[5].time, value: -3, shift: 1 }],
+        });
+        assert.equal(shifted.up[0].time, candles[2].time);
+        assert.equal(shifted.down[0].time, candles[4].time);
+
+        const legend = engine._buildLegendPoints({}, shifted);
+        assert.deepEqual(legend, [
+            { time: candles[2].time, values: { up: 5 } },
+            { time: candles[4].time, values: { down: -3 } },
+        ]);
+
+        engine._indicators = [{
+            id: 1,
+            type: 'Fractals',
+            params: { length: 5 },
+            paneId: null,
+            outputNames: ['up', 'down'],
+            colors: ['#32CD32', '#FF3D57'],
+            _points: legend,
+            _lastValues: legend[legend.length - 1].values,
+        }];
+
+        const valuesAt = time => engine.getValuesAt(time)[0].values;
+        assert.deepEqual(valuesAt(candles[1].time), { up: null, down: null });
+        assert.deepEqual(valuesAt(candles[2].time), { up: 5, down: null });
+        assert.deepEqual(valuesAt(candles[3].time), { up: null, down: null });
+        assert.deepEqual(valuesAt(candles[4].time), { up: null, down: -3 });
+        assert.deepEqual(engine.getValuesAt()[0].values, { up: null, down: -3 });
+    });
+
+    it('does not carry a shifted single-output value into adjacent candles', () => {
+        const engine = new IndicatorEngine();
+        const candles = Array.from({ length: 5 }, (_, i) => ({
+            time: 1_710_000_000 + i * 300,
+            open: 10,
+            high: 12,
+            low: 8,
+            close: 10,
+        }));
+        engine.setCandles(candles);
+
+        const shifted = engine._applyPointShifts([
+            { time: candles[4].time, value: 12, shift: 2 },
+        ]);
+        const points = engine._buildLegendPoints({}, shifted);
+        engine._indicators = [{
+            id: 1,
+            type: 'Peak',
+            params: { deviation: 0.001 },
+            paneId: null,
+            outputNames: ['value'],
+            colors: ['#32CD32'],
+            _points: points,
+            _lastValues: points[0].values,
+        }];
+
+        const valuesAt = time => engine.getValuesAt(time)[0].values;
+        assert.deepEqual(valuesAt(candles[1].time), { value: null });
+        assert.deepEqual(valuesAt(candles[2].time), { value: 12 });
+        assert.deepEqual(valuesAt(candles[3].time), { value: null });
+        assert.deepEqual(engine.getValuesAt()[0].values, { value: 12 });
     });
 });
