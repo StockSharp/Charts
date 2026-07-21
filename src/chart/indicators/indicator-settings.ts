@@ -83,7 +83,10 @@ export const IndicatorSettings = (function () {
             // name as-is.
             for (const entry of entries) {
                 const id = (entry.alias && entry.alias !== entry.kind) ? aliasToClientId(entry.alias) : entry.kind;
-                const existing = INDICATORS[id] || {};
+                // Alias-based ids (for example MACD) may differ from the
+                // canonical local catalog key. Reuse that entry as well so
+                // client-only metadata such as `painter` survives a merge.
+                const existing = INDICATORS[id] || INDICATORS[entry.kind] || {};
                 // Server-authoritative measure maps straight to
                 // IIndicator.Measure on the StockSharp side — this is how the
                 // engine decides where to draw: Price → overlay on candles,
@@ -111,6 +114,9 @@ export const IndicatorSettings = (function () {
                     // them — leaving series silently empty.
                     serverKind: entry.alias || entry.kind,
                     outputs: entry.outputNames,
+                    // Painter selection is client metadata. A server may
+                    // provide it too, but must not erase the local mapping.
+                    painter: entry.painter || existing.painter,
                 };
             }
         } catch (err) {

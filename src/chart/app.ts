@@ -13,12 +13,25 @@ import { IndicatorDialog } from './indicator-dialog.js';
 import { ChartTypeSwitcher } from './chart-type-switcher.js';
 import { TerminalUtils } from './utils.js';
 import { T } from './i18n.js';
+import {
+    getIndicatorPainterNames,
+    hasIndicatorPainter,
+    registerIndicatorPainter,
+} from './indicators/painters/index.js';
 
 declare const SSChart: any;
 
 // Globals the ported modules read at runtime (same names the terminal exposes).
 (window as any).TerminalUtils = TerminalUtils;
 (window as any).T = T;
+
+// Plugin surface for applications that consume the browser bundles. Module
+// consumers can import the same functions from indicators/painters/index.ts.
+Object.assign((window as any).SSChart, {
+    registerIndicatorPainter,
+    hasIndicatorPainter,
+    getIndicatorPainterNames,
+});
 
 function boot() {
     const S = (window as any).SampleData;

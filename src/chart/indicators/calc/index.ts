@@ -394,6 +394,7 @@ export function getClientCatalog(): any[] {
         pane: e.pane,
         params: e.params,
         outputs: e.outputs,
+        painter: (e as any).painter,
         scaleRange: e.scaleRange,
         levels: e.levels,
     }));

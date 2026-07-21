@@ -19,9 +19,10 @@ export interface CandlestickData { time: Time; open: number; high: number; low: 
 export interface LineData { time: Time; value: number }
 export interface HistogramData { time: Time; value: number; color?: string }
 export interface AreaData { time: Time; value: number }
+export interface BandData { time: Time; value: number; upper: number; lower: number }
 
 export type SeriesKind = 'Candlestick' | 'Bar' | 'Line' | 'Histogram' | 'Area'
-    | 'PointFigure' | 'Renko' | 'VolumeProfile' | 'Cluster' | 'Box';
+    | 'Band' | 'PointFigure' | 'Renko' | 'VolumeProfile' | 'Cluster' | 'Box';
 export interface SeriesDefinition { type: SeriesKind }
 
 export const CandlestickSeries: SeriesDefinition = { type: 'Candlestick' };
@@ -29,6 +30,7 @@ export const BarSeries: SeriesDefinition = { type: 'Bar' };
 export const LineSeries: SeriesDefinition = { type: 'Line' };
 export const HistogramSeries: SeriesDefinition = { type: 'Histogram' };
 export const AreaSeries: SeriesDefinition = { type: 'Area' };
+export const BandSeries: SeriesDefinition = { type: 'Band' };
 export const PointFigureSeries: SeriesDefinition = { type: 'PointFigure' };
 export const RenkoSeries: SeriesDefinition = { type: 'Renko' };
 export const VolumeProfileSeries: SeriesDefinition = { type: 'VolumeProfile' };
@@ -117,8 +119,13 @@ interface SeriesOptions {
     borderVisible?: boolean; borderUpColor?: string; borderDownColor?: string;
     wickUpColor?: string; wickDownColor?: string;
     // line / area
-    color?: string; lineColor?: string; lineWidth?: number;
+    color?: string; lineColor?: string; lineWidth?: number; lineStyle?: LineStyleValue;
+    lineVisible?: boolean;
+    pointMarkersVisible?: boolean;
+    pointMarkersRadius?: number;
     topColor?: string; bottomColor?: string;
+    upperColor?: string; lowerColor?: string;
+    fillColor?: string; positiveFillColor?: string; negativeFillColor?: string;
     // histogram
     base?: number;
     // shared
@@ -165,7 +172,7 @@ interface ChartOptions {
     handleScale?: boolean | { axisPressedMouseMove?: boolean; mouseWheel?: boolean };
 }
 
-type AnyPoint = CandlestickData & LineData & HistogramData & AreaData;
+type AnyPoint = CandlestickData & LineData & HistogramData & AreaData & BandData;
 
 const DEF_LAYOUT_BG = '#1f1f23';
 const DEF_TEXT = '#d7d7d7';
@@ -1037,6 +1044,10 @@ class ChartImpl {
                         const base = num(s.opts.base, 0);
                         mn = Math.min(mn, p.value, base);
                         mx = Math.max(mx, p.value, base);
+                    } else if (s.kind === 'Band') {
+                        if (!Number.isFinite(p.upper) || !Number.isFinite(p.lower)) continue;
+                        mn = Math.min(mn, p.upper, p.lower);
+                        mx = Math.max(mx, p.upper, p.lower);
                     } else {
                         if (!Number.isFinite(p.value)) continue;
                         mn = Math.min(mn, p.value);
@@ -1821,6 +1832,48 @@ class ChartImpl {
             return;
         }
 
+        if (s.kind === 'Band') {
+            const points = visible.filter(p => Number.isFinite(p.upper) && Number.isFinite(p.lower));
+            if (points.length === 0) return;
+
+            // Fill each adjacent quadrilateral independently. Apart from
+            // handling crossings correctly, this allows an Ichimoku cloud to
+            // use different colours depending on which Senkou span is above.
+            for (let i = 0; i < points.length - 1; i++) {
+                const a = points[i];
+                const n = points[i + 1];
+                const positive = (a.upper + n.upper) >= (a.lower + n.lower);
+                ctx.beginPath();
+                ctx.moveTo(this.timeToX(a.time), this.valueToY(a.upper, b));
+                ctx.lineTo(this.timeToX(n.time), this.valueToY(n.upper, b));
+                ctx.lineTo(this.timeToX(n.time), this.valueToY(n.lower, b));
+                ctx.lineTo(this.timeToX(a.time), this.valueToY(a.lower, b));
+                ctx.closePath();
+                ctx.fillStyle = positive
+                    ? (s.opts.positiveFillColor ?? s.opts.fillColor ?? 'rgba(50,205,50,0.16)')
+                    : (s.opts.negativeFillColor ?? s.opts.fillColor ?? 'rgba(255,61,87,0.16)');
+                ctx.fill();
+            }
+
+            const width = num(s.opts.lineWidth, 1);
+            const drawBoundary = (key: 'upper' | 'lower', color: string) => {
+                ctx.beginPath();
+                points.forEach((p, i) => {
+                    const x = this.timeToX(p.time);
+                    const y = this.valueToY(p[key], b);
+                    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                });
+                ctx.strokeStyle = color;
+                ctx.lineWidth = width;
+                ctx.setLineDash(this.dashFor(s.opts.lineStyle ?? LineStyle.Solid, width));
+                ctx.stroke();
+                ctx.setLineDash([]);
+            };
+            drawBoundary('upper', s.opts.upperColor ?? s.opts.color ?? '#32CD32');
+            drawBoundary('lower', s.opts.lowerColor ?? s.opts.color ?? '#FF1493');
+            return;
+        }
+
         // Line / Area share the polyline
         const color = s.opts.lineColor ?? s.opts.color ?? '#89b4ff';
         const lw = num(s.opts.lineWidth, s.kind === 'Area' ? 2 : 1);
@@ -1843,15 +1896,32 @@ class ChartImpl {
             ctx.fillStyle = grad;
             ctx.fill();
         }
-        ctx.beginPath();
-        visible.forEach((p, i) => {
-            const x = this.timeToX(p.time);
-            const y = this.valueToY(p.value, b);
-            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-        });
-        ctx.strokeStyle = color;
-        ctx.lineWidth = lw;
-        ctx.stroke();
+        if (s.opts.lineVisible !== false) {
+            ctx.beginPath();
+            visible.forEach((p, i) => {
+                const x = this.timeToX(p.time);
+                const y = this.valueToY(p.value, b);
+                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            });
+            ctx.strokeStyle = color;
+            ctx.lineWidth = lw;
+            ctx.setLineDash(this.dashFor(s.opts.lineStyle ?? LineStyle.Solid, lw));
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        // Sparse indicators such as Parabolic SAR, ZigZag and Fractals use
+        // line series for their scale/crosshair integration but ask the
+        // painter for isolated dots instead of a connecting polyline.
+        if (s.opts.pointMarkersVisible) {
+            const radius = Math.max(1, num(s.opts.pointMarkersRadius, 3));
+            ctx.fillStyle = color;
+            for (const p of visible) {
+                ctx.beginPath();
+                ctx.arc(this.timeToX(p.time), this.valueToY(p.value, b), radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
     }
 
     private drawMarkers(rb: { min: number; max: number }, lb: { min: number; max: number }): void {

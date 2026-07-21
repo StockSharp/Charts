@@ -251,12 +251,9 @@ export class IndicatorEngine {
             entry.colors = this._renderer.getLastColors();
             this._applyPaneScale(entry, chart);
         } else {
-            // Subsequent recompute: delegate to renderer.update which knows
-            // the per-type series-order (MACD has histogram/macd/signal,
-            // Ichimoku has 5 lines, etc.) and falls through to a generic
-            // outputNames-based mapping for indicators without a dedicated
-            // case. Wrapping setData in a try keeps a single bad chart
-            // teardown from breaking the recompute loop for siblings.
+            // Subsequent recompute is delegated to the painter instance that
+            // created the series. It owns their order and data mapping; the
+            // default painter maps outputNames to ordinary lines.
             try { this._renderer.update(entry, data, chart, settings); }
             catch (err) { console.warn('[Indicators] update failed for', entry.type, err); }
         }
@@ -328,12 +325,9 @@ export class IndicatorEngine {
     }
 
     _removeEntry(entry) {
-        for (const s of entry.seriesRefs) {
-            try {
-                const chart = entry.paneId ? this._paneManager?.getChart(entry.paneId) : this._renderer?._mainChart;
-                if (chart && s) chart.removeSeries(s);
-            } catch { }
-        }
+        // The painter may own resources in addition to its returned series, so
+        // let the renderer notify it before removing the chart primitives.
+        if (this._renderer) this._renderer.removeSeries(entry);
         const i = this._indicators.indexOf(entry);
         if (i >= 0) this._indicators.splice(i, 1);
         // Close the sub-pane only if no other active indicator is drawing

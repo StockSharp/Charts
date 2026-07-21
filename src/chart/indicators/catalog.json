@@ -63,6 +63,7 @@
   "name": "Bollinger Bands",
   "group": "Volatility",
   "pane": "overlay",
+  "painter": "band",
   "params": [
    {
     "key": "length",
@@ -87,6 +88,7 @@
   "name": "MACD",
   "group": "Momentum",
   "pane": "separate",
+  "painter": "macd-histogram",
   "params": [
    {
     "key": "fastLength",
@@ -116,6 +118,7 @@
   "name": "Stochastic",
   "group": "Momentum",
   "pane": "separate",
+  "painter": "stochastic",
   "params": [
    {
     "key": "kPeriod",
@@ -153,6 +156,7 @@
   "name": "ADX",
   "group": "Trend",
   "pane": "separate",
+  "painter": "adx",
   "params": [
    {
     "key": "length",
@@ -204,6 +208,7 @@
   "name": "Volume",
   "group": "Volume",
   "pane": "separate",
+  "painter": "volume",
   "params": [],
   "outputs": [
    "histogram"
@@ -248,6 +253,7 @@
   "name": "Envelope",
   "group": "Volatility",
   "pane": "overlay",
+  "painter": "band",
   "params": [
    {
     "key": "length",
@@ -272,6 +278,7 @@
   "name": "Alligator",
   "group": "Trend",
   "pane": "overlay",
+  "painter": "alligator",
   "params": [
    {
     "key": "jawLength",
@@ -319,6 +326,7 @@
   "name": "Parabolic SAR",
   "group": "Trend",
   "pane": "overlay",
+  "painter": "dots",
   "params": [
    {
     "key": "acceleration",
@@ -351,6 +359,7 @@
   "name": "Ichimoku",
   "group": "Trend",
   "pane": "overlay",
+  "painter": "ichimoku",
   "params": [
    {
     "key": "tenkan",
@@ -554,6 +563,7 @@
   "name": "ZigZag",
   "group": "Volatility",
   "pane": "overlay",
+  "painter": "dots",
   "params": [
    {
     "key": "deviation",
@@ -572,6 +582,7 @@
   "name": "Fractals",
   "group": "Volatility",
   "pane": "overlay",
+  "painter": "fractals",
   "params": [
    {
     "key": "length",
@@ -1433,6 +1444,7 @@
   "name": "Gator Oscillator",
   "group": "Momentum",
   "pane": "separate",
+  "painter": "gator",
   "params": [
    {
     "key": "jawLength",
@@ -1976,6 +1988,7 @@
   "name": "Moving Average Convergence Divergence Signal",
   "group": "Other",
   "pane": "separate",
+  "painter": "dual-line",
   "params": [
    {
     "key": "longLength",
@@ -2424,6 +2437,7 @@
   "name": "RVI",
   "group": "Momentum",
   "pane": "separate",
+  "painter": "dual-line",
   "params": [
    {
     "key": "length",
@@ -2711,6 +2725,7 @@
   "name": "PPO",
   "group": "Momentum",
   "pane": "separate",
+  "painter": "ppo-histogram",
   "params": [
    {
     "key": "shortLength",

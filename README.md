@@ -103,6 +103,41 @@ For the **full terminal experience** — indicator engine over the whole catalog
 crosshair legend, oscillator sub-panes, right-click menu and the picker dialog —
 wire up the `src/chart` modules the way [`src/chart/app.ts`](src/chart/app.ts) does.
 
+### Custom indicator painters
+
+An indicator is drawn as one or more ordinary lines by default. To opt into a
+special renderer, put a stable painter name in its `catalog.json` entry:
+
+```json
+{
+  "kind": "MyIndicator",
+  "name": "My indicator",
+  "pane": "separate",
+  "painter": "my-histogram"
+}
+```
+
+Register a factory before adding that indicator. A fresh painter is created for
+each indicator instance; `paint` creates and returns its series, while `update`
+refreshes them on every live recalculation:
+
+```js
+SSChart.registerIndicatorPainter('my-histogram', () => ({
+  paint(ctx) {
+    const color = ctx.nextColor();
+    const bars = ctx.addSeries('histogram', { color, title: 'My histogram' }, ctx.output('value'));
+    return { series: [bars], colors: [color] };
+  },
+  update(ctx, series) {
+    series[0].setData(ctx.output('value'));
+  },
+}));
+```
+
+TypeScript consumers can import the contract and registry from
+`src/chart/indicators/painters/index.ts`. If a painter name is absent or is not
+registered, the renderer safely falls back to normal lines.
+
 ## Build & view
 
 ```
