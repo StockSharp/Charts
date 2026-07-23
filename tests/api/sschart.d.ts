@@ -1,5 +1,8 @@
 import { type PaneOptions } from './model/pane-model.js';
 import { type BarsInfo, type MismatchDirectionValue } from './model/series-store.js';
+import { type ICommandStack } from './interaction/command-stack.js';
+import { type InteractionStateSnapshot } from './interaction/interaction-controller.js';
+import type { IChartPrimitive, PrimitiveAttachOptions, PrimitiveInteractionOptions, PrimitiveHitTestRole as PrimitiveHitTestRoleValue, PrimitiveZOrder as PrimitiveZOrderValue } from './primitives/primitive-api.js';
 import type { TimeRange } from './scale/time-scale.js';
 import { type SeriesDefinition, type TimedSeriesData } from '../series/registry.js';
 export type { TimeRange } from './scale/time-scale.js';
@@ -7,6 +10,12 @@ export type { PaneOptions, PaneState } from './model/pane-model.js';
 export { MismatchDirection } from './model/series-store.js';
 export type { BarsInfo, MismatchDirectionValue } from './model/series-store.js';
 export type { DataChangeKind, DataChangeSet } from './model/data-change-set.js';
+export type { AutoscaleInfo, BitmapCoordinatesRenderingScope, CanvasRenderTarget, HitTestContext, IChartPrimitive, IPrimitiveRenderer, MediaCoordinatesRenderingScope, PrimitiveAxisView, PrimitiveAttachedContext, PrimitiveAttachOptions, PrimitiveDisposable, PrimitivePaneGeometry, PrimitivePaneView, PrimitiveHit, PrimitiveInteractionEvent, PrimitiveInteractionOptions, PrimitiveRect, PrimitiveSize, PrimitiveTheme, } from './primitives/primitive-api.js';
+export { PrimitiveHitTestLocation, PrimitiveHitTestRole, PrimitivePaneViewClip, PrimitiveZOrder, } from './primitives/primitive-api.js';
+export { InteractionState } from './interaction/interaction-controller.js';
+export type { InteractionObjectRef, InteractionStateSnapshot, } from './interaction/interaction-controller.js';
+export { CommandStack } from './interaction/command-stack.js';
+export type { CommandStackListener, CommandStackSnapshot, ICommand, ICommandStack, } from './interaction/command-stack.js';
 export { getSeriesDefinition, getSeriesTypes, registerSeries, seriesRendererRegistry, unregisterSeries, } from '../series/registry.js';
 export type { CustomSeriesDefinition, ISeriesRenderer, PreparedSeriesData, SeriesDefinition, SeriesDataProcessor, SeriesPriceRange, SeriesRendererContext, SeriesRendererPane, SeriesRendererTheme, TimedSeriesData, } from '../series/registry.js';
 export type Time = number;
@@ -158,6 +167,7 @@ export interface ChartOptions {
     width?: number;
     height?: number;
     autoSize?: boolean;
+    commandHistoryLimit?: number;
     layout?: {
         background?: {
             type?: string;
@@ -250,7 +260,17 @@ export interface PriceLineHoveredObject {
     readonly priceLine: IPriceLine;
     readonly id: string | null;
 }
-export type HoveredObject = SeriesHoveredObject | PriceLineHoveredObject;
+export interface PrimitiveHoveredObject {
+    readonly type: 'primitive';
+    readonly primitive: IChartPrimitive;
+    readonly id: string;
+    readonly role: PrimitiveHitTestRoleValue;
+    readonly cursor: string;
+    readonly zOrder: PrimitiveZOrderValue;
+    readonly data: unknown;
+    readonly interaction: Readonly<Required<PrimitiveInteractionOptions>>;
+}
+export type HoveredObject = SeriesHoveredObject | PriceLineHoveredObject | PrimitiveHoveredObject;
 export interface CrosshairEvent {
     readonly time: Time | null;
     readonly logical: number | null;
@@ -285,8 +305,10 @@ export interface ChartClick {
     shiftKey: boolean;
     altKey: boolean;
     metaKey: boolean;
+    hoveredObject: HoveredObject | null;
 }
 export type ClickListener = (c: ChartClick) => void;
+export type InteractionStateListener = (state: InteractionStateSnapshot) => void;
 export interface OrderPlace {
     price: number;
     button: number;
@@ -366,6 +388,12 @@ export interface IChartApi {
     removePane(pane: IPaneApi): void;
     addSeries<TData extends TimedSeriesData, TOptions extends SeriesOptions = SeriesOptions>(definition: SeriesDefinition<TData, TOptions>, options?: Partial<TOptions>, pane?: IPaneApi): ISeriesApi<TData, TOptions>;
     removeSeries(series: ISeriesApi): void;
+    attachPrimitive(primitive: IChartPrimitive, options?: PrimitiveAttachOptions): void;
+    detachPrimitive(primitive: IChartPrimitive): void;
+    commandStack(): ICommandStack;
+    interactionState(): InteractionStateSnapshot;
+    subscribeInteractionStateChange(cb: InteractionStateListener): void;
+    unsubscribeInteractionStateChange(cb: InteractionStateListener): void;
     timeScale(): ITimeScaleApi;
     priceScale(scaleId?: string): IPriceScaleApi;
     subscribeClick(cb: ClickListener): void;

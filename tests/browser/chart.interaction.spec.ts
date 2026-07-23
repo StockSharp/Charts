@@ -74,6 +74,51 @@ test('drags a price line and commits the final price once', async ({ page }) => 
     expect(result.linePrice).toBeCloseTo(result.commits[0], 8);
 });
 
+test('price-line close target uses primitive hit-test and consumes the chart click', async ({ page }) => {
+    const canvas = page.locator('#chart canvas[data-sschart-layer="overlay"]');
+    const box = await canvas.boundingBox();
+    expect(box).not.toBeNull();
+    const y = await page.evaluate(() => {
+        const fixture = (window as any).__fixture;
+        fixture.closeCalls = 0;
+        fixture.chartClicks = 0;
+        fixture.closeLine = fixture.candles.createPriceLine({
+            id: 'close-line',
+            price: 126,
+            color: '#8b5cf6',
+            title: 'CLOSE',
+            draggable: true,
+            onClose: () => fixture.closeCalls++,
+        });
+        fixture.chart.subscribeClick(() => fixture.chartClicks++);
+        return fixture.candles.priceToCoordinate(126);
+    });
+    await page.evaluate(() => (window as any).__fixture.settle());
+
+    let closeX: number | null = null;
+    for (let x = 790; x <= 900; x += 2) {
+        await page.mouse.move(box!.x + x, box!.y + y);
+        const cursor = await canvas.evaluate((element: HTMLCanvasElement) => element.style.cursor);
+        if (cursor === 'pointer') { closeX = x; break; }
+    }
+    expect(closeX).not.toBeNull();
+
+    const hovered = await page.evaluate(() => {
+        const fixture = (window as any).__fixture;
+        const event = fixture.crosshairEvents.at(-1);
+        return { type: event.hoveredObject?.type, id: event.hoveredObject?.id };
+    });
+    expect(hovered).toEqual({ type: 'price-line', id: 'close-line' });
+
+    await page.mouse.click(box!.x + closeX!, box!.y + y);
+    const result = await page.evaluate(() => ({
+        closeCalls: (window as any).__fixture.closeCalls,
+        chartClicks: (window as any).__fixture.chartClicks,
+    }));
+    expect(result.closeCalls).toBe(1);
+    expect(result.chartClicks).toBe(0);
+});
+
 test('emits an order-placement intent while Ctrl is held', async ({ page }) => {
     const box = await page.locator('#chart canvas[data-sschart-layer="overlay"]').boundingBox();
     expect(box).not.toBeNull();

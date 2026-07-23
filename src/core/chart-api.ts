@@ -26,6 +26,49 @@ import {
 } from './model/series-store.js';
 import type { DataChangeSet } from './model/data-change-set.js';
 import { RenderDirty, RenderScheduler, type RenderDirtyFlags } from './render-scheduler.js';
+import { HitTestEngine, type HitTestCandidate } from './interaction/hit-test.js';
+import { CommandStack, type ICommandStack } from './interaction/command-stack.js';
+import {
+    InteractionController,
+    InteractionState,
+    type InteractionMovement,
+    type InteractionObjectRef,
+    type InteractionStateSnapshot,
+} from './interaction/interaction-controller.js';
+import { PrimitiveHost } from './primitives/primitive-host.js';
+import { primitiveLayerRank } from './primitives/primitive-layer.js';
+import {
+    applyAutoscalePixelMargins,
+    normalizeAutoscaleInfo,
+    type NormalizedAutoscaleInfo,
+} from './primitives/primitive-autoscale.js';
+import {
+    PriceLinesPrimitive,
+    isPriceLinePrimitiveHitData,
+    type PriceLinePrimitiveEntry,
+} from './primitives/price-lines-primitive.js';
+import { SeriesMarkersPrimitive } from './primitives/series-markers-primitive.js';
+import {
+    PrimitiveHitTestLocation,
+    PrimitivePaneViewClip,
+    PrimitiveZOrder,
+} from './primitives/primitive-api.js';
+import type {
+    CanvasRenderTarget,
+    HitTestContext,
+    IChartPrimitive,
+    PrimitiveAxisView,
+    PrimitiveAttachedContext,
+    PrimitiveAttachOptions,
+    PrimitivePaneGeometry,
+    PrimitivePaneView,
+    PrimitiveInteractionEvent,
+    PrimitiveInteractionOptions,
+    PrimitiveHitTestRole as PrimitiveHitTestRoleValue,
+    PrimitiveTheme,
+    PrimitiveZOrder as PrimitiveZOrderValue,
+} from './primitives/primitive-api.js';
+import { CanvasRenderTarget2D } from './render/canvas-render-target.js';
 import type { TimeRange } from './scale/time-scale.js';
 import {
     InternalPriceScaleMode,
@@ -48,6 +91,45 @@ export type { PaneOptions, PaneState } from './model/pane-model.js';
 export { MismatchDirection } from './model/series-store.js';
 export type { BarsInfo, MismatchDirectionValue } from './model/series-store.js';
 export type { DataChangeKind, DataChangeSet } from './model/data-change-set.js';
+export type {
+    AutoscaleInfo,
+    BitmapCoordinatesRenderingScope,
+    CanvasRenderTarget,
+    HitTestContext,
+    IChartPrimitive,
+    IPrimitiveRenderer,
+    MediaCoordinatesRenderingScope,
+    PrimitiveAxisView,
+    PrimitiveAttachedContext,
+    PrimitiveAttachOptions,
+    PrimitiveDisposable,
+    PrimitivePaneGeometry,
+    PrimitivePaneView,
+    PrimitiveHit,
+    PrimitiveInteractionEvent,
+    PrimitiveInteractionOptions,
+    PrimitiveRect,
+    PrimitiveSize,
+    PrimitiveTheme,
+} from './primitives/primitive-api.js';
+export {
+    PrimitiveHitTestLocation,
+    PrimitiveHitTestRole,
+    PrimitivePaneViewClip,
+    PrimitiveZOrder,
+} from './primitives/primitive-api.js';
+export { InteractionState } from './interaction/interaction-controller.js';
+export type {
+    InteractionObjectRef,
+    InteractionStateSnapshot,
+} from './interaction/interaction-controller.js';
+export { CommandStack } from './interaction/command-stack.js';
+export type {
+    CommandStackListener,
+    CommandStackSnapshot,
+    ICommand,
+    ICommandStack,
+} from './interaction/command-stack.js';
 export {
     getSeriesDefinition,
     getSeriesTypes,
@@ -215,6 +297,7 @@ export interface SeriesOptions {
 export interface ChartOptions {
     width?: number; height?: number;
     autoSize?: boolean;       // observe the host with ResizeObserver and re-fit
+    commandHistoryLimit?: number;
     layout?: { background?: { type?: string; color?: string }; textColor?: string; fontFamily?: string; attributionLogo?: boolean; fontSize?: number };
     // Optional watermark drawn over the plot background (under series).
     watermark?: {
@@ -282,9 +365,7 @@ class Series extends SeriesModel<AnyPoint> implements ISeriesApi<AnyPoint, Serie
     readonly kind: string;
     readonly definition: CustomSeriesDefinition<AnyPoint, SeriesOptions>;
     opts: SeriesOptions;
-    readonly markerStore = new SeriesStore<SeriesMarker>();
     get affectsTimeScale(): boolean { return this.definition.affectsTimeScale !== false; }
-    get markers(): readonly SeriesMarker[] { return this.markerStore.values; }
     get points(): readonly AnyPoint[] { return this.values; }
     private prepared: {
         key: string;
@@ -363,12 +444,16 @@ class Series extends SeriesModel<AnyPoint> implements ISeriesApi<AnyPoint, Serie
     createPriceLine(options: PriceLineOptions): IPriceLine {
         const pl = new PriceLine(options, this);
         this.priceLines.push(pl);
-        this.chart?.scheduleDraw();
+        this.chart?.priceLineAdded(this, pl);
         return pl;
     }
     removePriceLine(line: IPriceLine): void {
         const i = this.priceLines.indexOf(line as PriceLine);
-        if (i >= 0) { this.priceLines.splice(i, 1); this.chart?.scheduleDraw(); }
+        if (i >= 0) {
+            const removed = this.priceLines[i];
+            this.priceLines.splice(i, 1);
+            this.chart?.priceLineRemoved(this, removed);
+        }
     }
     // Coordinate <-> price for the price scale this series renders on.
     // Public so external order-overlay code can hit-test / drag.
@@ -386,9 +471,12 @@ class Series extends SeriesModel<AnyPoint> implements ISeriesApi<AnyPoint, Serie
 // applyOptions, repaints on each change. Drawn by the chart, not by
 // itself, so the only state worth keeping is the options blob + a
 // back-ref to the owning series. displayY caches the eased label
-// position used by the collision-avoidance pass in drawPriceLines.
+// position used by the primitive's collision-avoidance pass.
+let nextPriceLinePrimitiveId = 1;
+
 class PriceLine implements IPriceLine {
     private opts: PriceLineOptions;
+    readonly stablePrimitiveId: string;
     // last drawn label y = its line's y + labelOffset. The OFFSET (the collision-avoidance shift
     // away from the line) is what eases, not the absolute y — so the label tracks its own line
     // instantly when the line moves (zoom / scroll / drag) and only the spread animates.
@@ -397,6 +485,7 @@ class PriceLine implements IPriceLine {
     labelOffset: number | null = null;
     constructor(opts: PriceLineOptions, private readonly series: Series) {
         this.opts = { ...opts };
+        this.stablePrimitiveId = opts.id?.length ? opts.id : `price-line-${nextPriceLinePrimitiveId++}`;
     }
     applyOptions(patch: Partial<PriceLineOptions>): void {
         this.opts = { ...this.opts, ...patch };
@@ -438,14 +527,6 @@ class PriceScaleApi implements IPriceScaleApi {
     }
 }
 
-class MarkersPlugin implements ISeriesMarkersPlugin {
-    constructor(private readonly series: Series) {}
-    setMarkers(markers: SeriesMarker[]): void {
-        this.series.markerStore.replace(markers);
-        this.series.chart?.scheduleDraw();
-    }
-}
-
 export interface SeriesHoveredObject {
     readonly type: 'series';
     readonly series: ISeriesApi<any, any>;
@@ -457,7 +538,17 @@ export interface PriceLineHoveredObject {
     readonly priceLine: IPriceLine;
     readonly id: string | null;
 }
-export type HoveredObject = SeriesHoveredObject | PriceLineHoveredObject;
+export interface PrimitiveHoveredObject {
+    readonly type: 'primitive';
+    readonly primitive: IChartPrimitive;
+    readonly id: string;
+    readonly role: PrimitiveHitTestRoleValue;
+    readonly cursor: string;
+    readonly zOrder: PrimitiveZOrderValue;
+    readonly data: unknown;
+    readonly interaction: Readonly<Required<PrimitiveInteractionOptions>>;
+}
+export type HoveredObject = SeriesHoveredObject | PriceLineHoveredObject | PrimitiveHoveredObject;
 export interface CrosshairEvent {
     readonly time: Time | null;
     readonly logical: number | null;
@@ -489,8 +580,10 @@ export interface ChartClick {
     shiftKey: boolean;
     altKey: boolean;
     metaKey: boolean;
+    hoveredObject: HoveredObject | null;
 }
 export type ClickListener = (c: ChartClick) => void;
+export type InteractionStateListener = (state: InteractionStateSnapshot) => void;
 // The order-place SIGNAL the chart emits when the user clicks in placement mode (its modifier held).
 // The chart does not form the order — the host maps this to its domain (side by button, qty, colour,
 // send to the venue) and draws the resulting order line via createPriceLine.
@@ -592,6 +685,12 @@ export interface IChartApi {
         pane?: IPaneApi,
     ): ISeriesApi<TData, TOptions>;
     removeSeries(series: ISeriesApi): void;
+    attachPrimitive(primitive: IChartPrimitive, options?: PrimitiveAttachOptions): void;
+    detachPrimitive(primitive: IChartPrimitive): void;
+    commandStack(): ICommandStack;
+    interactionState(): InteractionStateSnapshot;
+    subscribeInteractionStateChange(cb: InteractionStateListener): void;
+    unsubscribeInteractionStateChange(cb: InteractionStateListener): void;
     timeScale(): ITimeScaleApi;
     priceScale(scaleId?: string): IPriceScaleApi;
     subscribeClick(cb: ClickListener): void;
@@ -684,6 +783,12 @@ interface ScaleBounds {
     baseValues: ReadonlyMap<Series, number>;
 }
 
+interface PrimitiveAutoscaleEntry extends NormalizedAutoscaleInfo {
+    readonly pane: IPaneApi;
+    readonly scaleId: string;
+    readonly series: Series | null;
+}
+
 class ChartImpl implements IChartApi {
     private readonly host: HTMLElement;
     private readonly root: HTMLDivElement;
@@ -699,6 +804,8 @@ class ChartImpl implements IChartApi {
     private readonly fullRangeCache = new WeakMap<Series, { key: string; min: number; max: number }>();
     private paneLayoutResult: PaneLayoutResult = { panes: [], splitters: [] };
     private readonly paneApis = new Map<string, PaneApi>();
+    private readonly priceLinePrimitives = new Map<PaneModel<Series>, PriceLinesPrimitive>();
+    private readonly markerPrimitives = new Map<Series, SeriesMarkersPrimitive>();
     private activePane: PaneModel<Series> = this.model.mainPane;
     private activePaneRect: PaneLayoutRect = {
         paneId: 'main', state: 'normal', x: 0, y: 0, width: 0, height: 0,
@@ -716,16 +823,19 @@ class ChartImpl implements IChartApi {
     rangeListeners: RangeListener[] = [];
     logicalRangeListeners: LogicalRangeListener[] = [];
     private crosshairListeners: CrosshairListener[] = [];
-    // Screen rects (CSS px) of the per-frame price-line "✕" close buttons, with the
-    // callback to fire when one is clicked. Rebuilt every draw; hit-tested on mousedown.
-    private _closeHits: { x: number; y: number; w: number; h: number; onClose: () => void }[] = [];
-
     private width = 0;
     private height = 0;
     private dpr = 1;
 
     private readonly disposables = new DisposableStore();
     private readonly renderScheduler: RenderScheduler;
+    private readonly primitiveHost: PrimitiveHost;
+    private readonly hitTestEngine = new HitTestEngine();
+    private readonly interactionController: InteractionController;
+    private readonly commands: CommandStack;
+    private interactionListeners: InteractionStateListener[] = [];
+    private primitiveAutoscaleCache: readonly PrimitiveAutoscaleEntry[] | null = null;
+    private primitiveAutoscaleComputing = false;
     private disposed = false;
     // optional ResizeObserver when autoSize is on (default true)
     private autoResizer: ResizeObserver | null = null;
@@ -734,23 +844,19 @@ class ChartImpl implements IChartApi {
     private mouseX: number | null = null;
     private mouseY: number | null = null;
     private controlledCrosshairTime: Time | null = null;
-    private dragging = false;
-    private lastDragX = 0;
-    // manual vertical price-scale stretch (drag the price axis)
-    private priceDragging = false;
     private gesturePane: PaneModel<Series> | null = null;
-    private lastDragY = 0;
-    // manual horizontal time-scale stretch (drag the time axis)
-    private timeDragging = false;
-    private lastAxisX = 0;
+    private scaleDrag: { kind: 'price'; pane: PaneModel<Series> } | { kind: 'time' } | null = null;
+    private activePrimitiveInteraction: {
+        hit: PrimitiveHoveredObject;
+        start: Readonly<{ x: number; y: number }>;
+        last: Readonly<{ x: number; y: number }>;
+    } | null = null;
     private splitterDrag: {
         splitter: PaneSplitter;
         startY: number;
         beforeHeight: number;
         afterHeight: number;
     } | null = null;
-    // order-line drag engine: the draggable price line currently grabbed (null = none)
-    private lineDrag: { series: Series; line: PriceLine } | null = null;
     // true between a pointerdown that landed on the canvas and its release — so a stray global
     // pointerup (gesture started elsewhere) is ignored by finishGesture
     private pointerDown = false;
@@ -825,6 +931,13 @@ class ChartImpl implements IChartApi {
         this.overlayCtx = overlayCtx;
         this.ctx = baseCtx;
         this.renderScheduler = this.disposables.add(new RenderScheduler((dirty) => this.draw(dirty)));
+        this.primitiveHost = this.disposables.add(new PrimitiveHost(() => this.scheduleDraw(RenderDirty.All)));
+        this.commands = new CommandStack(opts.commandHistoryLimit ?? 100);
+        this.interactionController = new InteractionController((snapshot) => {
+            for (const listener of this.interactionListeners) {
+                try { listener(snapshot); } catch { /* a listener must not break pointer state */ }
+            }
+        });
 
         const w = num(opts.width, host.clientWidth || 600);
         const h = num(opts.height, host.clientHeight || 300);
@@ -877,8 +990,16 @@ class ChartImpl implements IChartApi {
     }
     removePane(pane: IPaneApi): void {
         const model = this.resolvePane(pane);
+        if (model === this.model.mainPane) throw new Error('sschart: the main pane cannot be removed');
+        this.priceLinePrimitives.delete(model);
+        for (const attachment of this.primitiveHost.attachments()) {
+            if (attachment.options.pane === pane)
+                this.forgetPrimitiveInteraction(attachment.primitive);
+        }
+        this.primitiveHost.detachWhere((attachment) => attachment.pane === pane);
         const removed = this.model.removePane(model);
         for (const series of removed) {
+            this.markerPrimitives.delete(series);
             series.chart = null;
             series.pane = null;
         }
@@ -910,16 +1031,172 @@ class ChartImpl implements IChartApi {
     }
     removeSeries(series: ISeriesApi): void {
         const s = series as Series;
+        if (!(s instanceof Series) || s.chart !== this) return;
+        const pane = s.pane;
+        if (pane !== null) {
+            const primitive = this.priceLinePrimitives.get(pane);
+            for (const line of s.priceLines) primitive?.lineRemoved(line);
+        }
+        for (const attachment of this.primitiveHost.attachments()) {
+            if (attachment.options.series === series)
+                this.forgetPrimitiveInteraction(attachment.primitive);
+        }
+        this.primitiveHost.detachWhere((attachment) => attachment.series === series);
+        this.markerPrimitives.delete(s);
         if (!this.model.removeSeries(s)) return;
         s.chart = null;
         s.pane = null;
+        if (pane !== null) this.refreshPriceLinesPrimitive(pane);
         this.recomputeAxisPads();
         this.onDataChanged();
     }
-    private hasScale(id: string): boolean {
-        return this.activeSeries.some((s) => s.priceScaleId() === id);
+    priceLineAdded(series: Series, _line: PriceLine): void {
+        const pane = series.pane;
+        if (pane === null) return;
+        this.ensurePriceLinesPrimitive(pane);
+        this.scheduleDraw(RenderDirty.All);
     }
-    private hasAnyScale(id: string): boolean { return this.series.some((s) => s.priceScaleId() === id); }
+    priceLineRemoved(series: Series, line: PriceLine): void {
+        const pane = series.pane;
+        if (pane === null) return;
+        this.priceLinePrimitives.get(pane)?.lineRemoved(line);
+        this.refreshPriceLinesPrimitive(pane);
+        this.scheduleDraw(RenderDirty.All);
+    }
+    private ensurePriceLinesPrimitive(pane: PaneModel<Series>): PriceLinesPrimitive {
+        const existing = this.priceLinePrimitives.get(pane);
+        if (existing !== undefined) return existing;
+        const primitive = new PriceLinesPrimitive(
+            () => this.priceLineEntries(pane),
+            () => `11px ${this.opts.layout?.fontFamily ?? DEF_FONT}`,
+        );
+        this.priceLinePrimitives.set(pane, primitive);
+        try {
+            this.attachPrimitive(primitive, { pane: this.paneApiFor(pane), priceScaleId: 'right' });
+        } catch (error) {
+            this.priceLinePrimitives.delete(pane);
+            throw error;
+        }
+        return primitive;
+    }
+    private refreshPriceLinesPrimitive(pane: PaneModel<Series>): void {
+        if (pane.series.some((series) => series.priceLines.length > 0)) return;
+        const primitive = this.priceLinePrimitives.get(pane);
+        if (primitive === undefined) return;
+        this.priceLinePrimitives.delete(pane);
+        this.detachPrimitive(primitive);
+    }
+    private priceLineEntries(pane: PaneModel<Series>): readonly PriceLinePrimitiveEntry[] {
+        return pane.series.flatMap((series) => series.priceLines.map((line) => ({
+            series,
+            line,
+            formatPrice: (price: number) => this.formatPriceLine(series, pane, price),
+        })));
+    }
+    private formatPriceLine(series: Series, pane: PaneModel<Series>, price: number): string {
+        const bounds = this.priceBounds(series.priceScaleId(), pane);
+        return this.fmtScaleValue(
+            this.valueToDomain(price, bounds, series),
+            bounds,
+            series.opts.priceFormat,
+        );
+    }
+    seriesMarkers(series: Series): SeriesMarkersPrimitive {
+        if (series.chart !== this || series.pane === null)
+            throw new Error('sschart: marker series does not belong to an active chart');
+        const existing = this.markerPrimitives.get(series);
+        if (existing !== undefined) return existing;
+        const primitive = new SeriesMarkersPrimitive({
+            series,
+            pointAtTime: (time) => series.store.pointAtTime(time),
+            priceValue: (point) => this.seriesPriceValue(series, point as AnyPoint),
+        });
+        this.markerPrimitives.set(series, primitive);
+        try {
+            this.attachPrimitive(primitive, { series });
+        } catch (error) {
+            this.markerPrimitives.delete(series);
+            throw error;
+        }
+        return primitive;
+    }
+    attachPrimitive(primitive: IChartPrimitive, options: PrimitiveAttachOptions = {}): void {
+        if (this.disposed) throw new Error('sschart: chart is disposed');
+        const series = options.series === undefined ? null : this.resolveSeries(options.series);
+        const explicitPane = options.pane === undefined ? null : this.resolvePane(options.pane);
+        if (series !== null && explicitPane !== null && series.pane !== explicitPane)
+            throw new Error('sschart: primitive series does not belong to the requested pane');
+
+        const paneModel = explicitPane ?? series?.pane ?? this.model.mainPane;
+        if (paneModel === null) throw new Error('sschart: primitive series is detached');
+        const pane = this.paneApiFor(paneModel);
+        const priceScaleId = options.priceScaleId ?? series?.priceScaleId() ?? 'right';
+        if (priceScaleId.length === 0) throw new Error('sschart: primitive price scale id cannot be empty');
+        const normalized = Object.freeze({ pane, series: series ?? undefined, priceScaleId });
+
+        this.primitiveHost.attach(primitive, normalized, ({ requestUpdate, addDisposable }) => {
+            const context: PrimitiveAttachedContext = {
+                chart: this,
+                pane,
+                series,
+                priceScaleId,
+                commandStack: this.commands,
+                requestUpdate,
+                timeToCoordinate: (time) => this.timeToXPublic(time),
+                coordinateToTime: (x) => this.xToTimePublic(x),
+                priceToCoordinate: (price, scaleId) => {
+                    const id = scaleId ?? priceScaleId;
+                    const coordinateSeries = series !== null && id === series.priceScaleId() ? series : undefined;
+                    return this.priceToY(price, id, paneModel, coordinateSeries);
+                },
+                coordinateToPrice: (y, scaleId) => {
+                    const id = scaleId ?? priceScaleId;
+                    const coordinateSeries = series !== null && id === series.priceScaleId() ? series : undefined;
+                    return this.yToPrice(y, id, paneModel, coordinateSeries);
+                },
+                pixelRatio: () => this.dpr,
+                theme: () => this.primitiveTheme(),
+                addDisposable,
+            };
+            return Object.freeze(context);
+        });
+        this.recomputeAxisPads();
+        this.recomputePaneLayout();
+    }
+    detachPrimitive(primitive: IChartPrimitive): void {
+        if (!this.primitiveHost.primitives().includes(primitive)) return;
+        this.forgetPrimitiveInteraction(primitive);
+        this.primitiveHost.detach(primitive);
+        this.recomputeAxisPads();
+        this.recomputePaneLayout();
+    }
+    commandStack(): ICommandStack { return this.commands; }
+    interactionState(): InteractionStateSnapshot { return this.interactionController.snapshot(); }
+    subscribeInteractionStateChange(cb: InteractionStateListener): void {
+        this.interactionListeners.push(cb);
+    }
+    unsubscribeInteractionStateChange(cb: InteractionStateListener): void {
+        this.interactionListeners = this.interactionListeners.filter((listener) => listener !== cb);
+    }
+    private forgetPrimitiveInteraction(primitive: IChartPrimitive): void {
+        this.interactionController.forgetPrimitive(primitive);
+        if (this.activePrimitiveInteraction?.hit.primitive === primitive) {
+            this.activePrimitiveInteraction = null;
+            this.pointerDown = false;
+            this.gesturePane = null;
+            this.canvas.style.cursor = 'default';
+        }
+    }
+    private hasScale(id: string): boolean {
+        if (this.activeSeries.some((s) => s.priceScaleId() === id)) return true;
+        const pane = this.paneApiFor(this.activePane);
+        return this.primitiveHost.attachments().some((attachment) =>
+            attachment.options.pane === pane && attachment.options.priceScaleId === id);
+    }
+    private hasAnyScale(id: string): boolean {
+        return this.series.some((s) => s.priceScaleId() === id)
+            || this.primitiveHost.attachments().some((attachment) => attachment.options.priceScaleId === id);
+    }
     private recomputeAxisPads(): void {
         this.padLeft = this.hasAnyScale('left') ? 56 : 0;
         this.padR = this.hasAnyScale('right') ? 64 : 8;
@@ -934,6 +1211,21 @@ class ChartImpl implements IChartApi {
         const owned = this.paneApis.get(pane.id());
         if (owned !== pane) throw new Error('sschart: pane does not belong to this chart');
         return pane.model;
+    }
+    private resolveSeries(series: ISeriesApi<any, any>): Series {
+        if (!(series instanceof Series) || series.chart !== this || series.pane === null)
+            throw new Error('sschart: series does not belong to this chart');
+        return series;
+    }
+    private primitiveTheme(): Readonly<PrimitiveTheme> {
+        return Object.freeze({
+            backgroundColor: this.opts.layout?.background?.color ?? DEF_LAYOUT_BG,
+            textColor: this.opts.layout?.textColor ?? DEF_TEXT,
+            fontFamily: this.opts.layout?.fontFamily ?? DEF_FONT,
+            fontSize: this.opts.layout?.fontSize ?? 11,
+            verticalGridColor: this.opts.grid?.vertLines?.color ?? DEF_GRID,
+            horizontalGridColor: this.opts.grid?.horzLines?.color ?? DEF_GRID,
+        });
     }
     applyPaneOptions(pane: PaneApi, options: Omit<PaneOptions, 'id'>): void {
         const model = this.resolvePane(pane);
@@ -1003,7 +1295,13 @@ class ChartImpl implements IChartApi {
     // uses this to skip repainting that line from canonical order data mid-drag — while a drag is
     // live the line's price is the user's preview, not the server's value, until they release and
     // onDragCommit fires.
-    draggingLine(): IPriceLine | null { return this.lineDrag?.line ?? null; }
+    draggingLine(): IPriceLine | null {
+        for (const primitive of this.priceLinePrimitives.values()) {
+            const line = primitive.draggingLine();
+            if (line !== null) return line;
+        }
+        return null;
+    }
     private modifierMatches(e: { ctrlKey?: boolean; shiftKey?: boolean; altKey?: boolean }): boolean {
         switch (this.placement?.modifier) {
             case 'ctrl': return !!e.ctrlKey;
@@ -1017,7 +1315,7 @@ class ChartImpl implements IChartApi {
     }
     private updatePlacementPreview(): void {
         const placement = this.placement;
-        const ok = placement !== null && this.modifierHeld && this.lineDrag === null &&
+        const ok = placement !== null && this.modifierHeld && this.draggingLine() === null &&
             this.mouseX !== null && this.mouseY !== null &&
             !this.inTimeGutter(this.mouseY) && !this.inPriceGutter(this.mouseX);
         const pane = this.mouseY === null ? this.model.mainPane : (this.paneAt(this.mouseY) ?? this.model.mainPane);
@@ -1126,9 +1424,14 @@ class ChartImpl implements IChartApi {
         this.rangeListeners = [];
         this.logicalRangeListeners = [];
         this.crosshairListeners = [];
+        this.interactionController.cancel();
+        this.activePrimitiveInteraction = null;
+        this.interactionListeners = [];
+        this.commands.dispose();
         this.clickListeners = [];
         this.orderPlaceListeners = [];
-        this._closeHits = [];
+        this.priceLinePrimitives.clear();
+        this.markerPrimitives.clear();
         for (const series of this.series) {
             series.chart = null;
             series.pane = null;
@@ -1377,7 +1680,9 @@ class ChartImpl implements IChartApi {
     }
 
     scheduleDraw(dirty: RenderDirtyFlags = RenderDirty.All): void {
-        if (!this.disposed) this.renderScheduler.invalidate(dirty);
+        if (this.disposed) return;
+        this.primitiveAutoscaleCache = null;
+        this.renderScheduler.invalidate(dirty);
     }
 
     private listen<TEvent extends Event>(
@@ -1511,6 +1816,30 @@ class ChartImpl implements IChartApi {
             baseValue = 1;
             accumulate(false);
         }
+
+        let primitiveMarginAbove = 0;
+        let primitiveMarginBelow = 0;
+        const paneApi = this.paneApiFor(pane);
+        for (const contribution of this.primitiveAutoscaleEntries()) {
+            if (contribution.pane !== paneApi || contribution.scaleId !== scaleId) continue;
+            let rawMin = contribution.min;
+            let rawMax = contribution.max;
+            if (mode === PriceScaleMode.Logarithmic) {
+                if (!(rawMax > 0)) continue;
+                if (!(rawMin > 0)) rawMin = Math.max(1e-9, rawMax * 1e-6);
+            }
+            const reference = contribution.series === null
+                ? baseValue
+                : (baseValues.get(contribution.series) ?? baseValue);
+            const first = priceToScale(rawMin, mode, reference);
+            const last = priceToScale(rawMax, mode, reference);
+            if (!Number.isFinite(first) || !Number.isFinite(last)) continue;
+            min = Math.min(min, first, last);
+            max = Math.max(max, first, last);
+            primitiveMarginAbove = Math.max(primitiveMarginAbove, contribution.above);
+            primitiveMarginBelow = Math.max(primitiveMarginBelow, contribution.below);
+        }
+
         if (!Number.isFinite(min) || !Number.isFinite(max)) {
             const fallback = mode === PriceScaleMode.Percentage
                 ? { min: -1, max: 1 }
@@ -1535,6 +1864,14 @@ class ChartImpl implements IChartApi {
             lo = c - half;
             hi = c + half;
         }
+        const paneHeight = Math.max(1, (this.paneRect(pane)?.height ?? this.activePaneRect.height) - this.padT);
+        ({ min: lo, max: hi } = applyAutoscalePixelMargins(
+            lo,
+            hi,
+            primitiveMarginAbove,
+            primitiveMarginBelow,
+            paneHeight,
+        ));
         // Apply scaleMargins: expand the virtual range so the data occupies
         // only (1 - top - bottom) of the plot. Used for volume overlays
         // (top:0.85 → bars hug the bottom 15%) and similar.
@@ -1548,6 +1885,39 @@ class ChartImpl implements IChartApi {
             }
         }
         return { min: lo, max: hi, mode, baseValue, baseValues };
+    }
+
+    private primitiveAutoscaleEntries(): readonly PrimitiveAutoscaleEntry[] {
+        if (this.primitiveAutoscaleCache !== null) return this.primitiveAutoscaleCache;
+        // An autoscale callback may legitimately ask the attached context for
+        // a coordinate. That conversion needs base series bounds but must not
+        // recursively invoke the same callback.
+        if (this.primitiveAutoscaleComputing) return [];
+        this.primitiveAutoscaleComputing = true;
+        const range = this.getVisibleLogicalRange() ?? { from: 0, to: 0 };
+        const entries: PrimitiveAutoscaleEntry[] = [];
+        try {
+            for (const attachment of this.primitiveHost.attachments()) {
+                const provider = attachment.primitive.autoscaleInfo;
+                if (provider === undefined) continue;
+                const normalized = normalizeAutoscaleInfo(provider.call(attachment.primitive, range));
+                if (normalized === null || attachment.options.pane === undefined) continue;
+                entries.push(Object.freeze({
+                    ...normalized,
+                    pane: attachment.options.pane,
+                    scaleId: attachment.options.priceScaleId
+                        ?? attachment.options.series?.priceScaleId()
+                        ?? 'right',
+                    series: attachment.options.series instanceof Series
+                        ? attachment.options.series
+                        : null,
+                }));
+            }
+        } finally {
+            this.primitiveAutoscaleComputing = false;
+        }
+        this.primitiveAutoscaleCache = Object.freeze(entries);
+        return this.primitiveAutoscaleCache;
     }
 
     private referencePrice(series: Series, points: readonly AnyPoint[]): number | null {
@@ -1682,6 +2052,7 @@ class ChartImpl implements IChartApi {
     private drawBase(): void {
         const ctx = this.baseCtx;
         this.ctx = ctx;
+        this.primitiveHost.updateAllViews();
         const lay = this.opts.layout ?? {};
         ctx.clearRect(0, 0, this.width, this.height);
         ctx.fillStyle = lay.background?.color ?? DEF_LAYOUT_BG;
@@ -1723,9 +2094,20 @@ class ChartImpl implements IChartApi {
             const rb = this.priceBounds('right', pane);
             const lb = hasLeft ? this.priceBounds('left', pane) : rb;
             const primary = hasRight ? rb : lb;
+            const paneApi = this.paneApiFor(pane);
+            const geometry = this.primitivePaneGeometry(rect, last);
+            const primitiveTarget = new CanvasRenderTarget2D(
+                ctx,
+                this.width,
+                this.height,
+                this.dpr,
+                geometry,
+            );
 
+            this.drawPrimitivePaneViews(paneApi, primitiveTarget, PrimitiveZOrder.Background);
             if (pane === this.model.mainPane) this.drawWatermark();
             this.drawGrid(primary);
+            this.drawPrimitivePaneViews(paneApi, primitiveTarget, PrimitiveZOrder.Bottom);
             for (const s of pane.series) {
                 // Draw each series against bounds of ITS OWN scale. Overlay
                 // scales remain independent inside their owning pane.
@@ -1735,9 +2117,11 @@ class ChartImpl implements IChartApi {
                     : (sid === 'left' && hasLeft ? lb : this.priceBounds(sid, pane));
                 this.drawSeries(s, sb);
             }
-            this.drawMarkers(rb, lb);
+            this.drawPrimitivePaneViews(paneApi, primitiveTarget, PrimitiveZOrder.Normal);
             this.drawAxes(hasRight ? rb : null, hasLeft ? lb : null, last);
             this.drawPriceTags(rb, lb);
+            this.drawPrimitivePriceAxisViews(paneApi);
+            if (last) this.drawPrimitiveTimeAxisViews();
             ctx.restore();
         }
 
@@ -1749,11 +2133,140 @@ class ChartImpl implements IChartApi {
         this.activatePane(this.model.mainPane);
     }
 
+    private primitivePaneGeometry(rect: PaneLayoutRect, isLast: boolean): PrimitivePaneGeometry {
+        return {
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+            plot: {
+                x: this.plotL(),
+                y: this.plotT(),
+                width: this.plotW(),
+                height: this.plotH(),
+            },
+            isLast,
+        };
+    }
+
+    private drawPrimitivePaneViews(
+        pane: PaneApi,
+        target: CanvasRenderTarget,
+        layer: PrimitiveZOrderValue,
+    ): void {
+        for (const attachment of this.primitiveHost.attachments()) {
+            if (attachment.options.pane !== pane) continue;
+            const views: readonly PrimitivePaneView[] = attachment.primitive.paneViews?.() ?? [];
+            for (const view of views) {
+                const viewLayer = view.zOrder();
+                primitiveLayerRank(viewLayer);
+                if (viewLayer !== layer) continue;
+                const renderer = view.renderer();
+                if (renderer === null) continue;
+
+                const clip = view.clip?.() ?? PrimitivePaneViewClip.Plot;
+                const clipRect = clip === PrimitivePaneViewClip.Pane ? target.pane : target.pane.plot;
+                this.ctx.save();
+                this.ctx.beginPath();
+                this.ctx.rect(clipRect.x, clipRect.y, clipRect.width, clipRect.height);
+                this.ctx.clip();
+                try {
+                    renderer.draw(target);
+                } finally {
+                    this.ctx.restore();
+                }
+            }
+        }
+    }
+
+    private drawPrimitivePriceAxisViews(pane: PaneApi): void {
+        for (const attachment of this.primitiveHost.attachments()) {
+            if (attachment.options.pane !== pane) continue;
+            const views: readonly PrimitiveAxisView[] = attachment.primitive.priceAxisViews?.() ?? [];
+            for (const view of views) {
+                if (view.visible?.() === false) continue;
+                const y = view.coordinate();
+                if (y === null || !Number.isFinite(y) || y < this.plotT() || y > this.plotB()) continue;
+                const scaleId = view.priceScaleId?.() ?? attachment.options.series?.priceScaleId() ?? 'right';
+                this.drawPrimitivePriceAxisLabel(view, y, scaleId === 'left');
+            }
+        }
+    }
+
+    private drawPrimitivePriceAxisLabel(view: PrimitiveAxisView, y: number, left: boolean): void {
+        const ctx = this.ctx;
+        const text = view.text();
+        if (text.length === 0) return;
+        const background = view.backgroundColor();
+        const foreground = view.textColor?.() ?? textOn(background);
+        const height = 18;
+        ctx.save();
+        ctx.font = `10px ${this.opts.layout?.fontFamily ?? DEF_FONT}`;
+        ctx.textBaseline = 'middle';
+        const width = Math.ceil(ctx.measureText(text).width) + 12;
+        const top = Math.max(this.plotT(), Math.min(this.plotB() - height, y - height / 2));
+        const x = left ? Math.max(0, this.plotL() - width - 1) : this.plotR() + 1;
+        ctx.fillStyle = background;
+        ctx.fillRect(x, top, width, height);
+        if (view.tickVisible?.() !== false) {
+            ctx.strokeStyle = background;
+            ctx.beginPath();
+            if (left) {
+                ctx.moveTo(this.plotL() - 5, Math.round(y) + 0.5);
+                ctx.lineTo(this.plotL(), Math.round(y) + 0.5);
+            } else {
+                ctx.moveTo(this.plotR(), Math.round(y) + 0.5);
+                ctx.lineTo(this.plotR() + 5, Math.round(y) + 0.5);
+            }
+            ctx.stroke();
+        }
+        ctx.fillStyle = foreground;
+        ctx.textAlign = left ? 'right' : 'left';
+        ctx.fillText(text, left ? this.plotL() - 7 : this.plotR() + 7, top + height / 2);
+        ctx.restore();
+    }
+
+    private drawPrimitiveTimeAxisViews(): void {
+        if (this.opts.timeScale?.visible === false) return;
+        const ctx = this.ctx;
+        for (const attachment of this.primitiveHost.attachments()) {
+            const views: readonly PrimitiveAxisView[] = attachment.primitive.timeAxisViews?.() ?? [];
+            for (const view of views) {
+                if (view.visible?.() === false) continue;
+                const x = view.coordinate();
+                if (x === null || !Number.isFinite(x) || x < this.plotL() || x > this.plotR()) continue;
+                const text = view.text();
+                if (text.length === 0) continue;
+                const background = view.backgroundColor();
+                const foreground = view.textColor?.() ?? textOn(background);
+                const height = Math.max(1, Math.min(18, this.padB - 2));
+                ctx.save();
+                ctx.font = `10px ${this.opts.layout?.fontFamily ?? DEF_FONT}`;
+                const width = Math.ceil(ctx.measureText(text).width) + 12;
+                const left = Math.max(this.plotL(), Math.min(this.plotR() - width, x - width / 2));
+                const top = this.plotB() + 1;
+                ctx.fillStyle = background;
+                ctx.fillRect(left, top, width, height);
+                if (view.tickVisible?.() !== false) {
+                    ctx.strokeStyle = background;
+                    ctx.beginPath();
+                    ctx.moveTo(Math.round(x) + 0.5, this.plotB());
+                    ctx.lineTo(Math.round(x) + 0.5, this.plotB() + 5);
+                    ctx.stroke();
+                }
+                ctx.fillStyle = foreground;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(text, left + width / 2, top + height / 2);
+                ctx.restore();
+            }
+        }
+    }
+
     private drawOverlay(): void {
         const ctx = this.overlayCtx;
         this.ctx = ctx;
         ctx.clearRect(0, 0, this.width, this.height);
-        this._closeHits = [];
         const visible = this.paneLayoutResult.panes;
         for (let index = 0; index < visible.length; index++) {
             const rect = visible[index];
@@ -1768,9 +2281,15 @@ class ChartImpl implements IChartApi {
             const hasLeft = this.hasScale('left');
             const rb = this.priceBounds('right', pane);
             const lb = hasLeft ? this.priceBounds('left', pane) : rb;
-            // Interactive price lines and the shared crosshair are rendered
-            // once per pane against that pane's independent price scale.
-            this.drawPriceLines(rb, lb);
+            const paneApi = this.paneApiFor(pane);
+            const primitiveTarget = new CanvasRenderTarget2D(
+                ctx,
+                this.width,
+                this.height,
+                this.dpr,
+                this.primitivePaneGeometry(rect, last),
+            );
+            this.drawPrimitivePaneViews(paneApi, primitiveTarget, PrimitiveZOrder.Top);
             this.drawCrosshair(rb, lb, last);
             this.drawClusterTip(rb, lb);
             ctx.restore();
@@ -1779,182 +2298,6 @@ class ChartImpl implements IChartApi {
         this.ctx = this.baseCtx;
     }
 
-    // Horizontal lines (orders / alerts / preview-on-Ctrl). The LINE
-    // stays at the true price; the LABEL slides along the axis with
-    // collision avoidance + eased animation, so dragging one label
-    // through another pushes it out of the way (industry-standard behaviour).
-    private drawPriceLines(rb: ScaleBounds, lb: ScaleBounds): void {
-        const ctx = this.ctx;
-        const lay = this.opts.layout ?? {};
-        const font = `11px ${lay.fontFamily ?? DEF_FONT}`;
-        const labelH = 18;
-        const labelGap = 1;                  // extra spacing between adjacent labels
-        const slot = labelH + labelGap;
-
-        // Pass 1 — collect drawables with their natural y per scale.
-        interface Item {
-            pl: PriceLine; s: Series; o: PriceLineOptions;
-            yLine: number; yLabelNatural: number; b: ScaleBounds;
-        }
-        const items: Item[] = [];
-        for (const s of this.activeSeries) {
-            if (s.priceLines.length === 0) continue;
-            const b = s.priceScaleId() === 'left' ? lb : rb;
-            for (const pl of s.priceLines) {
-                const o = pl.raw();
-                if (o.lineVisible === false) continue;
-                if (!Number.isFinite(o.price)) continue;
-                // Pin the line to the SAME bounds the label is kept within (a half-label-height in
-                // from each edge). Otherwise, near an edge, the label stays fully visible while the
-                // line runs to the very edge — so the line ends up above/below its label. Clamping
-                // both identically keeps line and label together; the label text still shows the
-                // true price. In-range lines are unaffected.
-                const yNat = Math.max(this.plotT() + labelH / 2,
-                    Math.min(this.plotB() - labelH / 2, this.valueToY(o.price, b, s)));
-                items.push({ pl, s, o, yLine: yNat, yLabelNatural: yNat, b });
-            }
-        }
-        if (items.length === 0) return;
-
-        // Pass 2 — pairwise collision avoidance. Sort by natural y, then
-        // iteratively resolve any overlap (4 passes is enough for typical
-        // 5-10 lines). When one neighbour is anchored, only the OTHER
-        // shifts — the anchored label stays glued to the cursor.
-        const order = items.map((_, i) => i)
-            .sort((a, b) => items[a].yLabelNatural - items[b].yLabelNatural);
-        const targets = items.map(it => it.yLabelNatural);
-        const anchored = items.map(it => it.o.anchored === true);
-        for (let pass = 0; pass < 4; pass++) {
-            let touched = false;
-            for (let k = 0; k < order.length - 1; k++) {
-                const i = order[k], j = order[k + 1];
-                const gap = targets[j] - targets[i];
-                if (gap < slot) {
-                    const def = slot - gap;
-                    const ai = anchored[i], aj = anchored[j];
-                    if (ai && !aj)      targets[j] += def;
-                    else if (!ai && aj) targets[i] -= def;
-                    else { targets[i] -= def / 2; targets[j] += def / 2; }
-                    touched = true;
-                }
-            }
-            if (!touched) break;
-        }
-        const minY = this.plotT() + labelH / 2;
-        const maxY = this.plotB() - labelH / 2;
-        for (let i = 0; i < targets.length; i++) {
-            if (targets[i] < minY) targets[i] = minY;
-            if (targets[i] > maxY) targets[i] = maxY;
-        }
-
-        // Pass 3 — ease the collision OFFSET (target minus the line's own y), not the absolute y.
-        // The label therefore follows its own line 1:1 when the line moves (zoom / axis stretch /
-        // scroll / drag) with no lag, and only the sideways spread that resolves overlaps animates.
-        // Anchored labels and the first frame snap outright.
-        let stillMoving = false;
-        for (let i = 0; i < items.length; i++) {
-            const pl = items[i].pl;
-            const targetOffset = targets[i] - items[i].yLine;
-            if (pl.labelOffset === null || anchored[i]) {
-                pl.labelOffset = targetOffset;
-            } else {
-                const d = targetOffset - pl.labelOffset;
-                if (Math.abs(d) < 0.5) pl.labelOffset = targetOffset;
-                else { pl.labelOffset += d * 0.28; stillMoving = true; }
-            }
-            pl.displayY = items[i].yLine + pl.labelOffset;
-        }
-
-        // Pass 4 — paint. Spec: line ends at the title pill
-        // (side+qty, drawn ON THE PLOT against the right edge); price
-        // pill (price.toFixed(2)) sits in the axis gutter immediately
-        // to the right of the title pill. They look like one wide
-        // two-tone label but split between chart-side and scale-side.
-        for (let i = 0; i < items.length; i++) {
-            const it = items[i];
-            const o = it.o;
-            const yLine = Math.round(it.yLine) + 0.5;
-            const yLab = it.pl.displayY as number;
-            const col = o.color ?? '#4a9eff';
-            const w  = Math.max(1, o.lineWidth ?? 2);
-            const labCol = o.axisLabelColor ?? col;
-            const txtCol = o.axisLabelTextColor ?? textOn(labCol);
-            const onLeft = it.s.priceScaleId() === 'left';
-            const showLabels = (o.axisLabelVisible ?? true);
-            ctx.font = font;
-            ctx.textBaseline = 'middle';
-            ctx.textAlign = 'left';
-            const titleText = showLabels ? (o.title ?? '') : '';
-            const priceText = showLabels && Number.isFinite(o.price)
-                ? this.fmtScaleValue(this.valueToDomain(o.price, it.b, it.s), it.b, it.s.opts.priceFormat)
-                : '';
-            const titleW = titleText ? ctx.measureText(titleText).width + 10 : 0;
-            const priceW = priceText ? ctx.measureText(priceText).width + 10 : 0;
-            // line stops at the title pill so the pill visually caps it
-            const titleX = onLeft ? this.plotL() + 1
-                                  : this.plotR() - titleW;
-            const priceX = onLeft ? this.plotL() - priceW - 1
-                                  : this.plotR() + 1;
-            const lineEndX = onLeft ? (titleText ? titleX + titleW : this.plotL())
-                                    : (titleText ? titleX           : this.plotR());
-            const lineStartX = onLeft ? this.plotL()
-                                      : this.plotL();
-            if (yLine >= this.plotT() - 1 && yLine <= this.plotB() + 1) {
-                ctx.strokeStyle = col;
-                ctx.lineWidth = w;
-                ctx.setLineDash(this.dashFor(o.lineStyle ?? LineStyle.Solid, w));
-                ctx.beginPath();
-                ctx.moveTo(lineStartX, yLine);
-                ctx.lineTo(onLeft ? this.plotR() : lineEndX, yLine);
-                ctx.stroke();
-                ctx.setLineDash([]);
-            }
-            if (showLabels && Math.abs(yLab - yLine) > 4) {
-                // leader from line's true y to the displaced label
-                ctx.strokeStyle = labCol;
-                ctx.lineWidth = 1;
-                ctx.setLineDash([2, 2]);
-                ctx.beginPath();
-                ctx.moveTo(onLeft ? this.plotL() - 1 : this.plotR() + 1,
-                           Math.max(this.plotT() + 0.5, Math.min(this.plotB() - 0.5, yLine)));
-                ctx.lineTo(onLeft ? this.plotL() - 1 : this.plotR() + 1, yLab);
-                ctx.stroke();
-                ctx.setLineDash([]);
-            }
-            // Title pill (side + qty) on the plot
-            if (titleText) {
-                ctx.fillStyle = labCol;
-                ctx.fillRect(titleX, yLab - labelH / 2, titleW, labelH);
-                ctx.fillStyle = txtCol;
-                ctx.fillText(titleText, titleX + 5, yLab + 1);
-            }
-            // "✕" close button, just outside the title pill (left of a right-side
-            // label, right of a left-side one). Clicking it fires o.onClose — the
-            // terminal wires this to cancel the resting order on that line.
-            if (o.onClose && titleText) {
-                const closeW = labelH;
-                const closeX = onLeft ? (titleX + titleW) : (titleX - closeW);
-                ctx.fillStyle = labCol;
-                ctx.fillRect(closeX, yLab - labelH / 2, closeW, labelH);
-                ctx.fillStyle = txtCol;
-                ctx.textAlign = 'center';
-                ctx.fillText('✕', closeX + closeW / 2, yLab + 1);
-                ctx.textAlign = 'left';
-                this._closeHits.push({ x: closeX, y: yLab - labelH / 2, w: closeW, h: labelH, onClose: o.onClose });
-            }
-            // Price pill in the axis gutter — slightly darker shade
-            // for the two-tone candle look.
-            if (priceText) {
-                ctx.fillStyle = labCol;
-                ctx.fillRect(priceX, yLab - labelH / 2, priceW, labelH);
-                ctx.fillStyle = txtCol;
-                ctx.fillText(priceText, priceX + 5, yLab + 1);
-            }
-        }
-
-        // Animation tick — keep redrawing until everyone settled.
-        if (stillMoving) this.scheduleDraw(RenderDirty.Overlay);
-    }
     // Watermark (brand text / ticker) drawn over the plot background,
     // under the series. lwc-shaped option block.
     private drawWatermark(): void {
@@ -1976,15 +2319,6 @@ class ChartImpl implements IChartApi {
                 : (this.plotT() + this.plotB()) / 2;
         ctx.fillText(w.text, x, y);
         ctx.restore();
-    }
-    private dashFor(style: LineStyleValue, w: number): number[] {
-        switch (style) {
-            case LineStyle.Dotted:       return [w, w];
-            case LineStyle.Dashed:       return [w * 3, w * 2];
-            case LineStyle.LargeDashed:  return [w * 6, w * 3];
-            case LineStyle.SparseDotted: return [w, w * 4];
-            default:                     return [];
-        }
     }
     // Hover tooltip for the footprint: shows the price level and its
     // volume under the cursor (so each cluster bar is readable).
@@ -2173,60 +2507,6 @@ class ChartImpl implements IChartApi {
         this.ctx.save();
         try { s.definition.renderer.draw(context); }
         finally { this.ctx.restore(); }
-    }
-
-    private drawMarkers(rb: ScaleBounds, lb: ScaleBounds): void {
-        const ctx = this.ctx;
-        ctx.font = `10px ${this.opts.layout?.fontFamily ?? DEF_FONT}`;
-        for (const s of this.activeSeries) {
-            if (s.markers.length === 0) continue;   // markers on ANY series kind
-            const b = s.priceScaleId() === 'left' ? lb : rb;
-            const markers = s.markerStore.visibleRange(this.viewFrom, this.viewTo).points;
-            for (const m of markers) {
-                const p = s.store.pointAtTime(m.time) as AnyPoint | null;
-                if (p === null) continue;
-                const x = this.timeToX(m.time);
-                const anchorV = m.position === 'aboveBar' && Number.isFinite(p.high)
-                    ? p.high
-                    : m.position === 'belowBar' && Number.isFinite(p.low)
-                        ? p.low
-                        : this.seriesPriceValue(s, p);
-                if (anchorV === null || !Number.isFinite(anchorV)) continue;
-                const baseY = this.valueToY(anchorV, b, s);
-                const dir = m.position === 'aboveBar' ? -1 : 1;
-                const y = baseY + dir * 14;
-                ctx.fillStyle = m.color;
-                ctx.strokeStyle = m.color;
-                const pd = m.shape === 'arrowUp' ? -1 : 1;       // arrow screen-y dir
-                if (m.shape === 'arrowUp' || m.shape === 'arrowDown') {
-                    // Industry-standard arrow: triangular head + shaft,
-                    // tip pointing toward the bar. Compact vertically.
-                    const tip = y + pd * 6;
-                    const hb = y + pd * 1;       // head base
-                    const tail = y - pd * 5;
-                    ctx.beginPath();
-                    ctx.moveTo(x, tip);
-                    ctx.lineTo(x - 6, hb);
-                    ctx.lineTo(x - 2, hb);
-                    ctx.lineTo(x - 2, tail);
-                    ctx.lineTo(x + 2, tail);
-                    ctx.lineTo(x + 2, hb);
-                    ctx.lineTo(x + 6, hb);
-                    ctx.closePath();
-                    ctx.fill();
-                } else if (m.shape === 'circle') {
-                    ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
-                } else {
-                    ctx.fillRect(x - 4, y - 4, 8, 8);
-                }
-                if (m.text) {
-                    const tailY = y - pd * 5;
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = m.position === 'aboveBar' ? 'bottom' : 'top';
-                    ctx.fillText(m.text, x, tailY + (m.position === 'aboveBar' ? -3 : 3));
-                }
-            }
-        }
     }
 
     // Crosshair tooltip — industry-standard format: "12 Apr '24 00:00:00".
@@ -2514,17 +2794,24 @@ class ChartImpl implements IChartApi {
         seriesData: ReadonlyMap<ISeriesApi<any, any>, TimedSeriesData>,
         x: number,
         y: number,
+        sourceEvent: PointerEvent | MouseEvent | null,
+        knownPrimitiveHit?: PrimitiveHoveredObject | null,
     ): HoveredObject | null {
-        if (pane === null || this.inTimeGutter(y) || this.inPriceGutter(x)) return null;
-        const lineHit = this.hitPriceLine(y, x, false);
-        if (lineHit !== null) {
-            return {
-                type: 'price-line',
-                series: lineHit.series,
-                priceLine: lineHit.line,
-                id: lineHit.line.raw().id ?? null,
-            };
+        const primitiveHit = knownPrimitiveHit === undefined
+            ? this.hitTestPrimitive(x, y, sourceEvent)
+            : knownPrimitiveHit;
+        if (primitiveHit !== null) {
+            if (isPriceLinePrimitiveHitData(primitiveHit.data)) {
+                return {
+                    type: 'price-line',
+                    series: primitiveHit.data.series,
+                    priceLine: primitiveHit.data.priceLine,
+                    id: primitiveHit.data.priceLine.options().id ?? null,
+                };
+            }
+            return primitiveHit;
         }
+        if (pane === null || this.inTimeGutter(y) || this.inPriceGutter(x)) return null;
 
         this.activatePane(pane);
         let closest: SeriesHoveredObject | null = null;
@@ -2544,7 +2831,10 @@ class ChartImpl implements IChartApi {
         return closest;
     }
 
-    private crosshairEvent(sourceEvent: PointerEvent | MouseEvent | null): CrosshairEvent {
+    private crosshairEvent(
+        sourceEvent: PointerEvent | MouseEvent | null,
+        knownPrimitiveHit?: PrimitiveHoveredObject | null,
+    ): CrosshairEvent {
         if (this.mouseX === null || this.mouseY === null) {
             return {
                 time: null,
@@ -2571,14 +2861,88 @@ class ChartImpl implements IChartApi {
             point: { x: this.mouseX, y: this.mouseY },
             paneId: pane?.id ?? null,
             seriesData,
-            hoveredObject: this.hoveredCrosshairObject(pane, seriesData, this.mouseX, this.mouseY),
+            hoveredObject: this.hoveredCrosshairObject(
+                pane,
+                seriesData,
+                this.mouseX,
+                this.mouseY,
+                sourceEvent,
+                knownPrimitiveHit,
+            ),
             sourceEvent,
         };
     }
 
-    private emitCrosshair(sourceEvent: PointerEvent | MouseEvent | null): void {
-        const event = this.crosshairEvent(sourceEvent);
+    private emitCrosshair(
+        sourceEvent: PointerEvent | MouseEvent | null,
+        knownPrimitiveHit?: PrimitiveHoveredObject | null,
+    ): void {
+        const event = this.crosshairEvent(sourceEvent, knownPrimitiveHit);
         for (const listener of this.crosshairListeners) listener(event);
+    }
+
+    private hitTestPrimitive(
+        x: number,
+        y: number,
+        sourceEvent: PointerEvent | MouseEvent | null,
+    ): PrimitiveHoveredObject | null {
+        const location = this.inTimeGutter(y)
+            ? PrimitiveHitTestLocation.TimeAxis
+            : this.inPriceGutter(x)
+                ? PrimitiveHitTestLocation.PriceAxis
+                : PrimitiveHitTestLocation.Pane;
+        const pointedPane = location === PrimitiveHitTestLocation.TimeAxis ? null : this.paneAt(y);
+        if (pointedPane === null && location !== PrimitiveHitTestLocation.TimeAxis) return null;
+        const pointedPaneApi = pointedPane === null ? null : this.paneApiFor(pointedPane);
+        const point = Object.freeze({ x, y });
+        const candidates: HitTestCandidate[] = [];
+
+        const attachments = this.primitiveHost.attachments();
+        for (let index = 0; index < attachments.length; index++) {
+            const attachment = attachments[index];
+            const test = attachment.primitive.hitTest;
+            const pane = attachment.options.pane;
+            if (test === undefined || pane === undefined) continue;
+            if (location !== PrimitiveHitTestLocation.TimeAxis && pane !== pointedPaneApi) continue;
+
+            let zOrder: PrimitiveZOrderValue = location === PrimitiveHitTestLocation.Pane
+                ? PrimitiveZOrder.Normal
+                : PrimitiveZOrder.Top;
+            if (location === PrimitiveHitTestLocation.Pane) {
+                for (const view of attachment.primitive.paneViews?.() ?? []) {
+                    const candidateLayer = view.zOrder();
+                    if (primitiveLayerRank(candidateLayer) > primitiveLayerRank(zOrder))
+                        zOrder = candidateLayer;
+                }
+            }
+            const context: HitTestContext = Object.freeze({
+                pane,
+                series: attachment.options.series ?? null,
+                priceScaleId: attachment.options.priceScaleId
+                    ?? attachment.options.series?.priceScaleId()
+                    ?? 'right',
+                location,
+                sourceEvent,
+            });
+            candidates.push({
+                primitive: attachment.primitive,
+                attachmentOrder: index,
+                zOrder,
+                test: () => test.call(attachment.primitive, point, context),
+            });
+        }
+
+        const hit = this.hitTestEngine.hitTest(candidates);
+        return hit === null ? null : Object.freeze({
+            type: 'primitive',
+            primitive: hit.primitive,
+            id: hit.id,
+            role: hit.role,
+            cursor: hit.cursor,
+            zOrder: hit.zOrder,
+            data: hit.data,
+            interaction: hit.interaction,
+        });
     }
 
     private inPriceGutter(x: number): boolean {
@@ -2608,48 +2972,48 @@ class ChartImpl implements IChartApi {
         return true;
     }
 
-    // Nearest price line whose rendered Y is within grab tolerance. The general
-    // form feeds crosshair hover metadata; pointer dragging requests draggable lines only.
-    private hitPriceLine(
-        my: number,
-        mx: number,
-        draggableOnly: boolean,
-    ): { series: Series; line: PriceLine } | null {
-        if (this.inTimeGutter(my) || this.inPriceGutter(mx)) return null;
-        const pane = this.paneAt(my);
-        if (pane === null) return null;
-        this.activatePane(pane);
-        const TOL = 6;
-        let best: { series: Series; line: PriceLine } | null = null;
-        let bestDist = TOL;
-        for (const s of pane.series) {
-            for (const pl of s.priceLines) {
-                if (draggableOnly && pl.raw().draggable !== true) continue;
-                const raw = this.priceToY(pl.raw().price, s.priceScaleId(), pane, s);
-                if (raw === null) continue;
-                // Hit-test against the RENDERED y: a line whose price is off-view is pinned to the
-                // edge (plotT/plotB ± half a label height), so grab it where it's actually drawn —
-                // otherwise an order pinned at the top/bottom can't be picked up until you rescale.
-                const y = Math.max(this.plotT() + 9, Math.min(this.plotB() - 9, raw));
-                const d = Math.abs(y - my);
-                if (d <= bestDist) { bestDist = d; best = { series: s, line: pl }; }
-            }
-        }
-        return best;
+    private interactionObject(hit: PrimitiveHoveredObject): InteractionObjectRef {
+        return Object.freeze({ primitive: hit.primitive, id: hit.id, role: hit.role });
     }
 
-    private hitDraggableLine(my: number, mx: number): { series: Series; line: PriceLine } | null {
-        return this.hitPriceLine(my, mx, true);
+    private primitiveInteractionEvent(
+        hit: PrimitiveHoveredObject,
+        movement: InteractionMovement,
+        sourceEvent: PointerEvent,
+    ): PrimitiveInteractionEvent {
+        return Object.freeze({
+            point: movement.point,
+            startPoint: movement.startPoint,
+            delta: movement.delta,
+            totalDelta: movement.totalDelta,
+            hit: Object.freeze({ id: hit.id, role: hit.role, data: hit.data }),
+            sourceEvent,
+        });
     }
 
-    // True when the cursor is over a price-line "✕" close button. The button is a click target,
-    // not a drag handle, so the hover cursor must read as a button (pointer) — never the ns-resize
-    // arrow the draggable line itself shows.
-    private hitCloseButton(mx: number, my: number): boolean {
-        for (const h of this._closeHits) {
-            if (mx >= h.x && mx <= h.x + h.w && my >= h.y && my <= h.y + h.h) return true;
-        }
-        return false;
+    private initialInteractionMovement(x: number, y: number): InteractionMovement {
+        const point = Object.freeze({ x, y });
+        return Object.freeze({
+            point,
+            startPoint: point,
+            delta: Object.freeze({ x: 0, y: 0 }),
+            totalDelta: Object.freeze({ x: 0, y: 0 }),
+            state: this.interactionController.snapshot().state,
+            started: false,
+        });
+    }
+
+    private dispatchPrimitivePointer(
+        method: 'onPointerDown' | 'onPointerMove' | 'onPointerUp' | 'onPointerCancel',
+        hit: PrimitiveHoveredObject,
+        movement: InteractionMovement,
+        sourceEvent: PointerEvent,
+    ): void {
+        const callback = hit.primitive[method];
+        if (callback === undefined) return;
+        try {
+            callback.call(hit.primitive, this.primitiveInteractionEvent(hit, movement, sourceEvent));
+        } catch { /* a primitive callback cannot strand the shared gesture */ }
     }
 
     private bindPointer(): void {
@@ -2660,7 +3024,9 @@ class ChartImpl implements IChartApi {
             this.controlledCrosshairTime = null;
             const pointerPane = this.paneAt(this.mouseY);
             if (pointerPane !== null) this.activatePane(pointerPane);
+            const point = { x: this.mouseX, y: this.mouseY };
             if (this.splitterDrag !== null) {
+                this.interactionController.pointerMove(point);
                 const before = this.model.paneById(this.splitterDrag.splitter.beforePaneId);
                 const after = this.model.paneById(this.splitterDrag.splitter.afterPaneId);
                 if (before !== undefined && after !== undefined) {
@@ -2677,53 +3043,58 @@ class ChartImpl implements IChartApi {
                 this.canvas.style.cursor = 'row-resize';
                 return;
             }
-            if (this.lineDrag) {                        // dragging a resting order line: it follows the cursor
-                // Clamp to the plot so the line can't be dragged past the visible price range (the
-                // pointer keeps sending events off-canvas via capture; without this the price
-                // extrapolates beyond the axis and the line/label part ways at the edge).
-                const pane = this.lineDrag.series.pane ?? this.model.mainPane;
-                this.activatePane(pane);
-                const y = Math.max(this.plotT(), Math.min(this.plotB(), this.mouseY));
-                const p = this.yToPrice(y, this.lineDrag.series.priceScaleId(), pane, this.lineDrag.series);
-                if (p !== null) {
-                    this.lineDrag.line.applyOptions({ price: p, anchored: true });
-                    const cb = this.lineDrag.line.raw().onDrag;
-                    if (cb) { try { cb(p); } catch { /* a host callback must not break the gesture */ } }
+            if (this.scaleDrag !== null) {
+                const movement = this.interactionController.pointerMove(point);
+                if (movement !== null && this.scaleDrag.kind === 'price') {
+                    // drag up → stretch (zoom in), drag down → compress
+                    const pane = this.scaleDrag.pane;
+                    pane.priceZoom = Math.min(12, Math.max(
+                        0.15,
+                        pane.priceZoom * Math.exp(-movement.delta.y * 0.006),
+                    ));
+                } else if (movement !== null) {
+                    // drag left → expand time (zoom in), right → compress;
+                    // anchored at the right edge (industry-standard behaviour).
+                    const span = this.viewTo - this.viewFrom;
+                    const nextSpan = Math.max(1, span * Math.exp(movement.delta.x * 0.004));
+                    this.viewFrom = this.viewTo - nextSpan;
+                    this.emitRange();
                 }
                 this.scheduleDraw();
                 return;
             }
-            if (this.priceDragging) {
-                const dy = this.mouseY - this.lastDragY;
-                this.lastDragY = this.mouseY;
-                // drag up → stretch (zoom in), drag down → compress
-                const pane = this.gesturePane ?? this.model.mainPane;
-                pane.priceZoom = Math.min(12, Math.max(0.15, pane.priceZoom * Math.exp(-dy * 0.006)));
-                this.scheduleDraw();
+            if (this.activePrimitiveInteraction !== null) {
+                const active = this.activePrimitiveInteraction;
+                const movement = this.interactionController.pointerMove(point);
+                if (movement !== null) {
+                    active.last = movement.point;
+                    if (movement.state === InteractionState.DraggingBody
+                        || movement.state === InteractionState.DraggingHandle) {
+                        this.dispatchPrimitivePointer('onPointerMove', active.hit, movement, e);
+                        this.scheduleDraw(RenderDirty.All);
+                    } else {
+                        this.scheduleDraw(RenderDirty.Overlay);
+                    }
+                }
+                this.canvas.style.cursor = movement?.state === InteractionState.DraggingBody
+                    || movement?.state === InteractionState.DraggingHandle
+                    ? 'grabbing'
+                    : active.hit.cursor;
+                this.emitCrosshair(e, active.hit);
                 return;
             }
-            if (this.timeDragging) {
-                const dx = this.mouseX - this.lastAxisX;
-                this.lastAxisX = this.mouseX;
-                // drag left → expand time (zoom in), right → compress;
-                // anchored at the right edge (industry-standard behaviour).
-                const span = this.viewTo - this.viewFrom;
-                const ns = Math.max(1, span * Math.exp(dx * 0.004));
-                this.viewFrom = this.viewTo - ns;
-                this.emitRange();
-                this.scheduleDraw();
-                return;
-            }
+            const primitiveHit = this.hitTestPrimitive(this.mouseX, this.mouseY, e);
+            this.interactionController.hover(primitiveHit === null ? null : this.interactionObject(primitiveHit));
+            const movement = this.interactionController.pointerMove(point);
             this.canvas.style.cursor = this.splitterAt(this.mouseX, this.mouseY) !== null ? 'row-resize'
                 : this.inTimeGutter(this.mouseY) ? 'ew-resize'
                 : this.inPriceGutter(this.mouseX) ? 'ns-resize'
-                : this.hitCloseButton(this.mouseX, this.mouseY) ? 'pointer'
-                : this.hitDraggableLine(this.mouseY, this.mouseX) ? 'ns-resize' : 'default';
+                : movement?.state === InteractionState.Panning ? 'grabbing'
+                : primitiveHit?.cursor ?? 'default';
             if (this.placement !== null && this.modifierHeld) this.updatePlacementPreview();   // order-placement preview follows the cursor
             let viewChanged = false;
-            if (this.dragging && this.dragPanEnabled) {
-                const dx = this.mouseX - this.lastDragX;
-                this.lastDragX = this.mouseX;
+            if (movement?.state === InteractionState.Panning && this.dragPanEnabled) {
+                const dx = movement.delta.x;
                 // Shift by the time a dx-pixel move spans at the current left
                 // edge. In time mode this equals -(dx/plotW)*span; in ordinal
                 // mode xToTime routes through the bar index, so panning tracks
@@ -2733,33 +3104,18 @@ class ChartImpl implements IChartApi {
                 this.emitRange();
                 viewChanged = true;
             }
-            this.emitCrosshair(e);
+            this.emitCrosshair(e, primitiveHit);
             this.scheduleDraw(viewChanged ? RenderDirty.All : RenderDirty.Overlay);
         });
         this.listen<PointerEvent>(this.canvas, 'pointerleave', (e) => {
             this.mouseX = null;
             this.mouseY = null;
             this.controlledCrosshairTime = null;
+            this.canvas.style.cursor = 'default';
+            this.interactionController.hover(null);
             this.clearPlacementPreview();   // no cursor over the plot → no placement preview
             this.emitCrosshair(e);
             this.scheduleDraw(RenderDirty.Overlay);
-        });
-        // Price-line "✕" close buttons: a mousedown landing on one fires its callback and
-        // is consumed here, so it neither pans the chart nor bubbles to the host element
-        // (whose own mousedown would start a line drag). This uses mousedown — not
-        // pointerdown — precisely so stopPropagation blocks the host's mousedown handler.
-        this.listen<MouseEvent>(this.canvas, 'mousedown', (e) => {
-            const r = this.canvas.getBoundingClientRect();
-            const mx = e.clientX - r.left;
-            const my = e.clientY - r.top;
-            for (const h of this._closeHits) {
-                if (mx >= h.x && mx <= h.x + h.w && my >= h.y && my <= h.y + h.h) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    try { h.onClose(); } catch { /* ignore */ }
-                    return;
-                }
-            }
         });
         this.listen<PointerEvent>(this.canvas, 'pointerdown', (e) => {
             // capture so a finger / mouse leaving the canvas mid-drag
@@ -2768,12 +3124,12 @@ class ChartImpl implements IChartApi {
             const r = this.canvas.getBoundingClientRect();
             const mx = e.clientX - r.left;
             const my = e.clientY - r.top;
+            this.mouseX = mx;
+            this.mouseY = my;
             this.downX = mx; this.downY = my; this.downButton = e.button; this.pointerDown = true;
             this.gesturePane = this.paneAt(my);
-            // A press on a "✕" close button is handled by the mousedown listener above — don't drag.
-            for (const h of this._closeHits) {
-                if (mx >= h.x && mx <= h.x + h.w && my >= h.y && my <= h.y + h.h) return;
-            }
+            const primitiveHit = this.hitTestPrimitive(mx, my, e);
+            this.interactionController.hover(primitiveHit === null ? null : this.interactionObject(primitiveHit));
             // Only the left button drags/pans; a right (or middle) press is left to become a click
             // (a host maps right-click to "sell here", left to "buy here").
             if (e.button !== 0) return;
@@ -2788,71 +3144,98 @@ class ChartImpl implements IChartApi {
                         beforeHeight: before.height,
                         afterHeight: after.height,
                     };
+                    this.interactionController.pointerDown({ x: mx, y: my }, { kind: 'scale' });
                     this.canvas.style.cursor = 'row-resize';
                 }
                 return;
             }
-            // Grab a draggable order line before any pan / axis-stretch gesture. Freeze the scale
-            // and anchor the label for the whole drag so the line stays WYSIWYG under the cursor.
-            const hit = this.hitDraggableLine(my, mx);
-            if (hit) {
-                this.lineDrag = hit;
-                hit.line.applyOptions({ anchored: true });
-                try { hit.series.priceScale().applyOptions({ autoScale: false }); } catch { /* */ }
-                this.canvas.style.cursor = 'ns-resize';
+            if (primitiveHit?.interaction.consumePointer === true) {
+                const point = Object.freeze({ x: mx, y: my });
+                this.activePrimitiveInteraction = { hit: primitiveHit, start: point, last: point };
+                this.interactionController.pointerDown(point, {
+                    kind: 'primitive',
+                    object: this.interactionObject(primitiveHit),
+                    selectable: primitiveHit.interaction.selectable,
+                    draggable: primitiveHit.interaction.draggable,
+                });
+                this.dispatchPrimitivePointer(
+                    'onPointerDown',
+                    primitiveHit,
+                    this.initialInteractionMovement(mx, my),
+                    e,
+                );
+                this.canvas.style.cursor = primitiveHit.cursor;
                 return;
             }
             if (this.inTimeGutter(my)) {
                 // grab the time axis → horizontal stretch
-                this.timeDragging = true;
-                this.lastAxisX = mx;
+                this.scaleDrag = { kind: 'time' };
+                this.interactionController.pointerDown({ x: mx, y: my }, { kind: 'scale' });
             } else if (this.inPriceGutter(mx)) {
                 // grab the price axis → vertical stretch, not a time pan
                 if (this.gesturePane !== null) {
-                    this.priceDragging = true;
-                    this.lastDragY = my;
+                    this.scaleDrag = { kind: 'price', pane: this.gesturePane };
+                    this.interactionController.pointerDown({ x: mx, y: my }, { kind: 'scale' });
                 }
             } else {
-                this.dragging = true;
-                this.lastDragX = mx;
+                this.interactionController.pointerDown({ x: mx, y: my }, { kind: 'pane' });
             }
         });
-        const finishGesture = (e?: PointerEvent): void => {
+        const finishGesture = (e: PointerEvent, cancelled = false): void => {
             if (!this.pointerDown) return;   // ignore releases from a gesture that began off-canvas
             this.pointerDown = false;
+            const point = {
+                x: this.mouseX ?? this.downX,
+                y: this.mouseY ?? this.downY,
+            };
             if (this.splitterDrag !== null) {
                 this.splitterDrag = null;
                 this.gesturePane = null;
+                if (cancelled) this.interactionController.cancel();
+                else this.interactionController.pointerUp(point);
                 this.canvas.style.cursor = 'default';
                 return;
             }
-            // Commit an order-line drag: unfreeze the scale, drop the anchor, notify the host.
-            if (this.lineDrag) {
-                const pane = this.lineDrag.series.pane ?? this.model.mainPane;
-                this.activatePane(pane);
-                const p = this.mouseY !== null
-                    ? this.yToPrice(
-                        Math.max(this.plotT(), Math.min(this.plotB(), this.mouseY)),
-                        this.lineDrag.series.priceScaleId(),
-                        pane,
-                        this.lineDrag.series,
-                    )
-                    : null;
-                this.lineDrag.line.applyOptions({ anchored: false });
-                try { this.lineDrag.series.priceScale().applyOptions({ autoScale: true }); } catch { /* */ }
-                const cb = this.lineDrag.line.raw().onDragCommit;
-                if (cb && p !== null) { try { cb(p); } catch { /* */ } }
-                this.lineDrag = null;
-                this.dragging = false; this.priceDragging = false; this.timeDragging = false;
+            if (this.activePrimitiveInteraction !== null) {
+                const active = this.activePrimitiveInteraction;
+                const movement = cancelled
+                    ? Object.freeze({
+                        point: Object.freeze({ ...point }),
+                        startPoint: active.start,
+                        delta: Object.freeze({ x: point.x - active.last.x, y: point.y - active.last.y }),
+                        totalDelta: Object.freeze({ x: point.x - active.start.x, y: point.y - active.start.y }),
+                        state: this.interactionController.snapshot().state,
+                        started: false,
+                    })
+                    : this.interactionController.pointerUp(point);
+                if (cancelled) this.interactionController.cancel();
+                if (movement !== null) this.dispatchPrimitivePointer(
+                    cancelled ? 'onPointerCancel' : 'onPointerUp',
+                    active.hit,
+                    movement,
+                    e,
+                );
+                this.activePrimitiveInteraction = null;
                 this.gesturePane = null;
+                this.canvas.style.cursor = active.hit.cursor;
+                this.scheduleDraw(RenderDirty.All);
+                return;
+            }
+            if (this.scaleDrag !== null) {
+                this.scaleDrag = null;
+                this.gesturePane = null;
+                if (cancelled) this.interactionController.cancel();
+                else this.interactionController.pointerUp(point);
+                this.canvas.style.cursor = 'default';
                 return;
             }
             const moved = this.mouseX !== null && this.mouseY !== null &&
                 Math.hypot(this.mouseX - this.downX, this.mouseY - this.downY) > 4;
-            this.dragging = false; this.priceDragging = false; this.timeDragging = false;
+            if (cancelled) this.interactionController.cancel();
+            else this.interactionController.pointerUp(point);
             // A press-release that did not move and did not grab a line is a click (a pan that never
             // moved still counts as a click).
-            if (e && !moved && this.mouseX !== null && this.mouseY !== null &&
+            if (!cancelled && !moved && this.mouseX !== null && this.mouseY !== null &&
                 !this.inTimeGutter(this.mouseY) && !this.inPriceGutter(this.mouseX)) {
                 const pane = this.paneAt(this.mouseY) ?? this.model.mainPane;
                 const clickSeries = this.mainSeries(pane);
@@ -2872,6 +3255,7 @@ class ChartImpl implements IChartApi {
                         price, time: time ?? null, point: { x: this.mouseX, y: this.mouseY },
                         button: this.downButton,
                         ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey,
+                        hoveredObject: this.crosshairEvent(e).hoveredObject,
                     };
                     for (const cb of this.clickListeners) { try { cb(c); } catch { /* */ } }
                 }
@@ -2881,7 +3265,7 @@ class ChartImpl implements IChartApi {
         // window (not canvas) so a release off the plot still ends the gesture; the pointerDown
         // guard inside finishGesture keeps unrelated global releases from being processed.
         this.listen<PointerEvent>(window, 'pointerup', (e) => finishGesture(e));
-        this.listen(window, 'pointercancel', () => finishGesture());
+        this.listen<PointerEvent>(window, 'pointercancel', (e) => finishGesture(e, true));
         // Order-placement mode: pressing/releasing the configured modifier shows/hides the preview
         // (updated on move too), even without moving the mouse. Losing focus cancels it.
         this.listen<KeyboardEvent>(window, 'keydown', (e) => {
@@ -2935,7 +3319,8 @@ class ChartImpl implements IChartApi {
                 pinchPivot = this.xToTime(midX);
                 pinchRatio = (midX - this.plotL()) / this.plotW();
                 pinching = true;
-                this.dragging = false; this.priceDragging = false; this.timeDragging = false;
+                this.scaleDrag = null;
+                this.interactionController.cancel();
             }
         }, { passive: false });
         this.listen<TouchEvent>(this.canvas, 'touchmove', (e) => {
@@ -2965,7 +3350,10 @@ export function createChart(container: HTMLElement, options: ChartOptions = {}):
 }
 
 export function createSeriesMarkers(series: ISeriesApi, markers: SeriesMarker[] = []): ISeriesMarkersPlugin {
-    const plugin = new MarkersPlugin(series as Series);
+    const internal = series as Series;
+    if (!(internal instanceof Series) || internal.chart === null)
+        throw new Error('sschart: marker series does not belong to an active chart');
+    const plugin = internal.chart.seriesMarkers(internal);
     plugin.setMarkers(markers);
     return plugin;
 }

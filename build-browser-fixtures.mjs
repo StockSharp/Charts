@@ -7,6 +7,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const targets = [
     ['performance-entry.ts', 'performance-entry.js'],
     ['indicator-painters-entry.ts', 'indicator-painters-entry.js'],
+    ['custom-primitive-entry.ts', 'custom-primitive-entry.js'],
 ];
 
 for (const [entry, output] of targets) {
