@@ -53,7 +53,7 @@ const persistence = new ChartStatePersistence<{ layoutId: string; symbol: string
 });
 void persistence.save({ layoutId: 'desk', symbol: 'AAPL' });
 declare const chart: import('../../src/index.js').IChartApi;
-const nativeLayout = new NativeChartLayoutAdapter({ chart });
+const nativeLayout = new NativeChartLayoutAdapter({ chart, mainPaneId: 'main' });
 const nativeSnapshot = nativeLayout.capture();
 void nativeSnapshot;
 declare const indicatorEngine: import('../../src/index.js').IndicatorEnginePersistenceApi;

@@ -285,7 +285,9 @@ export class ChartLegend {
         // sub-pane indicators have their own pane headers, painted below.
         const all = this._indicatorEngine.getValuesAt(time, seriesData);
         const values = all.filter(v => v.paneId == null);
-        const signature = values.map(v => v.id).join(',');
+        const signature = values.map(v => (
+            `${v.id}:${Object.keys(v.values).join('|')}`
+        )).join(',');
         // Sub-pane values: group by paneId and push to each pane's header.
         this._paintSubPaneValues(all.filter(v => v.paneId != null));
 

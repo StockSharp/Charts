@@ -23,6 +23,8 @@ import type {
 
 export interface NativeChartLayoutAdapterOptions {
     readonly chart: IChartApi;
+    /** Root pane that cannot be removed. Defaults to the conventional `main` id. */
+    readonly mainPaneId?: string;
     /** Overrides registry-based empty-series recreation (for host data-source wiring). */
     readonly createSeries?: (
         series: PersistedSeries,
@@ -35,6 +37,7 @@ export interface NativeChartLayoutAdapterOptions {
 /** Captures native pane/series metadata while deliberately excluding raw series data. */
 export class NativeChartLayoutAdapter implements ChartStateLayoutAdapter {
     private readonly chart: IChartApi;
+    private readonly mainPaneId: string;
     private readonly createSeries?: NativeChartLayoutAdapterOptions['createSeries'];
     private readonly includeSeries?: NativeChartLayoutAdapterOptions['includeSeries'];
     private readonly onUnknownSeries?: NativeChartLayoutAdapterOptions['onUnknownSeries'];
@@ -53,6 +56,13 @@ export class NativeChartLayoutAdapter implements ChartStateLayoutAdapter {
                 throw new TypeError(`sschart: native chart layout adapter ${name} must be a function`);
         }
         this.chart = options.chart;
+        if (options.mainPaneId !== undefined
+            && (typeof options.mainPaneId !== 'string' || options.mainPaneId.trim().length === 0)) {
+            throw new TypeError('sschart: native chart layout adapter mainPaneId must be non-empty');
+        }
+        const panes = options.chart.panes();
+        this.mainPaneId = options.mainPaneId?.trim()
+            ?? (panes.some(pane => pane.id() === 'main') ? 'main' : panes[0]?.id() ?? 'main');
         this.createSeries = options.createSeries;
         this.includeSeries = options.includeSeries;
         this.onUnknownSeries = options.onUnknownSeries;
@@ -89,7 +99,9 @@ export class NativeChartLayoutAdapter implements ChartStateLayoutAdapter {
             throw new TypeError('sschart: native chart layout restore state is required');
         const current = this.chart.panes();
         if (current.length === 0) throw new Error('sschart: native chart has no main pane');
-        const main = current[0];
+        const main = current.find(pane => pane.id() === this.mainPaneId);
+        if (main === undefined)
+            throw new Error(`sschart: native main pane '${this.mainPaneId}' is unavailable`);
         const persistedMain = state.panes.find(pane => pane.id === main.id());
         if (persistedMain === undefined) {
             throw new Error(
@@ -101,8 +113,9 @@ export class NativeChartLayoutAdapter implements ChartStateLayoutAdapter {
         for (const pane of current) {
             for (const series of [...pane.series()]) this.chart.removeSeries(series);
         }
-        for (let index = current.length - 1; index >= 1; index--)
-            this.chart.removePane(current[index]);
+        for (const pane of [...current].reverse()) {
+            if (pane !== main) this.chart.removePane(pane);
+        }
 
         main.applyOptions(paneOptions(persistedMain));
         const panes = new Map<string, IPaneApi>([[main.id(), main]]);

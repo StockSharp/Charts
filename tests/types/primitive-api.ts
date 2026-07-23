@@ -21,6 +21,7 @@ const candleOptions = candles.options();
 const chartOptions = chart.options();
 const paneScaleIds: readonly string[] = chart.panes()[0].priceScaleIds();
 const scaleMode: number = chart.panes()[0].priceScale('right').options().mode;
+chart.moveSeries(candles, chart.panes()[0]);
 void candleId;
 void candleType;
 void candleOptions;

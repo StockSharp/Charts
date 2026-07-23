@@ -9,10 +9,15 @@ import { IndicatorRenderer } from './indicators/indicator-renderer.js';
 import { ChartPaneManager } from './chart-pane-manager.js';
 import { ChartLegend } from './chart-legend.js';
 import { ChartContextMenu } from './chart-context-menu.js';
-import { IndicatorDialog } from './indicator-dialog.js';
+import {
+    IndicatorDialog,
+    createIndicatorCatalogController,
+} from './indicator-dialog.js';
 import { ChartTypeSwitcher } from './chart-type-switcher.js';
 import { TerminalUtils } from './utils.js';
 import { T } from './i18n.js';
+import { IndicatorController } from '../workspace/indicator-controller.js';
+import { IndicatorTemplateController } from '../workspace/templates.js';
 import {
     getIndicatorPainterNames,
     hasIndicatorPainter,
@@ -86,6 +91,11 @@ function boot() {
     engine.onChange = () => { if (themeName !== 'dark') applyTheme(); };   // re-theme freshly-added sub-panes
     (window as any)._indicatorEngine = engine;
     engine.setCandles(live);              // shares the same array reference
+    const indicatorController = new IndicatorController({
+        engine,
+        commandStack: chart.commandStack(),
+    });
+    (window as any)._indicatorController = indicatorController;
 
     // Crosshair legend (OHLCV + indicator values; overlays in the main legend,
     // oscillators in each sub-pane header).
@@ -95,11 +105,50 @@ function boot() {
     legend.setRawCandles(live);
 
     // Indicator picker dialog.
+    const indicatorCatalogController = createIndicatorCatalogController({
+        load: () => {
+            const value = window.localStorage.getItem('sschart:indicator-favorites:v1');
+            if (value === null) return null;
+            const parsed: unknown = JSON.parse(value);
+            if (!Array.isArray(parsed) || parsed.some(id => typeof id !== 'string'))
+                throw new TypeError('invalid stored indicator favorites');
+            return parsed;
+        },
+        save: ids => window.localStorage.setItem(
+            'sschart:indicator-favorites:v1',
+            JSON.stringify(ids),
+        ),
+    });
+    void indicatorCatalogController.loadFavorites().catch(error => {
+        console.warn('[Indicators] failed to load favorites:', error);
+    });
+    (window as any)._indicatorCatalogController = indicatorCatalogController;
+    const indicatorTemplateController = new IndicatorTemplateController({
+        indicators: indicatorController,
+        storage: {
+            load: () => window.localStorage.getItem('sschart:indicator-templates:v1'),
+            save: serialized => window.localStorage.setItem(
+                'sschart:indicator-templates:v1',
+                serialized,
+            ),
+        },
+    });
+    void indicatorTemplateController.load().catch(error => {
+        console.warn('[Indicators] failed to load templates:', error);
+    });
+    (window as any)._indicatorTemplateController = indicatorTemplateController;
     const dialog = new IndicatorDialog();
-    dialog.init('indicatorModal', engine);
+    dialog.init(
+        'indicatorModal',
+        engine,
+        indicatorController,
+        chart,
+        indicatorCatalogController,
+        indicatorTemplateController,
+    );
 
     // Edit hook fired by the legend ✎ and the sub-pane header ✎ buttons.
-    const openIndicatorEdit = (id: number, type: string) => { dialog.show(); (dialog as any)._showSettings(type, id); };
+    const openIndicatorEdit = (id: number, _type: string) => dialog.showEdit(id);
     legend.onEditIndicator = openIndicatorEdit;
     // ＋ on a sub-pane header opens the picker targeting that pane, so the next
     // indicator lands in it instead of spawning its own pane.

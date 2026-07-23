@@ -40,6 +40,9 @@ export interface IndicatorPaintResult {
         seriesIndex: number;
         field?: string;
         colorOption?: string;
+        lineWidthOption?: string;
+        lineStyleOption?: string;
+        visibilityOption?: string;
     }>;
 }
 

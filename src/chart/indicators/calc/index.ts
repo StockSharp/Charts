@@ -11,7 +11,10 @@
 // Generated indicator catalog (the picker's metadata). Regenerate, don't hand-edit entries; the
 // C# parity test validates it against the StockSharp catalog snapshot.
 import CATALOG from '../catalog.json';
-import { getIndicatorDefinition } from '../../../indicators/index.js';
+import {
+    getIndicatorDefinition,
+    indicatorCategoryLabel,
+} from '../../../indicators/index.js';
 
 import { calcSMA } from './sma.js';
 import { calcEMA } from './ema.js';
@@ -358,15 +361,24 @@ const IMPLEMENTATIONS = [
 ];
 
 export const registry: Record<string, (candles: any, params: any) => any> = {};
+const ALIASES: Record<string, readonly string[]> = {};
+const EMPTY_ALIASES: readonly string[] = Object.freeze([]);
 for (const impl of IMPLEMENTATIONS) {
+    const aliases = Object.freeze([...new Set(impl.aliases)]);
     for (const name of impl.aliases) {
         registry[name.toLowerCase()] = impl.fn;
+        ALIASES[name.toLowerCase()] = aliases;
     }
 }
 
 export function getCalcFn(kind: string) {
     if (typeof kind !== 'string') return undefined;
     return registry[kind.toLowerCase()];
+}
+
+export function getCalcAliases(kind: string): readonly string[] {
+    if (typeof kind !== 'string') return EMPTY_ALIASES;
+    return ALIASES[kind.toLowerCase()] ?? EMPTY_ALIASES;
 }
 
 // English label of a param/output/indicator, derived from its camelCase key. This IS the i18n
@@ -380,27 +392,30 @@ export function humanize(key: string): string {
 }
 
 
-// The indicator picker's single source of truth is the JSON catalog (../catalog.json): one
-// self-describing entry per client-computable indicator. `serverKind`/`id` is the canonical kind,
-// which resolves back to the calc fn through the registry; params carry the calc's own keys
-// (labels are derived via humanize()+T.t at render time). Edit the JSON, not code, to tune meta;
-// the C# parity test (tests/parity.test.js) checks it against the StockSharp catalog snapshot.
+// JSON supplies legacy aliases, parameter keys and painter hints. Executable definitions are
+// authoritative for taxonomy, pane, measure and outputs, preventing catalog/UI drift.
 export function getClientCatalog(): any[] {
     return (CATALOG as any[])
         .filter((e) => getIndicatorDefinition(e.kind) !== undefined)
-        .map((e) => ({
-        id: e.kind,
-        serverKind: e.kind,   // resolves to the calc fn via the registry (kind is an alias)
-        name: e.name,
-        fullName: e.name,
-        group: e.group,
-        pane: e.pane,
-        params: e.params,
-        outputs: e.outputs,
-        painter: (e as any).painter,
-        scaleRange: e.scaleRange,
-        levels: e.levels,
-        }));
+        .map((e) => {
+            const definition = getIndicatorDefinition(e.kind)!;
+            return {
+                id: e.kind,
+                serverKind: e.kind,
+                name: e.name,
+                fullName: humanize(e.kind),
+                aliases: getCalcAliases(e.kind),
+                group: indicatorCategoryLabel(definition.category),
+                category: definition.category,
+                pane: definition.naturalPane,
+                measure: definition.measure,
+                params: e.params,
+                outputs: definition.outputs.map(output => output.id),
+                painter: (e as any).painter,
+                scaleRange: e.scaleRange,
+                levels: e.levels,
+            };
+        });
 }
 
 export function apply(kind: string, candles: any, params: any) {

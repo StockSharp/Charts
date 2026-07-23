@@ -302,6 +302,9 @@ export interface SeriesOptions {
     topColor?: string; bottomColor?: string;
     upperColor?: string; lowerColor?: string;
     fillColor?: string; positiveFillColor?: string; negativeFillColor?: string;
+    upperLineWidth?: number; lowerLineWidth?: number;
+    upperLineStyle?: LineStyleValue; lowerLineStyle?: LineStyleValue;
+    upperLineVisible?: boolean; lowerLineVisible?: boolean; fillVisible?: boolean;
     // histogram
     base?: number;
     // shared
@@ -309,6 +312,8 @@ export interface SeriesOptions {
     id?: string;
     /** False for runtime-owned output series (for example indicator painter internals). */
     persist?: boolean;
+    /** False hides rendering, autoscale, crosshair values and series-owned primitives. */
+    visible?: boolean;
     priceScaleId?: string;
     priceLineVisible?: boolean;
     lastValueVisible?: boolean;     // hide the per-series last-value pill on the right axis
@@ -470,6 +475,7 @@ class Series extends SeriesModel<AnyPoint> implements ISeriesApi<AnyPoint, Serie
     readonly definition: CustomSeriesDefinition<AnyPoint, SeriesOptions>;
     opts: SeriesOptions;
     get affectsTimeScale(): boolean { return this.definition.affectsTimeScale !== false; }
+    get visible(): boolean { return this.opts.visible !== false; }
     get sourcePoints(): readonly AnyPoint[] { return this.values; }
     get points(): readonly AnyPoint[] {
         return this.definition.dataProcessor !== undefined
@@ -494,6 +500,8 @@ class Series extends SeriesModel<AnyPoint> implements ISeriesApi<AnyPoint, Serie
         this.stableId = normalizeSeriesId(opts.id, definition.type);
         if (opts.persist !== undefined && typeof opts.persist !== 'boolean')
             throw new TypeError('sschart: series persist must be a boolean');
+        if (opts.visible !== undefined && typeof opts.visible !== 'boolean')
+            throw new TypeError('sschart: series visible must be a boolean');
         this.persistable = opts.persist !== false;
         const { id: _id, persist: _persist, ...rendererOptions } = opts;
         this.opts = rendererOptions;
@@ -545,6 +553,7 @@ class Series extends SeriesModel<AnyPoint> implements ISeriesApi<AnyPoint, Serie
         return this.chart?.seriesBarsInLogicalRange(this, range) ?? this.store.barsInLogicalRange(range);
     }
     applyOptions(patch: Partial<SeriesOptions>): void {
+        const wasVisible = this.visible;
         if (patch.id !== undefined
             && (typeof patch.id !== 'string' || patch.id.trim() !== this.stableId)) {
             throw new Error('sschart: series id cannot change after creation');
@@ -554,13 +563,21 @@ class Series extends SeriesModel<AnyPoint> implements ISeriesApi<AnyPoint, Serie
                 throw new TypeError('sschart: series persist must be a boolean');
             this.persistable = patch.persist;
         }
+        if (patch.visible !== undefined && typeof patch.visible !== 'boolean')
+            throw new TypeError('sschart: series visible must be a boolean');
         const { id: _id, persist: _persist, ...rendererPatch } = patch;
         this.opts = { ...this.opts, ...rendererPatch };
-        this.optionsVersion++;
-        this.resetPreparedData();
-        if (this.definition.dataProcessor !== undefined || this.incrementalProcessor !== null)
+        const dataOptionsChanged = Object.keys(rendererPatch).some(key => key !== 'visible');
+        if (dataOptionsChanged) {
+            this.optionsVersion++;
+            this.resetPreparedData();
+        }
+        const visibilityChanged = wasVisible !== this.visible;
+        if (visibilityChanged) this.chart?.seriesVisibilityChanged(this);
+        if (dataOptionsChanged
+            && (this.definition.dataProcessor !== undefined || this.incrementalProcessor !== null)) {
             this.chart?.onDataChanged();
-        else this.chart?.scheduleDraw();
+        } else if (!visibilityChanged) this.chart?.scheduleDraw();
     }
     renderData(): {
         key: string;
@@ -932,6 +949,8 @@ export interface IChartApi {
         options?: Partial<TOptions>,
         pane?: IPaneApi,
     ): ISeriesApi<TData, TOptions>;
+    /** Moves the existing series instance and its attached primitives to another pane. */
+    moveSeries(series: ISeriesApi, pane: IPaneApi): void;
     removeSeries(series: ISeriesApi): void;
     attachPrimitive(primitive: IChartPrimitive, options?: PrimitiveAttachOptions): void;
     detachPrimitive(primitive: IChartPrimitive): void;
@@ -1041,6 +1060,13 @@ interface PrimitiveAutoscaleEntry extends NormalizedAutoscaleInfo {
     readonly series: Series | null;
 }
 
+interface PrimitiveRoute {
+    paneModel: PaneModel<Series>;
+    pane: PaneApi;
+    series: Series | null;
+    priceScaleId: string;
+}
+
 class ChartImpl implements IChartApi {
     private readonly host: HTMLElement;
     private readonly root: HTMLDivElement;
@@ -1064,7 +1090,9 @@ class ChartImpl implements IChartApi {
     };
 
     private get series(): readonly Series[] { return this.model.series; }
-    private get activeSeries(): readonly Series[] { return this.activePane.series; }
+    private get activeSeries(): readonly Series[] {
+        return this.activePane.series.filter(series => series.visible);
+    }
     private get viewFrom(): number { return this.model.timeScale.visibleFrom; }
     private set viewFrom(value: number) { this.model.timeScale.visibleFrom = value; }
     private get viewTo(): number { return this.model.timeScale.visibleTo; }
@@ -1082,6 +1110,7 @@ class ChartImpl implements IChartApi {
     private readonly disposables = new DisposableStore();
     private readonly renderScheduler: RenderScheduler;
     private readonly primitiveHost: PrimitiveHost;
+    private readonly primitiveRoutes = new WeakMap<IChartPrimitive, PrimitiveRoute>();
     private readonly hitTestEngine = new HitTestEngine();
     private readonly interactionController: InteractionController;
     private readonly commands: CommandStack;
@@ -1261,8 +1290,10 @@ class ChartImpl implements IChartApi {
         if (model === this.model.mainPane) throw new Error('sschart: the main pane cannot be removed');
         this.priceLinePrimitives.delete(model);
         for (const attachment of this.primitiveHost.attachments()) {
-            if (attachment.options.pane === pane)
+            if (attachment.options.pane === pane) {
                 this.forgetPrimitiveInteraction(attachment.primitive);
+                this.primitiveRoutes.delete(attachment.primitive);
+            }
         }
         this.primitiveHost.detachWhere((attachment) => attachment.pane === pane);
         const removed = this.model.removePane(model);
@@ -1308,8 +1339,10 @@ class ChartImpl implements IChartApi {
             for (const line of s.priceLines) primitive?.lineRemoved(line);
         }
         for (const attachment of this.primitiveHost.attachments()) {
-            if (attachment.options.series === series)
+            if (attachment.options.series === series) {
                 this.forgetPrimitiveInteraction(attachment.primitive);
+                this.primitiveRoutes.delete(attachment.primitive);
+            }
         }
         this.primitiveHost.detachWhere((attachment) => attachment.series === series);
         this.markerPrimitives.delete(s);
@@ -1320,9 +1353,37 @@ class ChartImpl implements IChartApi {
         this.recomputeAxisPads();
         this.onDataChanged();
     }
+    moveSeries(series: ISeriesApi, pane: IPaneApi): void {
+        const item = this.resolveSeries(series);
+        const target = this.resolvePane(pane);
+        const source = item.pane;
+        if (source === null) throw new Error('sschart: series is detached');
+        if (source === target) return;
+
+        this.model.addSeries(item, target);
+        item.pane = target;
+        const targetApi = this.paneApiFor(target);
+        for (const attachment of this.primitiveHost.attachments()) {
+            if (attachment.options.series !== series) continue;
+            const route = this.primitiveRoutes.get(attachment.primitive);
+            if (route !== undefined) {
+                route.paneModel = target;
+                route.pane = targetApi;
+            }
+            this.primitiveHost.updateOptions(attachment.primitive, {
+                ...attachment.options,
+                pane: targetApi,
+            });
+        }
+        this.refreshPriceLinesPrimitive(source);
+        if (item.priceLines.length > 0) this.ensurePriceLinesPrimitive(target);
+        this.recomputeAxisPads();
+        this.recomputePaneLayout();
+        this.onDataChanged();
+    }
     priceLineAdded(series: Series, _line: PriceLine): void {
         const pane = series.pane;
-        if (pane === null) return;
+        if (pane === null || !series.visible) return;
         this.ensurePriceLinesPrimitive(pane);
         this.scheduleDraw(RenderDirty.All);
     }
@@ -1350,14 +1411,23 @@ class ChartImpl implements IChartApi {
         return primitive;
     }
     private refreshPriceLinesPrimitive(pane: PaneModel<Series>): void {
-        if (pane.series.some((series) => series.priceLines.length > 0)) return;
+        if (pane.series.some((series) => series.visible && series.priceLines.length > 0)) return;
         const primitive = this.priceLinePrimitives.get(pane);
         if (primitive === undefined) return;
         this.priceLinePrimitives.delete(pane);
         this.detachPrimitive(primitive);
     }
+    seriesVisibilityChanged(series: Series): void {
+        const pane = series.pane;
+        if (pane !== null) {
+            if (series.visible && series.priceLines.length > 0) this.ensurePriceLinesPrimitive(pane);
+            else this.refreshPriceLinesPrimitive(pane);
+        }
+        this.recomputeAxisPads();
+        this.scheduleDraw(RenderDirty.All);
+    }
     private priceLineEntries(pane: PaneModel<Series>): readonly PriceLinePrimitiveEntry[] {
-        return pane.series.flatMap((series) => series.priceLines.map((line) => ({
+        return pane.series.filter(series => series.visible).flatMap((series) => series.priceLines.map((line) => ({
             series,
             line,
             formatPrice: (price: number) => this.formatPriceLine(series, pane, price),
@@ -1403,39 +1473,48 @@ class ChartImpl implements IChartApi {
         const priceScaleId = options.priceScaleId ?? series?.priceScaleId() ?? 'right';
         if (priceScaleId.length === 0) throw new Error('sschart: primitive price scale id cannot be empty');
         const normalized = Object.freeze({ pane, series: series ?? undefined, priceScaleId });
-
-        this.primitiveHost.attach(primitive, normalized, ({ requestUpdate, addDisposable }) => {
-            const context: PrimitiveAttachedContext = {
-                chart: this,
-                pane,
-                series,
-                priceScaleId,
-                commandStack: this.commands,
-                requestUpdate,
-                timeToCoordinate: (time) => this.timeToXPublic(time),
-                coordinateToTime: (x) => this.xToTimePublic(x),
-                priceToCoordinate: (price, scaleId) => {
-                    const id = scaleId ?? priceScaleId;
-                    const coordinateSeries = series !== null && id === series.priceScaleId() ? series : undefined;
-                    return this.priceToY(price, id, paneModel, coordinateSeries);
-                },
-                coordinateToPrice: (y, scaleId) => {
-                    const id = scaleId ?? priceScaleId;
-                    const coordinateSeries = series !== null && id === series.priceScaleId() ? series : undefined;
-                    return this.yToPrice(y, id, paneModel, coordinateSeries);
-                },
-                pixelRatio: () => this.dpr,
-                theme: () => this.primitiveTheme(),
-                addDisposable,
-            };
-            return Object.freeze(context);
-        });
+        const route: PrimitiveRoute = { paneModel, pane, series, priceScaleId };
+        this.primitiveRoutes.set(primitive, route);
+        try {
+            this.primitiveHost.attach(primitive, normalized, ({ requestUpdate, addDisposable }) => {
+                const context: PrimitiveAttachedContext = {
+                    chart: this,
+                    get pane() { return route.pane; },
+                    get series() { return route.series; },
+                    get priceScaleId() { return route.priceScaleId; },
+                    commandStack: this.commands,
+                    requestUpdate,
+                    timeToCoordinate: (time) => this.timeToXPublic(time),
+                    coordinateToTime: (x) => this.xToTimePublic(x),
+                    priceToCoordinate: (price, scaleId) => {
+                        const id = scaleId ?? route.priceScaleId;
+                        const coordinateSeries = route.series !== null
+                            && id === route.series.priceScaleId() ? route.series : undefined;
+                        return this.priceToY(price, id, route.paneModel, coordinateSeries);
+                    },
+                    coordinateToPrice: (y, scaleId) => {
+                        const id = scaleId ?? route.priceScaleId;
+                        const coordinateSeries = route.series !== null
+                            && id === route.series.priceScaleId() ? route.series : undefined;
+                        return this.yToPrice(y, id, route.paneModel, coordinateSeries);
+                    },
+                    pixelRatio: () => this.dpr,
+                    theme: () => this.primitiveTheme(),
+                    addDisposable,
+                };
+                return Object.freeze(context);
+            });
+        } catch (error) {
+            this.primitiveRoutes.delete(primitive);
+            throw error;
+        }
         this.recomputeAxisPads();
         this.recomputePaneLayout();
     }
     detachPrimitive(primitive: IChartPrimitive): void {
         if (!this.primitiveHost.primitives().includes(primitive)) return;
         this.forgetPrimitiveInteraction(primitive);
+        this.primitiveRoutes.delete(primitive);
         this.primitiveHost.detach(primitive);
         this.recomputeAxisPads();
         this.recomputePaneLayout();
@@ -1471,16 +1550,25 @@ class ChartImpl implements IChartApi {
     private hasScale(id: string): boolean {
         if (this.activeSeries.some((s) => s.priceScaleId() === id)) return true;
         const pane = this.paneApiFor(this.activePane);
-        return this.primitiveHost.attachments().some((attachment) =>
-            attachment.options.pane === pane && attachment.options.priceScaleId === id);
+        return this.primitiveHost.attachments().some((attachment) => (
+            this.primitiveAttachmentVisible(attachment.options)
+            && attachment.options.pane === pane
+            && attachment.options.priceScaleId === id
+        ));
     }
     private hasAnyScale(id: string): boolean {
-        return this.series.some((s) => s.priceScaleId() === id)
-            || this.primitiveHost.attachments().some((attachment) => attachment.options.priceScaleId === id);
+        return this.series.some((s) => s.visible && s.priceScaleId() === id)
+            || this.primitiveHost.attachments().some((attachment) => (
+                this.primitiveAttachmentVisible(attachment.options)
+                && attachment.options.priceScaleId === id
+            ));
     }
     private recomputeAxisPads(): void {
         this.padLeft = this.hasAnyScale('left') ? 56 : 0;
         this.padR = this.hasAnyScale('right') ? 64 : 8;
+    }
+    private primitiveAttachmentVisible(options: PrimitiveAttachOptions): boolean {
+        return !(options.series instanceof Series) || options.series.visible;
     }
     private paneApiFor(pane: PaneModel<Series>): PaneApi {
         const api = this.paneApis.get(pane.id);
@@ -1516,6 +1604,20 @@ class ChartImpl implements IChartApi {
             }
         }
         model.applyOptions(options);
+        this.recomputePaneLayout();
+        this.scheduleDraw(RenderDirty.Layout);
+    }
+    private applyPanePairHeights(
+        beforePaneId: string,
+        beforeHeight: number,
+        afterPaneId: string,
+        afterHeight: number,
+    ): void {
+        const before = this.model.paneById(beforePaneId);
+        const after = this.model.paneById(afterPaneId);
+        if (before === undefined || after === undefined) return;
+        before.height = beforeHeight;
+        after.height = afterHeight;
         this.recomputePaneLayout();
         this.scheduleDraw(RenderDirty.Layout);
     }
@@ -1603,7 +1705,8 @@ class ChartImpl implements IChartApi {
         }
     }
     private mainSeries(pane: PaneModel<Series> = this.model.mainPane): Series | null {
-        return pane.series.find((s) => s.priceScaleId() === 'right') ?? pane.series[0] ?? null;
+        const visible = pane.series.filter(series => series.visible);
+        return visible.find((s) => s.priceScaleId() === 'right') ?? visible[0] ?? null;
     }
     private updatePlacementPreview(): void {
         const placement = this.placement;
@@ -2106,7 +2209,9 @@ class ChartImpl implements IChartApi {
         if (scale.frozenRange !== null) return scale.frozenRange as ScaleBounds;
 
         const mode = this.getScaleMode(scaleId, pane);
-        const candidates = pane.series.filter((series) => series.priceScaleId() === scaleId);
+        const candidates = pane.series.filter((series) => (
+            series.visible && series.priceScaleId() === scaleId
+        ));
         const baseValues = new Map<Series, number>();
         let baseValue = 1;
         let hasBaseValue = false;
@@ -2245,6 +2350,7 @@ class ChartImpl implements IChartApi {
         const entries: PrimitiveAutoscaleEntry[] = [];
         try {
             for (const attachment of this.primitiveHost.attachments()) {
+                if (!this.primitiveAttachmentVisible(attachment.options)) continue;
                 const provider = attachment.primitive.autoscaleInfo;
                 if (provider === undefined) continue;
                 const normalized = normalizeAutoscaleInfo(provider.call(attachment.primitive, range));
@@ -2411,6 +2517,7 @@ class ChartImpl implements IChartApi {
             ctx.font = `11px ${lay.fontFamily ?? DEF_FONT}`;
             let maxPriceW = 0;
             for (const s of this.series) {
+                if (!s.visible) continue;
                 if (s.priceScaleId() !== 'right') continue;
                 for (const pl of s.priceLines) {
                     const o = pl.raw();
@@ -2456,6 +2563,7 @@ class ChartImpl implements IChartApi {
             this.drawGrid(primary);
             this.drawPrimitivePaneViews(paneApi, primitiveTarget, PrimitiveZOrder.Bottom);
             for (const s of pane.series) {
+                if (!s.visible) continue;
                 // Draw each series against bounds of ITS OWN scale. Overlay
                 // scales remain independent inside their owning pane.
                 const sid = s.priceScaleId();
@@ -2502,7 +2610,8 @@ class ChartImpl implements IChartApi {
         layer: PrimitiveZOrderValue,
     ): void {
         for (const attachment of this.primitiveHost.attachments()) {
-            if (attachment.options.pane !== pane) continue;
+            if (!this.primitiveAttachmentVisible(attachment.options)
+                || attachment.options.pane !== pane) continue;
             const views: readonly PrimitivePaneView[] = attachment.primitive.paneViews?.() ?? [];
             for (const view of views) {
                 const viewLayer = view.zOrder();
@@ -2528,7 +2637,8 @@ class ChartImpl implements IChartApi {
 
     private drawPrimitivePriceAxisViews(pane: PaneApi): void {
         for (const attachment of this.primitiveHost.attachments()) {
-            if (attachment.options.pane !== pane) continue;
+            if (!this.primitiveAttachmentVisible(attachment.options)
+                || attachment.options.pane !== pane) continue;
             const views: readonly PrimitiveAxisView[] = attachment.primitive.priceAxisViews?.() ?? [];
             for (const view of views) {
                 if (view.visible?.() === false) continue;
@@ -2577,6 +2687,7 @@ class ChartImpl implements IChartApi {
         if (this.opts.timeScale?.visible === false) return;
         const ctx = this.ctx;
         for (const attachment of this.primitiveHost.attachments()) {
+            if (!this.primitiveAttachmentVisible(attachment.options)) continue;
             const views: readonly PrimitiveAxisView[] = attachment.primitive.timeAxisViews?.() ?? [];
             for (const view of views) {
                 if (view.visible?.() === false) continue;
@@ -3223,6 +3334,7 @@ class ChartImpl implements IChartApi {
         let closest: SeriesHoveredObject | null = null;
         let closestDistance = 8;
         for (const series of pane.series) {
+            if (!series.visible) continue;
             const data = seriesData.get(series) as AnyPoint | undefined;
             if (data === undefined) continue;
             const price = this.seriesPriceValue(series, data);
@@ -3262,6 +3374,7 @@ class ChartImpl implements IChartApi {
         const seriesData = new Map<ISeriesApi<any, any>, TimedSeriesData>();
         if (time !== null) {
             for (const series of this.series) {
+                if (!series.visible) continue;
                 const point = series.renderData().store.pointAtTime(time);
                 if (point !== null) seriesData.set(series, point);
             }
@@ -3312,6 +3425,7 @@ class ChartImpl implements IChartApi {
         const attachments = this.primitiveHost.attachments();
         for (let index = 0; index < attachments.length; index++) {
             const attachment = attachments[index];
+            if (!this.primitiveAttachmentVisible(attachment.options)) continue;
             const test = attachment.primitive.hitTest;
             const pane = attachment.options.pane;
             if (test === undefined || pane === undefined) continue;
@@ -3608,7 +3722,40 @@ class ChartImpl implements IChartApi {
                 y: this.mouseY ?? this.downY,
             };
             if (this.splitterDrag !== null) {
+                const drag = this.splitterDrag;
                 this.splitterDrag = null;
+                const before = this.model.paneById(drag.splitter.beforePaneId);
+                const after = this.model.paneById(drag.splitter.afterPaneId);
+                if (before !== undefined && after !== undefined) {
+                    const beforePaneId = before.id;
+                    const afterPaneId = after.id;
+                    const finalBeforeHeight = before.height;
+                    const finalAfterHeight = after.height;
+                    this.applyPanePairHeights(
+                        beforePaneId,
+                        drag.beforeHeight,
+                        afterPaneId,
+                        drag.afterHeight,
+                    );
+                    if (!cancelled && (Math.abs(finalBeforeHeight - drag.beforeHeight) > 1e-9
+                        || Math.abs(finalAfterHeight - drag.afterHeight) > 1e-9)) {
+                        this.commands.execute({
+                            label: 'Resize panes',
+                            execute: () => this.applyPanePairHeights(
+                                beforePaneId,
+                                finalBeforeHeight,
+                                afterPaneId,
+                                finalAfterHeight,
+                            ),
+                            undo: () => this.applyPanePairHeights(
+                                beforePaneId,
+                                drag.beforeHeight,
+                                afterPaneId,
+                                drag.afterHeight,
+                            ),
+                        });
+                    }
+                }
                 this.gesturePane = null;
                 if (cancelled) this.interactionController.cancel();
                 else this.interactionController.pointerUp(point);

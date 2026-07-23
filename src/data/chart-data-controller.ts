@@ -217,6 +217,11 @@ export class ChartDataController<
 
     snapshot(): ChartDataControllerSnapshot { return this.state; }
     rawData(): readonly TBar[] { return this.dataStore.raw(); }
+    /** Immutable half-open raw-data window without copying the complete history. */
+    rawDataSlice(fromIndex = 0, toIndex = this.dataStore.length): readonly TBar[] {
+        this.assertAlive();
+        return this.dataStore.rawSlice(fromIndex, toIndex);
+    }
     renderedData(): readonly TBar[] {
         return Object.freeze(this.renderedStore.snapshot());
     }

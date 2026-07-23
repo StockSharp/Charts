@@ -60,6 +60,9 @@ export class IndicatorRenderer {
                 seriesIndex: number;
                 field?: string;
                 colorOption?: string;
+                lineWidthOption?: string;
+                lineStyleOption?: string;
+                visibilityOption?: string;
             };
             const sourceSeries = series[typed.seriesIndex];
             if (sourceSeries !== undefined) {
@@ -67,6 +70,9 @@ export class IndicatorRenderer {
                     series: sourceSeries,
                     field: typed.field || 'value',
                     colorOption: typed.colorOption,
+                    lineWidthOption: typed.lineWidthOption,
+                    lineStyleOption: typed.lineStyleOption,
+                    visibilityOption: typed.visibilityOption,
                 };
             }
         }
@@ -84,6 +90,31 @@ export class IndicatorRenderer {
         painter.update(context, entry.seriesRefs);
         entry._painter = painter;
         entry._painterContext = context;
+    }
+
+    moveSeries(entry: any, paneChart: any = null): void {
+        const targetChart = paneChart || this._mainChart;
+        if (!targetChart) throw new Error('sschart: indicator target chart is unavailable');
+        if (paneChart) {
+            if (typeof paneChart.adoptSeries !== 'function')
+                throw new Error('sschart: indicator pane adapter cannot adopt series');
+            for (const series of entry.seriesRefs || []) paneChart.adoptSeries(series);
+        } else {
+            if (typeof this._mainChart?.moveSeries !== 'function'
+                || typeof this._mainChart?.panes !== 'function') {
+                throw new Error('sschart: indicator main chart cannot move series');
+            }
+            const panes = this._mainChart.panes();
+            const main = panes.find((pane: any) => pane.id() === 'main') || panes[0];
+            if (!main) throw new Error('sschart: indicator main pane is unavailable');
+            for (const series of entry.seriesRefs || []) this._mainChart.moveSeries(series, main);
+        }
+        if (entry._painterContext) {
+            entry._painterContext = {
+                ...entry._painterContext,
+                chart: targetChart,
+            };
+        }
     }
 
     prepareRuntime(

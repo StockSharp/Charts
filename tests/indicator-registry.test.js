@@ -10,7 +10,10 @@ const {
     IndicatorParameterType,
     IndicatorRegistry,
     IndicatorSeriesStyle,
+    IndicatorTaxonomy,
+    indicatorCategoryLabel,
 } = require('../src/indicators/index.js');
+const rawCatalog = require('../src/chart/indicators/catalog.json');
 
 function processor() {
     return {
@@ -62,6 +65,15 @@ function definition(overrides = {}) {
 }
 
 describe('IndicatorRegistry', () => {
+    it('classifies the complete trading catalog without an Other bucket', () => {
+        assert.equal(rawCatalog.length, 162);
+        assert.equal(rawCatalog.some(entry => entry.group === 'Other'), false);
+        assert.equal(new Set(IndicatorTaxonomy.map(entry => entry.category)).size,
+            IndicatorTaxonomy.length);
+        for (const entry of IndicatorTaxonomy)
+            assert.equal(indicatorCategoryLabel(entry.category), entry.label);
+    });
+
     it('owns immutable typed definitions and resolves ids case-insensitively', () => {
         const registry = new IndicatorRegistry();
         const source = definition();

@@ -41,6 +41,13 @@ type Options = Record<string, unknown> & {
     bottomColor?: string;
     upperColor?: string;
     lowerColor?: string;
+    upperLineWidth?: number;
+    lowerLineWidth?: number;
+    upperLineStyle?: number;
+    lowerLineStyle?: number;
+    upperLineVisible?: boolean;
+    lowerLineVisible?: boolean;
+    fillVisible?: boolean;
     fillColor?: string;
     positiveFillColor?: string;
     negativeFillColor?: string;
@@ -291,23 +298,28 @@ function drawBand(c: Context): void {
     const { target: ctx, options: o } = c;
     const points = c.data.filter((point) => Number.isFinite(point.upper) && Number.isFinite(point.lower));
     if (points.length === 0) return;
-    for (let index = 0; index < points.length - 1; index++) {
-        const point = points[index];
-        const next = points[index + 1];
-        const positive = point.upper! + next.upper! >= point.lower! + next.lower!;
-        ctx.beginPath();
-        ctx.moveTo(c.timeToCoordinate(point.time), c.priceToCoordinate(point.upper!));
-        ctx.lineTo(c.timeToCoordinate(next.time), c.priceToCoordinate(next.upper!));
-        ctx.lineTo(c.timeToCoordinate(next.time), c.priceToCoordinate(next.lower!));
-        ctx.lineTo(c.timeToCoordinate(point.time), c.priceToCoordinate(point.lower!));
-        ctx.closePath();
-        ctx.fillStyle = positive
-            ? (o.positiveFillColor ?? o.fillColor ?? 'rgba(50,205,50,0.16)')
-            : (o.negativeFillColor ?? o.fillColor ?? 'rgba(255,61,87,0.16)');
-        ctx.fill();
+    if (o.fillVisible !== false) {
+        for (let index = 0; index < points.length - 1; index++) {
+            const point = points[index];
+            const next = points[index + 1];
+            const positive = point.upper! + next.upper! >= point.lower! + next.lower!;
+            ctx.beginPath();
+            ctx.moveTo(c.timeToCoordinate(point.time), c.priceToCoordinate(point.upper!));
+            ctx.lineTo(c.timeToCoordinate(next.time), c.priceToCoordinate(next.upper!));
+            ctx.lineTo(c.timeToCoordinate(next.time), c.priceToCoordinate(next.lower!));
+            ctx.lineTo(c.timeToCoordinate(point.time), c.priceToCoordinate(point.lower!));
+            ctx.closePath();
+            ctx.fillStyle = positive
+                ? (o.positiveFillColor ?? o.fillColor ?? 'rgba(50,205,50,0.16)')
+                : (o.negativeFillColor ?? o.fillColor ?? 'rgba(255,61,87,0.16)');
+            ctx.fill();
+        }
     }
-    const width = finite(o.lineWidth, 1);
     const drawBoundary = (key: 'upper' | 'lower', color: string) => {
+        const prefix = key === 'upper' ? 'upper' : 'lower';
+        if (o[`${prefix}LineVisible`] === false) return;
+        const width = finite(o[`${prefix}LineWidth`], finite(o.lineWidth, 1));
+        const style = finite(o[`${prefix}LineStyle`], finite(o.lineStyle, 0));
         ctx.beginPath();
         points.forEach((point, index) => {
             const x = c.timeToCoordinate(point.time);
@@ -316,7 +328,7 @@ function drawBand(c: Context): void {
         });
         ctx.strokeStyle = color;
         ctx.lineWidth = width;
-        ctx.setLineDash(dash(finite(o.lineStyle, 0), width));
+        ctx.setLineDash(dash(style, width));
         ctx.stroke();
         ctx.setLineDash([]);
     };

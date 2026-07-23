@@ -84,6 +84,7 @@ test('resizes panes through a splitter without creating chart resources', async 
         return {
             main: fixture.chart.panes()[0].getSize(),
             indicator: (window as any).__nativePane.pane.getSize(),
+            undoCount: fixture.chart.commandStack().snapshot().undoCount,
         };
     });
     const canvas = page.locator('#chart canvas[data-sschart-layer="overlay"]');
@@ -102,14 +103,39 @@ test('resizes panes through a splitter without creating chart resources', async 
         return {
             main: fixture.chart.panes()[0].getSize(),
             indicator: (window as any).__nativePane.pane.getSize(),
+            undoCount: fixture.chart.commandStack().snapshot().undoCount,
             canvasCount: document.querySelectorAll('#chart canvas[data-sschart-layer]').length,
             chartRootCount: document.querySelectorAll('#chart > .sschart-root').length,
         };
     });
     expect(after.main.height).toBeGreaterThan(before.main.height);
     expect(after.indicator.height).toBeLessThan(before.indicator.height);
+    expect(after.undoCount).toBe(before.undoCount + 1);
     expect(after.canvasCount).toBe(2);
     expect(after.chartRootCount).toBe(1);
+
+    const history = await page.evaluate(async () => {
+        const fixture = (window as any).__fixture;
+        fixture.chart.commandStack().undo();
+        await fixture.settle();
+        const undone = {
+            main: fixture.chart.panes()[0].getSize(),
+            indicator: (window as any).__nativePane.pane.getSize(),
+        };
+        fixture.chart.commandStack().redo();
+        await fixture.settle();
+        return {
+            undone,
+            redone: {
+                main: fixture.chart.panes()[0].getSize(),
+                indicator: (window as any).__nativePane.pane.getSize(),
+            },
+        };
+    });
+    expect(history.undone.main.height).toBeCloseTo(before.main.height, 5);
+    expect(history.undone.indicator.height).toBeCloseTo(before.indicator.height, 5);
+    expect(history.redone.main.height).toBeCloseTo(after.main.height, 5);
+    expect(history.redone.indicator.height).toBeCloseTo(after.indicator.height, 5);
 });
 
 test('maximizes and restores a pane without changing its identity', async ({ page }) => {
@@ -131,4 +157,134 @@ test('maximizes and restores a pane without changing its identity', async ({ pag
     expect(state.samePane).toBe(true);
     expect(state.maximized.main.height).toBe(0);
     expect(state.maximized.pane.height).toBeGreaterThan(state.restored.height);
+});
+
+test('moves a series and its primitive route without recreating either object', async ({ page }) => {
+    const state = await page.evaluate(async () => {
+        const fixture = (window as any).__fixture;
+        const native = (window as any).__nativePane;
+        const main = fixture.chart.panes().find((pane: any) => pane.id() === 'main');
+        let attached = 0;
+        let detached = 0;
+        let context: any = null;
+        const primitive = {
+            attached(value: any) { attached++; context = value; },
+            detached() { detached++; },
+            updateAllViews() {},
+        };
+        fixture.chart.attachPrimitive(primitive, { series: native.line });
+        const data = native.line.data();
+        fixture.chart.moveSeries(native.line, main);
+        await fixture.settle();
+        const movedToMain = {
+            mainOwns: main.series().includes(native.line),
+            studyOwns: native.pane.series().includes(native.line),
+            contextPane: context.pane.id(),
+            sameData: JSON.stringify(native.line.data()) === JSON.stringify(data),
+            attached,
+            detached,
+        };
+        fixture.chart.moveSeries(native.line, native.pane);
+        await fixture.settle();
+        const movedBack = {
+            mainOwns: main.series().includes(native.line),
+            studyOwns: native.pane.series().includes(native.line),
+            contextPane: context.pane.id(),
+            attached,
+            detached,
+        };
+        fixture.chart.detachPrimitive(primitive);
+        return { movedToMain, movedBack };
+    });
+
+    expect(state.movedToMain).toEqual({
+        mainOwns: true,
+        studyOwns: false,
+        contextPane: 'main',
+        sameData: true,
+        attached: 1,
+        detached: 0,
+    });
+    expect(state.movedBack).toEqual({
+        mainOwns: false,
+        studyOwns: true,
+        contextPane: 'oscillator',
+        attached: 1,
+        detached: 0,
+    });
+});
+
+test('hides a series from rendering and crosshair without detaching its resources', async ({ page }) => {
+    const state = await page.evaluate(async () => {
+        const fixture = (window as any).__fixture;
+        const native = (window as any).__nativePane;
+        let attached = 0;
+        let detached = 0;
+        let draws = 0;
+        const primitive = {
+            attached() { attached++; },
+            detached() { detached++; },
+            updateAllViews() {},
+            paneViews: () => [{
+                zOrder: () => (window as any).SSChart.PrimitiveZOrder.Normal,
+                renderer: () => ({ draw() { draws++; } }),
+            }],
+        };
+        fixture.chart.attachPrimitive(primitive, { series: native.line });
+        await fixture.settle();
+        const visibleDraws = draws;
+        const point = native.line.data()[70];
+
+        native.line.applyOptions({ visible: false });
+        await fixture.settle();
+        fixture.chart.setCrosshairPosition({
+            time: point.time,
+            price: fixture.bars[70].close,
+            series: fixture.candles,
+        });
+        await fixture.settle();
+        const hiddenEvent = fixture.crosshairEvents.at(-1);
+        const hidden = {
+            owned: native.pane.series().includes(native.line),
+            option: native.line.options().visible,
+            inCrosshair: hiddenEvent.seriesData.has(native.line),
+            draws,
+            attached,
+            detached,
+        };
+
+        native.line.applyOptions({ visible: true });
+        await fixture.settle();
+        fixture.chart.setCrosshairPosition({
+            time: point.time,
+            price: point.value,
+            series: native.line,
+        });
+        await fixture.settle();
+        const shownEvent = fixture.crosshairEvents.at(-1);
+        const shown = {
+            sameSeries: native.pane.series().includes(native.line),
+            inCrosshair: shownEvent.seriesData.has(native.line),
+            draws,
+            attached,
+            detached,
+        };
+        fixture.chart.detachPrimitive(primitive);
+        return { visibleDraws, hidden, shown };
+    });
+
+    expect(state.visibleDraws).toBeGreaterThan(0);
+    expect(state.hidden).toEqual({
+        owned: true,
+        option: false,
+        inCrosshair: false,
+        draws: state.visibleDraws,
+        attached: 1,
+        detached: 0,
+    });
+    expect(state.shown.sameSeries).toBe(true);
+    expect(state.shown.inCrosshair).toBe(true);
+    expect(state.shown.draws).toBeGreaterThan(state.visibleDraws);
+    expect(state.shown.attached).toBe(1);
+    expect(state.shown.detached).toBe(0);
 });

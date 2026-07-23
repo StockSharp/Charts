@@ -6,6 +6,8 @@ import {
     IndicatorParameterType,
     IndicatorRegistry,
     IndicatorSeriesStyle,
+    IndicatorTaxonomy,
+    indicatorCategoryLabel,
     resolveIndicatorOutputs,
     type IIndicatorProcessor,
     type IndicatorCandle,
@@ -58,6 +60,8 @@ const resolvedOutputs: readonly IndicatorOutputDefinition[] = resolveIndicatorOu
 );
 void created;
 void resolvedOutputs;
+const categoryLabel: string = indicatorCategoryLabel(IndicatorTaxonomy[0].category);
+void categoryLabel;
 
 // @ts-expect-error a processor factory is mandatory; batch-only definitions do not enter this registry
 const batchOnly: IndicatorDefinition = {

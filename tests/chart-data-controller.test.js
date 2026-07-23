@@ -440,6 +440,10 @@ describe('ChartDataController', () => {
             [80, 80], [90, 91], [100, 101], [110, 110],
         ]);
         assert.equal(value.snapshot().loadedBars, 4);
+        assert.deepEqual(value.rawDataSlice(1, 3), [bar(90, 91), bar(100, 101)]);
+        assert.equal(Object.isFrozen(value.rawDataSlice(0, 1)), true);
+        assert.throws(() => value.rawDataSlice(-1, 1), /fromIndex/);
+        assert.throws(() => value.rawDataSlice(3, 2), /toIndex must not precede/);
         assert.equal(value.snapshot().hasMoreBefore, false);
         assert.equal(value.snapshot().loadingHistory, false);
         assert.equal(value.snapshot().historyError, null);

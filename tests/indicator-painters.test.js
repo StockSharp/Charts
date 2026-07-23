@@ -11,7 +11,10 @@ global.SSChart = {
 const { IndicatorRenderer } = require('../src/chart/indicators/indicator-renderer.js');
 const { IndicatorEngine } = require('../src/chart/indicators/indicator-engine.js');
 const { getClientCatalog } = require('../src/chart/indicators/calc/index.js');
-const { getIndicatorDefinitions } = require('../src/indicators/index.js');
+const {
+    IndicatorTaxonomy,
+    getIndicatorDefinitions,
+} = require('../src/indicators/index.js');
 const {
     hasIndicatorPainter,
     registerIndicatorPainter,
@@ -866,7 +869,7 @@ describe('indicator painters', () => {
         assert.equal(series.popCalls, 1);
         assert.equal(series.data.length, originalLength - 1);
 
-        const restored = entry.runtime.update(engine._runtimeInput(candles.at(-1)), false);
+        const restored = entry.runtime.update(engine._runtimeInput(entry, candles.at(-1)), false);
         assert.equal(engine._applyRuntimePatch(entry, restored), true);
         assert.equal(series.updateCalls, 1);
         assert.equal(series.data.length, originalLength);
@@ -1094,7 +1097,7 @@ describe('indicator painters', () => {
         assert.deepEqual(pgo.levels, [0]);
         const pivotPoints = catalog.find(entry => entry.id === 'PivotPoints');
         assert.equal(pivotPoints.painter, undefined);
-        assert.equal(pivotPoints.group, 'Price');
+        assert.equal(pivotPoints.group, 'Support & Resistance');
         assert.deepEqual(pivotPoints.outputs, ['pp', 'r1', 'r2', 's1', 's2']);
         const passThrough = catalog.find(entry => entry.id === 'PassThroughIndicator');
         assert.equal(passThrough.painter, undefined);
@@ -1193,7 +1196,7 @@ describe('indicator painters', () => {
         assert.deepEqual(psychologicalLine.levels, [0.25, 0.75]);
         const priceChannels = catalog.find(entry => entry.id === 'PriceChannels');
         assert.equal(priceChannels.painter, 'band');
-        assert.equal(priceChannels.group, 'Price');
+        assert.equal(priceChannels.group, 'Support & Resistance');
         assert.deepEqual(priceChannels.outputs, ['upper', 'lower']);
         const priceVolumeTrend = catalog.find(entry => entry.id === 'PriceVolumeTrend');
         assert.equal(priceVolumeTrend.painter, undefined);
@@ -1208,7 +1211,7 @@ describe('indicator painters', () => {
         assert.deepEqual(qStick.levels, [0]);
         const trough = catalog.find(entry => entry.id === 'Trough');
         assert.equal(trough.painter, undefined);
-        assert.equal(trough.group, 'Price');
+        assert.equal(trough.group, 'Support & Resistance');
         assert.equal(trough.pane, 'overlay');
         assert.deepEqual(trough.outputs, ['value']);
         const twap = catalog.find(entry => entry.id === 'TimeWeightedAveragePrice');
@@ -1322,7 +1325,7 @@ describe('indicator painters', () => {
         assert.deepEqual(zlema.outputs, ['line']);
         const donchian = catalog.find(entry => entry.id === 'DonchianChannels');
         assert.equal(donchian.painter, 'band');
-        assert.equal(donchian.group, 'Price');
+        assert.equal(donchian.group, 'Support & Resistance');
         assert.equal(donchian.pane, 'overlay');
         assert.deepEqual(donchian.outputs, ['upper', 'middle', 'lower']);
         const deMarker = catalog.find(entry => entry.id === 'DeMarker');
@@ -1362,7 +1365,7 @@ describe('indicator painters', () => {
         assert.deepEqual(balanceVolume.outputs, ['line']);
         const peak = catalog.find(entry => entry.id === 'Peak');
         assert.equal(peak.painter, undefined);
-        assert.equal(peak.group, 'Price');
+        assert.equal(peak.group, 'Support & Resistance');
         assert.equal(peak.pane, 'overlay');
         assert.deepEqual(peak.outputs, ['value']);
         const rateOfChange = catalog.find(entry => entry.id === 'RateOfChange');
@@ -1393,7 +1396,7 @@ describe('indicator painters', () => {
             volume: 'Volume',
             price: 'Price',
             'market-strength': 'Market Strength',
-            'support-resistance': 'Price',
+            'support-resistance': 'Support & Resistance',
             cycle: 'Cycle',
             statistical: 'Statistical',
         };
@@ -1412,6 +1415,11 @@ describe('indicator painters', () => {
 
         assert.equal(catalog.length, getIndicatorDefinitions().length);
         assert.equal(catalog.some(entry => entry.id === 'VolumeProfileIndicator'), false);
+        assert.equal(catalog.some(entry => entry.group === 'Other'), false);
+        assert.deepEqual(
+            [...new Set(catalog.map(entry => entry.group))].sort(),
+            IndicatorTaxonomy.map(entry => entry.label).sort(),
+        );
     });
 
     it('uses catalog-selected built-ins for bands and volume', () => {

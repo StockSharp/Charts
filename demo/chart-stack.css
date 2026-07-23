@@ -3262,11 +3262,13 @@ button.user-profile-badge { font-family: inherit; }
 }
 .indicator-modal .indicator-category-tabs {
     display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
     border-bottom: 1px solid var(--t-border);
     background: var(--t-header);
 }
 .indicator-modal .indicator-category-tab {
-    flex: 1;
+    flex: 0 0 auto;
     padding: 5px 4px;
     font-size: 10px;
     font-weight: 600;
@@ -3293,19 +3295,52 @@ button.user-profile-badge { font-family: inherit; }
 .indicator-modal .indicator-list-item {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 8px 12px;
-    cursor: pointer;
     transition: background var(--t-transition);
     border-bottom: 1px solid rgba(43,49,57,0.3);
+    background: transparent;
+    width: 100%;
 }
 .indicator-modal .indicator-list-item:hover {
     background: var(--t-hover);
+}
+.indicator-modal .indicator-list-select {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 12px 8px 4px;
+    cursor: pointer;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+}
+.indicator-modal .indicator-list-select:focus-visible,
+.indicator-modal .indicator-favorite-toggle:focus-visible {
+    outline: 1px solid var(--t-accent);
+    outline-offset: -2px;
+}
+.indicator-modal .indicator-favorite-toggle {
+    align-self: stretch;
+    flex: 0 0 32px;
+    border: 0;
+    background: transparent;
+    color: var(--t-text-dim);
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+}
+.indicator-modal .indicator-favorite-toggle:hover,
+.indicator-modal .indicator-favorite-toggle.is-favorite {
+    color: #f5b942;
 }
 .indicator-modal .indicator-list-info {
     display: flex;
     flex-direction: column;
     gap: 1px;
+    min-width: 0;
 }
 .indicator-modal .indicator-list-name {
     font-weight: 600;
@@ -3315,13 +3350,23 @@ button.user-profile-badge { font-family: inherit; }
 .indicator-modal .indicator-list-fullname {
     font-size: 10px;
     color: var(--t-text-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .indicator-modal .indicator-list-group {
+    flex: 0 0 auto;
     font-size: 9px;
     background: var(--t-surface);
     padding: 1px 6px;
     border-radius: 2px;
     color: var(--t-text-dim);
+}
+.indicator-modal .indicator-list-empty {
+    padding: 24px 12px;
+    color: var(--t-text-dim);
+    font-size: 11px;
+    text-align: center;
 }
 
 .indicator-modal .indicator-detail {
@@ -3332,6 +3377,8 @@ button.user-profile-badge { font-family: inherit; }
 .indicator-modal .indicator-settings {
     padding: 16px;
     flex: 1;
+    min-height: 0;
+    overflow-y: auto;
 }
 .indicator-modal .indicator-settings-title {
     font-size: 14px;
@@ -3439,6 +3486,255 @@ button.user-profile-badge { font-family: inherit; }
     color: var(--t-text-dim);
     font-size: 11px;
     font-style: italic;
+}
+
+/* Complete indicator editor. It stays a form over semantic controller
+   snapshots; no painter-owned series or pane-manager internals leak into DOM. */
+.indicator-modal .modal-dialog {
+    max-width: 1120px;
+}
+.indicator-modal .indicator-editor-empty {
+    color: var(--t-text-dim);
+    font-size: 11px;
+    padding: 18px 0;
+    text-align: center;
+}
+.indicator-modal .indicator-settings-title {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+}
+.indicator-modal .indicator-editor-id,
+.indicator-modal .indicator-effective-scale {
+    color: var(--t-text-dim);
+    font-family: var(--t-mono);
+    font-size: 9px;
+    font-weight: 400;
+}
+.indicator-modal .indicator-editor-section {
+    border-top: 1px solid var(--t-border);
+    padding: 12px 0;
+}
+.indicator-modal .indicator-section-title {
+    color: var(--t-text-bright);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+}
+.indicator-modal .indicator-param-row-wide .indicator-editor-select {
+    max-width: none;
+}
+.indicator-modal .indicator-editor-select,
+.indicator-modal .indicator-output-row input[type="number"],
+.indicator-modal .indicator-output-row input[type="text"],
+.indicator-modal .indicator-output-row select {
+    background: var(--t-bg);
+    border: 1px solid var(--t-border);
+    border-radius: 3px;
+    color: var(--t-text-bright);
+    font-family: var(--t-mono);
+    font-size: 10px;
+    min-height: 26px;
+    outline: none;
+    padding: 3px 6px;
+}
+.indicator-modal .indicator-editor-select {
+    flex: 1;
+    max-width: 280px;
+}
+.indicator-modal .indicator-editor-select:focus,
+.indicator-modal .indicator-output-row input:focus,
+.indicator-modal .indicator-output-row select:focus {
+    border-color: var(--t-accent);
+}
+.indicator-modal .indicator-template-existing,
+.indicator-modal .indicator-template-create {
+    align-items: center;
+    display: flex;
+    gap: 6px;
+}
+.indicator-modal .indicator-template-create {
+    margin-top: 7px;
+}
+.indicator-modal .indicator-template-select {
+    max-width: none;
+    min-width: 0;
+}
+.indicator-modal .indicator-template-name {
+    background: var(--t-bg);
+    border: 1px solid var(--t-border);
+    border-radius: 3px;
+    color: var(--t-text-bright);
+    flex: 1;
+    font-family: var(--t-mono);
+    font-size: 10px;
+    min-height: 28px;
+    min-width: 0;
+    outline: none;
+    padding: 4px 7px;
+}
+.indicator-modal .indicator-template-name:focus {
+    border-color: var(--t-accent);
+}
+.indicator-modal .indicator-template-existing .btn,
+.indicator-modal .indicator-template-create .btn {
+    border: 1px solid var(--t-border);
+    color: var(--t-text);
+    font-size: 10px;
+    min-height: 28px;
+    white-space: nowrap;
+}
+.indicator-modal .indicator-template-existing .btn:disabled {
+    cursor: default;
+    opacity: .4;
+}
+.indicator-modal .indicator-template-note {
+    color: var(--t-text-dim);
+    font-size: 9px;
+    line-height: 1.4;
+    margin-top: 7px;
+}
+.indicator-modal .indicator-source-warning,
+.indicator-modal .indicator-editor-error {
+    background: rgba(246, 70, 93, .09);
+    border: 1px solid rgba(246, 70, 93, .35);
+    border-radius: 3px;
+    color: var(--t-red);
+    font-size: 10px;
+    margin: 6px 0;
+    padding: 6px 8px;
+}
+.indicator-modal .indicator-editor-error[hidden] {
+    display: none;
+}
+.indicator-modal .indicator-toggle-row {
+    align-items: center;
+    color: var(--t-text);
+    cursor: pointer;
+    display: flex;
+    font-size: 11px;
+    gap: 7px;
+    min-height: 26px;
+}
+.indicator-modal .indicator-toggle-row input,
+.indicator-modal .indicator-output-visible {
+    accent-color: var(--t-accent);
+}
+.indicator-modal .indicator-output-header,
+.indicator-modal .indicator-output-row {
+    align-items: center;
+    display: grid;
+    gap: 7px;
+    grid-template-columns: minmax(100px, 1fr) minmax(145px, 1.25fr) 66px 105px 72px;
+}
+.indicator-modal .indicator-output-header {
+    color: var(--t-text-dim);
+    font-size: 9px;
+    padding: 0 4px 5px;
+    text-transform: uppercase;
+}
+.indicator-modal .indicator-output-row {
+    border-top: 1px solid rgba(43,49,57,.45);
+    min-height: 36px;
+    padding: 5px 4px;
+}
+.indicator-modal .indicator-output-name {
+    align-items: center;
+    color: var(--t-text-bright);
+    display: flex;
+    font-size: 10px;
+    gap: 6px;
+    min-width: 0;
+}
+.indicator-modal .indicator-output-name span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.indicator-modal .indicator-color-editor {
+    align-items: center;
+    display: grid;
+    gap: 4px;
+    grid-template-columns: 26px 1fr;
+    min-width: 0;
+}
+.indicator-modal .indicator-output-color-picker {
+    background: transparent;
+    border: 0;
+    height: 24px;
+    padding: 0;
+    width: 26px;
+}
+.indicator-modal .indicator-output-color {
+    min-width: 0;
+    width: 100%;
+}
+.indicator-modal .indicator-output-width,
+.indicator-modal .indicator-output-line-style,
+.indicator-modal .indicator-output-precision {
+    min-width: 0;
+    width: 100%;
+}
+.indicator-modal .indicator-editor-actions {
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 8px;
+}
+.indicator-modal .indicator-save-btn,
+.indicator-modal .indicator-add-btn {
+    background: var(--t-accent);
+    border: 1px solid var(--t-accent);
+    border-radius: 3px;
+    color: var(--t-accent-text);
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 6px 14px;
+}
+.indicator-modal .active-indicator-visible,
+.indicator-modal .active-indicator-name {
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+}
+.indicator-modal .active-indicator-visible {
+    color: var(--t-text-dim);
+    font-size: 12px;
+    padding: 2px 5px 2px 0;
+}
+.indicator-modal .active-indicator-visible.is-visible {
+    color: var(--t-accent);
+}
+.indicator-modal .active-indicator-name {
+    align-items: flex-start;
+    color: var(--t-text);
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    font-size: 10px;
+    min-width: 0;
+    padding: 2px 4px;
+    text-align: left;
+}
+.indicator-modal .active-indicator-name span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.indicator-modal .active-indicator-name small {
+    color: var(--t-text-dim);
+    font-size: 8px;
+}
+
+@media (max-width: 860px) {
+    .indicator-modal .indicator-output-header { display: none; }
+    .indicator-modal .indicator-output-row {
+        grid-template-columns: minmax(105px, 1fr) minmax(135px, 1.2fr);
+    }
 }
 
 /* ========== AUTH GATE MODAL ========== */

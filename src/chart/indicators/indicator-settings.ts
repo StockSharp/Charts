@@ -1,5 +1,6 @@
 // Indicator Settings — config for each indicator (params, pane type, colors, group)
 import { getClientCatalog } from './calc/index.js';
+import { IndicatorTaxonomy } from '../../indicators/index.js';
 
 export const IndicatorSettings = (function () {
 
@@ -40,9 +41,9 @@ export const IndicatorSettings = (function () {
     const INDICATORS: Record<string, any> = {};
     for (const e of getClientCatalog()) INDICATORS[e.id] = e;
 
-    // Groups for the dialog tabs, in a stable order, plus any extra group the catalog introduces
-    // (e.g. 'Other' for auto-derived entries) appended after the curated ones.
-    const GROUPS = ['Trend', 'Momentum', 'Volatility', 'Volume'];
+    // One stable trading taxonomy drives both catalog metadata and picker tabs.
+    const GROUPS = IndicatorTaxonomy.map(item => item.label)
+        .filter(group => Object.values(INDICATORS).some(indicator => indicator.group === group));
     for (const id of Object.keys(INDICATORS)) {
         const g = INDICATORS[id].group;
         if (g && !GROUPS.includes(g)) GROUPS.push(g);
@@ -102,6 +103,12 @@ export const IndicatorSettings = (function () {
                     name: entry.name || existing.name || (entry.alias || entry.kind),
                     fullName: entry.description || existing.fullName || entry.name,
                     group: existing.group || inferGroup(entry.pane),
+                    category: existing.category || entry.category || inferGroup(entry.pane),
+                    aliases: [...new Set([
+                        ...(existing.aliases || []),
+                        entry.alias,
+                        entry.kind,
+                    ].filter(value => typeof value === 'string' && value.length > 0))],
                     pane: existing.pane || derivedPane,
                     measure,
                     params: existing.params || paramsFromCatalog(entry.parameters),

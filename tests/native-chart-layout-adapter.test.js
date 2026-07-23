@@ -176,4 +176,17 @@ describe('NativeChartLayoutAdapter', () => {
         assert.deepEqual(calls, [['price', 'main']]);
         assert.deepEqual(chart.panes()[0].series().map(item => item.id()), ['price']);
     });
+
+    it('restores a layout whose root pane was reordered away from index zero', async () => {
+        const { chart, main, study } = setupChart();
+        main.applyOptions({ order: 1 });
+        study.applyOptions({ order: 0 });
+        const adapter = new NativeChartLayoutAdapter({ chart });
+        const captured = adapter.capture();
+
+        await adapter.restore(captured);
+
+        assert.deepEqual(chart.panes().map(item => item.id()), ['study', 'main']);
+        assert.equal(chart.panes().find(item => item.id() === 'main'), main);
+    });
 });

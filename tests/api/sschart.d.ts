@@ -8,6 +8,7 @@ export * from './time/index.js';
 export * from './indicators/index.js';
 export * from './drawings/index.js';
 export * from './persistence/index.js';
+export * from './workspace/index.js';
 
 // Public API module: core/chart-api.d.ts
 import { type TimeScaleFormatter } from '../time/time-axis-formatter.js';
@@ -174,11 +175,20 @@ export interface SeriesOptions {
     fillColor?: string;
     positiveFillColor?: string;
     negativeFillColor?: string;
+    upperLineWidth?: number;
+    lowerLineWidth?: number;
+    upperLineStyle?: LineStyleValue;
+    lowerLineStyle?: LineStyleValue;
+    upperLineVisible?: boolean;
+    lowerLineVisible?: boolean;
+    fillVisible?: boolean;
     base?: number;
     /** Stable persistence key. Generated once when omitted and immutable afterwards. */
     id?: string;
     /** False for runtime-owned output series (for example indicator painter internals). */
     persist?: boolean;
+    /** False hides rendering, autoscale, crosshair values and series-owned primitives. */
+    visible?: boolean;
     priceScaleId?: string;
     priceLineVisible?: boolean;
     lastValueVisible?: boolean;
@@ -443,6 +453,8 @@ export interface IChartApi {
     panes(): readonly IPaneApi[];
     removePane(pane: IPaneApi): void;
     addSeries<TData extends TimedSeriesData, TOptions extends SeriesOptions = SeriesOptions>(definition: SeriesDefinition<TData, TOptions>, options?: Partial<TOptions>, pane?: IPaneApi): ISeriesApi<TData, TOptions>;
+    /** Moves the existing series instance and its attached primitives to another pane. */
+    moveSeries(series: ISeriesApi, pane: IPaneApi): void;
     removeSeries(series: ISeriesApi): void;
     attachPrimitive(primitive: IChartPrimitive, options?: PrimitiveAttachOptions): void;
     detachPrimitive(primitive: IChartPrimitive): void;
@@ -1096,6 +1108,8 @@ export declare class ChartDataController<TBar extends TimedSeriesData, TSeriesOp
     constructor(options: ChartDataControllerOptions<TBar, TSeriesOptions>);
     snapshot(): ChartDataControllerSnapshot;
     rawData(): readonly TBar[];
+    /** Immutable half-open raw-data window without copying the complete history. */
+    rawDataSlice(fromIndex?: number, toIndex?: number): readonly TBar[];
     renderedData(): readonly TBar[];
     groupingLevel(): number;
     lodCacheSnapshot(): LodCacheSnapshot;
@@ -1164,6 +1178,7 @@ export declare class ChartDataStore<TBar extends TimedSeriesData> {
     updateView(bar: TBar, context: ChartDataViewContext): ChartDataViewUpdate<TBar> | null;
     clear(): void;
     raw(): readonly TBar[];
+    rawSlice(fromIndex?: number, toIndex?: number): readonly TBar[];
     view(context: ChartDataViewContext): readonly TBar[];
     lodCacheSnapshot(): LodCacheSnapshot;
 }
@@ -4631,6 +4646,9 @@ export * from './indicator-definition.js';
 export * from './indicator-registry.js';
 export * from './sequential-processor.js';
 export * from './indicator-runtime.js';
+export * from './indicator-source.js';
+export * from './indicator-output-style.js';
+export * from './indicator-taxonomy.js';
 export * from './math/index.js';
 export * from './built-ins/index.js';
 
@@ -4777,6 +4795,30 @@ export interface IndicatorDefinition<TInput = IndicatorCandle, TParameters exten
 }
 export declare function resolveIndicatorOutputs<TInput, TParameters extends IndicatorParameters>(definition: IndicatorDefinition<TInput, TParameters>, parameters: TParameters): readonly IndicatorOutputDefinition[];
 export declare const CandlestickIndicatorInput: IndicatorInputSchema;
+
+// Public API module: indicators/indicator-output-style.d.ts
+import type { LineStyleValue } from '../core/chart-api.js';
+/** Effective editor-facing appearance of one semantic indicator output. */
+export interface IndicatorOutputAppearance {
+    readonly color?: string;
+    readonly lineWidth?: number;
+    readonly lineStyle?: LineStyleValue;
+    readonly visible: boolean;
+    readonly precision?: number;
+}
+/** Fields accepted by a live output-style edit. Omitted fields stay unchanged. */
+export interface IndicatorOutputStylePatch {
+    readonly color?: string;
+    /** Null clears an explicit width and returns to the renderer default. */
+    readonly lineWidth?: number | null;
+    /** Null clears an explicit dash style and returns to the renderer default. */
+    readonly lineStyle?: LineStyleValue | null;
+    readonly visible?: boolean;
+    /** Null clears an explicit precision and returns to the series formatter. */
+    readonly precision?: number | null;
+}
+/** Validates and freezes an editor supplied partial appearance. */
+export declare function normalizeIndicatorOutputStylePatch(value: unknown): IndicatorOutputStylePatch;
 
 // Public API module: indicators/indicator-registry.d.ts
 import { type IndicatorDefinition, type IndicatorParameters } from './indicator-definition.js';
@@ -4948,6 +4990,73 @@ export declare class IndicatorRuntime<TInput, TParameters extends IndicatorParam
     private diff;
     private patch;
 }
+
+// Public API module: indicators/indicator-source.d.ts
+export declare const IndicatorSourceKind: Readonly<{
+    readonly Candles: 'candles';
+    readonly CandleField: 'candle-field';
+    readonly IndicatorOutput: 'indicator-output';
+}>;
+export type IndicatorSourceKind = typeof IndicatorSourceKind[keyof typeof IndicatorSourceKind];
+export declare const IndicatorCandleField: Readonly<{
+    readonly Open: 'open';
+    readonly High: 'high';
+    readonly Low: 'low';
+    readonly Close: 'close';
+    readonly Median: 'hl2';
+    readonly Typical: 'hlc3';
+    readonly Average: 'ohlc4';
+    readonly Volume: 'volume';
+}>;
+export type IndicatorCandleField = typeof IndicatorCandleField[keyof typeof IndicatorCandleField];
+export interface IndicatorCandlesSource {
+    /** Full OHLCV candle input; scalar definitions receive its close field. */
+    readonly kind: typeof IndicatorSourceKind.Candles;
+}
+export interface IndicatorCandleFieldSource {
+    /** The selected scalar is lifted to O=H=L=C for candlestick-input definitions. */
+    readonly kind: typeof IndicatorSourceKind.CandleField;
+    readonly field: IndicatorCandleField;
+}
+/**
+ * Uses finite samples from one output on their rendered timestamps. Missing
+ * sparse samples are skipped. `indicatorId` is the stable persistence id.
+ */
+export interface IndicatorOutputSource {
+    readonly kind: typeof IndicatorSourceKind.IndicatorOutput;
+    readonly indicatorId: string;
+    readonly outputId: string;
+}
+export type IndicatorSource = IndicatorCandlesSource | IndicatorCandleFieldSource | IndicatorOutputSource;
+export declare const IndicatorSourceStatusReason: Readonly<{
+    readonly Ready: 'ready';
+    readonly MissingIndicator: 'missing-indicator';
+    readonly MissingOutput: 'missing-output';
+    readonly UpstreamUnavailable: 'upstream-unavailable';
+    readonly Error: 'error';
+}>;
+export type IndicatorSourceStatusReason = typeof IndicatorSourceStatusReason[keyof typeof IndicatorSourceStatusReason];
+export interface IndicatorSourceStatus {
+    readonly source: IndicatorSource;
+    readonly available: boolean;
+    readonly reason: IndicatorSourceStatusReason;
+}
+export declare const DefaultIndicatorSource: IndicatorCandlesSource;
+/** Validates, clones and freezes an editor/persistence supplied source binding. */
+export declare function normalizeIndicatorSource(value: unknown): IndicatorSource;
+export declare function indicatorSourcesEqual(left: IndicatorSource, right: IndicatorSource): boolean;
+
+// Public API module: indicators/indicator-taxonomy.d.ts
+import { type IndicatorCategory as IndicatorCategoryValue } from './indicator-definition.js';
+export interface IndicatorTaxonomyEntry {
+    readonly category: IndicatorCategoryValue;
+    readonly label: string;
+    readonly order: number;
+}
+/** Canonical trading-oriented category order and labels shared by catalog and UI. */
+export declare const IndicatorTaxonomy: readonly IndicatorTaxonomyEntry[];
+export declare function indicatorTaxonomyEntry(category: IndicatorCategoryValue): IndicatorTaxonomyEntry;
+export declare function indicatorCategoryLabel(category: IndicatorCategoryValue): string;
 
 // Public API module: indicators/math/efficiency-ratio.d.ts
 import { type RingBufferCheckpoint } from './ring-buffer.js';
@@ -5514,6 +5623,7 @@ export declare class ChartStatePersistence<TContext = void> {
 // Public API module: persistence/chart-state.d.ts
 import { type DrawingInstance } from '../drawings/drawing-model.js';
 import { type PersistedObject } from './json-value.js';
+import { type IndicatorSource } from '../indicators/indicator-source.js';
 export declare const CHART_STATE_SCHEMA_VERSION: 1;
 export type PersistedChartOptions = PersistedObject;
 export type PersistedSeriesOptions = PersistedObject;
@@ -5550,6 +5660,10 @@ export interface PersistedIndicator {
     readonly paneId: string | null;
     readonly params: PersistedIndicatorParameters;
     readonly styles: PersistedIndicatorStyles;
+    readonly source?: IndicatorSource;
+    readonly visible?: boolean;
+    /** Omitted for automatic scale routing. */
+    readonly priceScaleId?: string;
 }
 export interface ChartStateV1 {
     readonly schemaVersion: typeof CHART_STATE_SCHEMA_VERSION;
@@ -5573,6 +5687,7 @@ export * from './indicator-engine-state-adapter.js';
 // Public API module: persistence/indicator-engine-state-adapter.d.ts
 import type { PersistedIndicator } from './chart-state.js';
 import type { ChartStateIndicatorAdapter, MaybePromise } from './chart-state-persistence.js';
+import { type IndicatorSource } from '../indicators/indicator-source.js';
 export interface PersistableIndicatorStyleSeries {
     options?(): object;
     applyOptions?(options: object): void;
@@ -5590,15 +5705,25 @@ export interface PersistableIndicatorEntry {
         readonly series?: PersistableIndicatorStyleSeries;
         readonly field?: string;
         readonly colorOption?: string;
+        readonly lineWidthOption?: string;
+        readonly lineStyleOption?: string;
+        readonly visibilityOption?: string;
     }>>;
     colors?: string[];
+    readonly source?: IndicatorSource;
+    readonly visible?: boolean;
+    /** Explicit scale selection; undefined means automatic routing. */
+    readonly priceScaleId?: string;
 }
 export interface IndicatorEnginePersistenceApi {
     getIndicators(): readonly PersistableIndicatorEntry[];
     removeAll(): MaybePromise<void>;
     add(type: string, params: object, targetPaneId?: string, persistence?: {
         readonly persistenceId?: string;
+        readonly source?: IndicatorSource;
+        readonly priceScaleId?: string;
     }): MaybePromise<PersistableIndicatorEntry | null>;
+    setVisible(id: string | number, visible: boolean): boolean;
 }
 export interface IndicatorEngineStateAdapterOptions {
     readonly engine: IndicatorEnginePersistenceApi;
@@ -5648,6 +5773,8 @@ import type { PersistedSeries } from './chart-state.js';
 import type { ChartStateLayoutAdapter, ChartStateLayoutSnapshot, MaybePromise } from './chart-state-persistence.js';
 export interface NativeChartLayoutAdapterOptions {
     readonly chart: IChartApi;
+    /** Root pane that cannot be removed. Defaults to the conventional `main` id. */
+    readonly mainPaneId?: string;
     /** Overrides registry-based empty-series recreation (for host data-source wiring). */
     readonly createSeries?: (series: PersistedSeries, pane: IPaneApi) => MaybePromise<ISeriesApi<any, any> | null | void>;
     readonly includeSeries?: (series: ISeriesApi<any, any>) => boolean;
@@ -5656,6 +5783,7 @@ export interface NativeChartLayoutAdapterOptions {
 /** Captures native pane/series metadata while deliberately excluding raw series data. */
 export declare class NativeChartLayoutAdapter implements ChartStateLayoutAdapter {
     private readonly chart;
+    private readonly mainPaneId;
     private readonly createSeries?;
     private readonly includeSeries?;
     private readonly onUnknownSeries?;
@@ -6146,4 +6274,791 @@ export interface ITradingCalendar {
     isTradingTime(time: Time, kinds?: readonly TradingSessionKind[]): boolean;
     nextSession(time: Time, kinds?: readonly TradingSessionKind[]): TradingSession | null;
     previousSession(time: Time, kinds?: readonly TradingSessionKind[]): TradingSession | null;
+}
+
+// Public API module: workspace/chart-navigator.d.ts
+import type { IChartApi, Time, TimeRange, TimedSeriesData } from '../core/chart-api.js';
+import { type ChartDataControllerListener, type ChartDataControllerSnapshot } from '../data/chart-data-controller.js';
+export declare const NavigatorStatus: Readonly<{
+    readonly Idle: 'idle';
+    readonly Loading: 'loading';
+    readonly Ready: 'ready';
+    readonly Error: 'error';
+}>;
+export type NavigatorStatus = typeof NavigatorStatus[keyof typeof NavigatorStatus];
+export declare const NavigatorRangePreset: Readonly<{
+    readonly OneDay: '1d';
+    readonly FiveDays: '5d';
+    readonly OneMonth: '1m';
+    readonly ThreeMonths: '3m';
+    readonly SixMonths: '6m';
+    readonly YearToDate: 'ytd';
+    readonly OneYear: '1y';
+    readonly FiveYears: '5y';
+    readonly All: 'all';
+}>;
+export type NavigatorRangePreset = typeof NavigatorRangePreset[keyof typeof NavigatorRangePreset];
+export declare const NavigatorDateAlignment: Readonly<{
+    readonly Start: 'start';
+    readonly Center: 'center';
+    readonly End: 'end';
+}>;
+export type NavigatorDateAlignment = typeof NavigatorDateAlignment[keyof typeof NavigatorDateAlignment];
+export declare const NavigatorNavigationOutcome: Readonly<{
+    readonly Applied: 'applied';
+    readonly Clamped: 'clamped';
+    readonly PageLimit: 'page-limit';
+    readonly Empty: 'empty';
+    readonly Cancelled: 'cancelled';
+}>;
+export type NavigatorNavigationOutcome = typeof NavigatorNavigationOutcome[keyof typeof NavigatorNavigationOutcome];
+export interface NavigatorBounds {
+    readonly from: Time;
+    readonly to: Time;
+    readonly count: number;
+}
+export interface NavigatorSample {
+    readonly from: Time;
+    readonly to: Time;
+    readonly open: number | null;
+    readonly high: number | null;
+    readonly low: number | null;
+    readonly close: number | null;
+    readonly count: number;
+}
+export interface NavigatorValue {
+    readonly value: number;
+    readonly high?: number;
+    readonly low?: number;
+}
+export type NavigatorValueAccessor<TBar extends TimedSeriesData> = (bar: TBar) => number | NavigatorValue | null;
+export interface NavigatorPresetContext {
+    readonly anchor: Time;
+    readonly bounds: NavigatorBounds;
+    readonly data: ChartDataControllerSnapshot;
+}
+export interface NavigatorPresetDefinition {
+    readonly id: string;
+    readonly label: string;
+    /** Null means the complete available history. */
+    readonly range: (context: NavigatorPresetContext) => TimeRange | null;
+}
+export interface NavigatorDataController<TBar extends TimedSeriesData> {
+    snapshot(): ChartDataControllerSnapshot;
+    /** Half-open raw-data window [fromIndex, toIndex). */
+    rawDataSlice(fromIndex?: number, toIndex?: number): readonly TBar[];
+    loadMoreBefore(): Promise<number>;
+    subscribe(listener: ChartDataControllerListener): void;
+    unsubscribe(listener: ChartDataControllerListener): void;
+}
+export interface ChartNavigatorOptions<TBar extends TimedSeriesData> {
+    readonly chart: IChartApi;
+    readonly data: NavigatorDataController<TBar>;
+    readonly valueAccessor?: NavigatorValueAccessor<TBar>;
+    /** Maximum number of immutable overview buckets. Defaults to 600. */
+    readonly maxPoints?: number;
+    /** Safety limit for one range/date operation. Defaults to 100 history pages. */
+    readonly maxHistoryPages?: number;
+    /** Replaces the built-in preset list when supplied. */
+    readonly presets?: readonly NavigatorPresetDefinition[];
+}
+export interface NavigatorHistoryOptions {
+    readonly maxHistoryPages?: number;
+}
+export interface NavigatorGoToDateOptions extends NavigatorHistoryOptions {
+    /** Visible time span in seconds. The current chart span is used by default. */
+    readonly spanSeconds?: number;
+    readonly alignment?: NavigatorDateAlignment;
+}
+export interface NavigatorNavigationResult {
+    readonly outcome: NavigatorNavigationOutcome;
+    readonly requestedRange: TimeRange | null;
+    readonly requestedTime: Time | null;
+    readonly visibleRange: TimeRange | null;
+    readonly presetId: string | null;
+    readonly pagesLoaded: number;
+    readonly barsLoaded: number;
+    readonly historyExhausted: boolean;
+}
+export interface ChartNavigatorSnapshot {
+    readonly status: NavigatorStatus;
+    readonly dataStatus: ChartDataControllerSnapshot['status'];
+    readonly generation: number;
+    readonly loading: boolean;
+    readonly bounds: NavigatorBounds | null;
+    readonly visibleRange: TimeRange | null;
+    readonly activePresetId: string | null;
+    readonly pendingPresetId: string | null;
+    readonly samples: readonly NavigatorSample[];
+    readonly lastNavigation: NavigatorNavigationResult | null;
+    readonly error: unknown | null;
+}
+export type ChartNavigatorListener = (snapshot: ChartNavigatorSnapshot) => void;
+/** Built-in UTC-calendar presets. Supply custom definitions for exchange-specific boundaries. */
+export declare function defaultNavigatorPresets(): readonly NavigatorPresetDefinition[];
+/**
+ * DOM-neutral chart navigator. It owns range/preset/date navigation and exposes a bounded
+ * min/max overview model; the host remains free to render it with canvas, SVG or native UI.
+ */
+export declare class ChartNavigator<TBar extends TimedSeriesData> {
+    private readonly chart;
+    private readonly data;
+    private readonly valueAccessor;
+    private readonly maxPoints;
+    private readonly maxHistoryPages;
+    private readonly presetValues;
+    private readonly presetsById;
+    private readonly listeners;
+    private dataState;
+    private boundsValue;
+    private visibleRangeValue;
+    private samplesValue;
+    private activePresetIdValue;
+    private pendingPresetIdValue;
+    private lastNavigationValue;
+    private operationError;
+    private samplingError;
+    private operationId;
+    private loading;
+    private applyingRange;
+    private overviewDirty;
+    private sampledGeneration;
+    private sampledLength;
+    private sampledFirstTime;
+    private sampledBucketSize;
+    private disposed;
+    private readonly dataListener;
+    private readonly rangeListener;
+    constructor(options: ChartNavigatorOptions<TBar>);
+    snapshot(): ChartNavigatorSnapshot;
+    presets(): readonly NavigatorPresetDefinition[];
+    setRange(range: TimeRange, options?: NavigatorHistoryOptions): Promise<NavigatorNavigationResult>;
+    selectPreset(presetId: string, options?: NavigatorHistoryOptions): Promise<NavigatorNavigationResult>;
+    goToDate(time: Time, options?: NavigatorGoToDateOptions): Promise<NavigatorNavigationResult>;
+    cancel(): boolean;
+    clearError(): void;
+    subscribe(listener: ChartNavigatorListener): void;
+    unsubscribe(listener: ChartNavigatorListener): void;
+    dispose(): void;
+    private navigate;
+    private applyNavigationRange;
+    private needsOlderHistory;
+    private operationCurrent;
+    private cancelledResult;
+    private handleData;
+    private acceptDataSnapshot;
+    private handleRange;
+    private cancelActiveOperation;
+    private refreshData;
+    private readBounds;
+    private refreshOverviewIfDirty;
+    private refreshOverview;
+    private defaultDateSpan;
+    private navigationPageLimit;
+    private snapshotValue;
+    private emit;
+    private assertAlive;
+}
+
+// Public API module: workspace/compare-controller.d.ts
+import { type IChartApi, type ISeriesApi, type LineData, type SeriesOptions, type Time, type TimedSeriesData } from '../core/chart-api.js';
+import { type ChartDataControllerSnapshot } from '../data/chart-data-controller.js';
+import type { IChartDataSource, SymbolInfo } from '../data/data-source.js';
+import type { RealtimeReconnectPolicy, RealtimeScheduler } from '../data/reconnect-policy.js';
+export declare const CompareMode: Readonly<{
+    readonly Percentage: 2;
+    readonly IndexedTo100: 3;
+}>;
+export type CompareMode = typeof CompareMode[keyof typeof CompareMode];
+export declare const CompareAlignment: Readonly<{
+    /** Keep the chart's existing continuous/ordinal/session-aware time domain. */
+    readonly Chart: 'chart';
+    /** Project every absolute timestamp through the primary symbol's exchange calendar. */
+    readonly PrimarySession: 'primary-session';
+}>;
+export type CompareAlignment = typeof CompareAlignment[keyof typeof CompareAlignment];
+export interface CompareDataOptions {
+    readonly initialCount?: number;
+    readonly historyCount?: number;
+    readonly historyPrefetchThreshold?: number;
+    readonly autoPrefetch?: boolean;
+    readonly lodCacheSize?: number;
+    readonly autoScrollRealtime?: boolean;
+    readonly reconnectPolicy?: RealtimeReconnectPolicy;
+    readonly realtimeScheduler?: RealtimeScheduler;
+}
+export type CompareValueAccessor<TBar extends TimedSeriesData> = (bar: TBar) => number | null;
+export interface CompareControllerOptions<TBar extends TimedSeriesData> {
+    readonly chart: IChartApi;
+    readonly dataSource: IChartDataSource<TBar>;
+    readonly valueAccessor?: CompareValueAccessor<TBar>;
+    readonly scaleId?: string;
+    readonly mode?: CompareMode;
+    readonly alignment?: CompareAlignment;
+    readonly colors?: readonly string[];
+    readonly seriesOptions?: Partial<SeriesOptions>;
+    readonly data?: CompareDataOptions;
+}
+export interface CompareAddRequest {
+    readonly id?: string;
+    readonly symbol: string;
+    readonly resolution: string;
+    readonly label?: string;
+    readonly color?: string;
+    readonly visible?: boolean;
+    readonly primary?: boolean;
+}
+export interface CompareInstrumentSnapshot {
+    readonly id: string;
+    readonly symbol: string;
+    readonly resolution: string;
+    readonly label: string;
+    readonly color: string;
+    readonly visible: boolean;
+    readonly primary: boolean;
+    readonly status: ChartDataControllerSnapshot['status'];
+    readonly realtimeStatus: ChartDataControllerSnapshot['realtimeStatus'];
+    readonly symbolInfo: SymbolInfo | null;
+    readonly loadedBars: number;
+    readonly renderedBars: number;
+    readonly lastValue: number | null;
+    /** Current load, realtime or history failure, in that priority order. */
+    readonly error: unknown | null;
+}
+export interface CompareLegendItem {
+    readonly id: string;
+    readonly symbol: string;
+    readonly label: string;
+    readonly color: string;
+    readonly time: Time | null;
+    readonly rawValue: number | null;
+    readonly changePercent: number | null;
+    readonly indexedTo100: number | null;
+    /** Matches the controller's current Percentage/IndexedTo100 mode. */
+    readonly displayValue: number | null;
+}
+export interface CompareControllerSnapshot {
+    readonly mode: CompareMode;
+    readonly alignment: CompareAlignment;
+    readonly scaleId: string;
+    readonly primaryId: string | null;
+    readonly crosshairTime: Time | null;
+    readonly instruments: readonly CompareInstrumentSnapshot[];
+    readonly legend: readonly CompareLegendItem[];
+}
+export type CompareControllerListener = (snapshot: CompareControllerSnapshot) => void;
+/**
+ * Owns compare line series and one independent ChartDataController/subscription per symbol.
+ * Relative normalization remains in the chart price scale, so zoom-dependent bases cannot drift
+ * from rendering; this controller exposes the same bases for its legend.
+ */
+export declare class CompareController<TBar extends TimedSeriesData> {
+    private readonly chart;
+    private readonly dataSource;
+    private readonly valueAccessor;
+    private readonly scaleIdValue;
+    private readonly colors;
+    private readonly seriesOptions;
+    private readonly dataOptions;
+    private readonly entries;
+    private readonly listeners;
+    private readonly originalTimeScale;
+    private readonly originalScaleMode;
+    private modeValue;
+    private alignmentValue;
+    private primaryIdValue;
+    private crosshairTimeValue;
+    private alignedCalendar;
+    private nextColor;
+    private disposed;
+    private readonly handleCrosshair;
+    constructor(options: CompareControllerOptions<TBar>);
+    snapshot(): CompareControllerSnapshot;
+    instruments(): readonly CompareInstrumentSnapshot[];
+    get(id: string): CompareInstrumentSnapshot | undefined;
+    series(id: string): ISeriesApi<LineData, SeriesOptions> | undefined;
+    /** A failed initial load remains in Error state so a workspace can expose retry/remove. */
+    add(request: CompareAddRequest): Promise<CompareInstrumentSnapshot>;
+    remove(id: string): boolean;
+    setPrimary(id: string): void;
+    setMode(mode: CompareMode): void;
+    setAlignment(alignment: CompareAlignment): void;
+    setColor(id: string, color: string): void;
+    setVisible(id: string, visible: boolean): void;
+    reload(id: string): Promise<SymbolInfo | null>;
+    loadMoreBefore(id: string): Promise<number>;
+    legend(time?: Time | null): readonly CompareLegendItem[];
+    subscribe(listener: CompareControllerListener): void;
+    unsubscribe(listener: CompareControllerListener): void;
+    dispose(): void;
+    private snapshotValue;
+    private buildLegend;
+    private instrumentSnapshot;
+    private label;
+    private applyScaleMode;
+    private applyAlignment;
+    private restoreAlignment;
+    private requireEntry;
+    private availableId;
+    private emit;
+    private assertAlive;
+}
+
+// Public API module: workspace/index.d.ts
+export * from './pane-controller.js';
+export * from './indicator-controller.js';
+export * from './indicator-catalog-controller.js';
+export * from './templates.js';
+export * from './compare-controller.js';
+export * from './multi-chart-workspace.js';
+export * from './chart-navigator.js';
+
+// Public API module: workspace/indicator-catalog-controller.d.ts
+export type IndicatorCatalogMaybePromise<T> = T | Promise<T>;
+export interface IndicatorCatalogEntry {
+    readonly id: string;
+    readonly name: string;
+    readonly fullName: string;
+    /** Stable category id, for example `support-resistance`. */
+    readonly category: string;
+    /** User-facing category label, for example `Support & Resistance`. */
+    readonly categoryLabel: string;
+    readonly aliases?: readonly string[];
+}
+export interface IndicatorCatalogQuery {
+    readonly text?: string;
+    /** Matches either the stable category id or its label. */
+    readonly category?: string;
+    readonly favoritesOnly?: boolean;
+}
+/** Host-owned preference storage. The host decides scope and storage technology. */
+export interface IndicatorFavoritesStorage {
+    load(): IndicatorCatalogMaybePromise<readonly string[] | null>;
+    save(indicatorIds: readonly string[]): IndicatorCatalogMaybePromise<void>;
+}
+export interface IndicatorCatalogControllerOptions {
+    readonly entries: readonly IndicatorCatalogEntry[];
+    readonly favorites?: readonly string[];
+    readonly storage?: IndicatorFavoritesStorage;
+}
+export interface IndicatorCatalogSnapshot {
+    readonly favorites: readonly string[];
+    readonly loaded: boolean;
+}
+export type IndicatorCatalogListener = (snapshot: IndicatorCatalogSnapshot) => void;
+/** Searchable indicator catalog with host-persisted, catalog-scoped favorites. */
+export declare class IndicatorCatalogController {
+    private readonly indexed;
+    private readonly byId;
+    private readonly favoriteIds;
+    private readonly listeners;
+    private readonly storage?;
+    private loadPromise;
+    private saveTail;
+    private loadingOverrides;
+    private loaded;
+    constructor(options: IndicatorCatalogControllerOptions);
+    entries(): readonly IndicatorCatalogEntry[];
+    search(query?: IndicatorCatalogQuery): readonly IndicatorCatalogEntry[];
+    isFavorite(indicatorId: string): boolean;
+    favorites(): readonly string[];
+    snapshot(): IndicatorCatalogSnapshot;
+    subscribe(listener: IndicatorCatalogListener): void;
+    unsubscribe(listener: IndicatorCatalogListener): void;
+    loadFavorites(): Promise<readonly string[]>;
+    setFavorite(indicatorId: string, favorite: boolean): Promise<void>;
+    toggleFavorite(indicatorId: string): Promise<boolean>;
+    private requireId;
+    private replaceFavorites;
+    private normalizeFavoriteIds;
+    private persist;
+    private emit;
+}
+
+// Public API module: workspace/indicator-controller.d.ts
+import type { ICommandStack } from '../core/interaction/command-stack.js';
+import { type IndicatorDefinition, type IndicatorInputSchema, type IndicatorOutputAppearance, type IndicatorOutputStylePatch, type IndicatorParameterDefinition, type IndicatorParameters, type IndicatorParameterValue, type IndicatorSource, type IndicatorSourceStatus } from '../indicators/index.js';
+export interface IndicatorControllerEngineEntry {
+    readonly id: string | number;
+    readonly persistenceId: string;
+    readonly type: string;
+    readonly params: Readonly<Record<string, unknown>>;
+    readonly paneId: string | null;
+    readonly paneScaleId?: string;
+    readonly priceScaleId?: string;
+    readonly outputNames?: readonly string[];
+    readonly source?: IndicatorSource;
+    readonly visible?: boolean;
+    readonly definition?: IndicatorDefinition;
+}
+/** Minimal synchronous engine contract consumed by the public workspace facade. */
+export interface IndicatorControllerEngine {
+    getIndicators(): readonly IndicatorControllerEngineEntry[];
+    replaceParams(id: string | number, parameters: Readonly<Record<string, unknown>>): IndicatorControllerEngineEntry | null | undefined;
+    setSource(id: string | number, source: IndicatorSource): boolean;
+    getSourceStatus(id: string | number): IndicatorSourceStatus | null;
+    move(id: string | number, paneId: string): boolean;
+    setScale(id: string | number, priceScaleId: string | null): boolean;
+    setOutputStyle(id: string | number, outputId: string, patch: IndicatorOutputStylePatch): boolean;
+    setVisible(id: string | number, visible: boolean): boolean;
+    getStyles(id: string | number): Readonly<Record<string, Readonly<Record<string, unknown>>>> | null;
+    getOutputStyles(id: string | number): Readonly<Record<string, IndicatorOutputAppearance>> | null;
+    replaceStyles(id: string | number, styles: Readonly<Record<string, unknown>>): boolean;
+    subscribeChange(listener: () => void): void;
+    unsubscribeChange(listener: () => void): void;
+}
+export interface IndicatorControllerOptions {
+    readonly engine: IndicatorControllerEngine;
+    readonly commandStack: ICommandStack;
+}
+export interface IndicatorOutputSnapshot {
+    readonly id: string;
+    readonly name: string;
+    readonly style: IndicatorOutputAppearance;
+}
+export interface IndicatorControllerSnapshot {
+    /** Stable layout id. Runtime ids are intentionally not exposed. */
+    readonly id: string;
+    readonly type: string;
+    readonly name: string;
+    readonly description: string;
+    readonly input: IndicatorInputSchema | null;
+    readonly parameterDefinitions: readonly IndicatorParameterDefinition[];
+    readonly parameters: IndicatorParameters;
+    readonly source: IndicatorSource;
+    readonly sourceStatus: IndicatorSourceStatus;
+    readonly paneId: string | null;
+    /** Explicit selection; null means automatic routing. */
+    readonly priceScaleId: string | null;
+    readonly effectivePriceScaleId: string;
+    readonly visible: boolean;
+    readonly outputs: readonly IndicatorOutputSnapshot[];
+}
+export interface IndicatorUpdatePatch {
+    /** Partial parameter patch; omitted values retain their current value. */
+    readonly parameters?: Readonly<Record<string, IndicatorParameterValue>>;
+    readonly source?: IndicatorSource;
+    /** Null moves to the main pane. The target pane must already exist. */
+    readonly paneId?: string | null;
+    /** Null returns to automatic scale routing. */
+    readonly priceScaleId?: string | null;
+    readonly visible?: boolean;
+    readonly outputs?: Readonly<Record<string, IndicatorOutputStylePatch>>;
+}
+export type IndicatorControllerListener = (indicators: readonly IndicatorControllerSnapshot[]) => void;
+/** Undoable, validated editing facade over transient indicator-engine records. */
+export declare class IndicatorController {
+    private readonly engine;
+    private readonly commands;
+    private readonly listeners;
+    private applying;
+    private disposed;
+    private readonly handleEngineChange;
+    constructor(options: IndicatorControllerOptions);
+    indicators(): readonly IndicatorControllerSnapshot[];
+    get(id: string): IndicatorControllerSnapshot | undefined;
+    update(id: string, patch: IndicatorUpdatePatch): IndicatorControllerSnapshot;
+    setParameters(id: string, parameters: Readonly<Record<string, IndicatorParameterValue>>): IndicatorControllerSnapshot;
+    setSource(id: string, source: IndicatorSource): IndicatorControllerSnapshot;
+    moveToPane(id: string, paneId: string | null): IndicatorControllerSnapshot;
+    setPriceScale(id: string, priceScaleId: string | null): IndicatorControllerSnapshot;
+    setVisible(id: string, visible: boolean): IndicatorControllerSnapshot;
+    setOutputStyle(id: string, outputId: string, patch: IndicatorOutputStylePatch): IndicatorControllerSnapshot;
+    subscribe(listener: IndicatorControllerListener): void;
+    unsubscribe(listener: IndicatorControllerListener): void;
+    dispose(): void;
+    private snapshot;
+    private captureState;
+    private applyPatch;
+    private applyStateAtomically;
+    private applyState;
+    private mutateAtomically;
+    private replaceParameters;
+    private move;
+    private setScale;
+    private setVisibility;
+    private findEntry;
+    private requireEntry;
+    private emit;
+    private assertAlive;
+}
+
+// Public API module: workspace/multi-chart-workspace.d.ts
+import type { IChartApi, Time, TimeRange } from '../core/chart-api.js';
+import type { ChartDataSelection } from '../data/chart-data-controller.js';
+export type WorkspaceMaybePromise<T> = T | Promise<T>;
+export interface WorkspaceSelectionSnapshot {
+    readonly selection: ChartDataSelection | null;
+}
+/** Structural subset implemented directly by ChartDataController. */
+export interface WorkspaceSelectionController {
+    snapshot(): WorkspaceSelectionSnapshot;
+    setSelection(selection: ChartDataSelection): WorkspaceMaybePromise<unknown>;
+    subscribe(listener: (snapshot: WorkspaceSelectionSnapshot) => void): void;
+    unsubscribe(listener: (snapshot: WorkspaceSelectionSnapshot) => void): void;
+}
+export interface WorkspaceChartCell {
+    readonly chart: IChartApi;
+    readonly data?: WorkspaceSelectionController;
+    /** Defaults to chart.remove(). */
+    readonly dispose?: () => void;
+}
+export interface WorkspaceChartFactoryContext {
+    readonly id: string;
+    readonly index: number;
+    readonly host: HTMLElement;
+}
+export type WorkspaceChartFactory = (context: WorkspaceChartFactoryContext) => WorkspaceChartCell;
+export interface WorkspaceLinkOptions {
+    readonly symbol?: boolean;
+    readonly resolution?: boolean;
+}
+export interface WorkspaceSyncOptions {
+    readonly range?: boolean;
+    readonly crosshair?: boolean;
+}
+export interface MultiChartWorkspaceOptions {
+    readonly container: HTMLElement;
+    readonly createChart: WorkspaceChartFactory;
+    readonly count?: number;
+    /** Null/undefined selects an automatic near-square grid. */
+    readonly columns?: number | null;
+    readonly links?: WorkspaceLinkOptions;
+    readonly sync?: WorkspaceSyncOptions;
+}
+export interface WorkspaceLayoutRequest {
+    readonly count: number;
+    readonly columns?: number | null;
+}
+export interface WorkspaceCellSnapshot {
+    readonly id: string;
+    readonly index: number;
+    readonly active: boolean;
+    readonly selection: ChartDataSelection | null;
+    readonly visibleRange: TimeRange | null;
+    readonly crosshairTime: Time | null;
+}
+export declare const WorkspaceSyncErrorKind: Readonly<{
+    readonly Selection: 'selection';
+    readonly Range: 'range';
+    readonly Crosshair: 'crosshair';
+    readonly Lifecycle: 'lifecycle';
+}>;
+export type WorkspaceSyncErrorKind = typeof WorkspaceSyncErrorKind[keyof typeof WorkspaceSyncErrorKind];
+export interface WorkspaceSyncError {
+    readonly cellId: string;
+    readonly kind: WorkspaceSyncErrorKind;
+    readonly error: unknown;
+}
+export interface MultiChartWorkspaceSnapshot {
+    readonly count: number;
+    readonly columns: number;
+    readonly rows: number;
+    readonly activeId: string;
+    readonly links: Readonly<{
+        symbol: boolean;
+        resolution: boolean;
+    }>;
+    readonly sync: Readonly<{
+        range: boolean;
+        crosshair: boolean;
+    }>;
+    readonly cells: readonly WorkspaceCellSnapshot[];
+    readonly errors: readonly WorkspaceSyncError[];
+}
+export type MultiChartWorkspaceListener = (snapshot: MultiChartWorkspaceSnapshot) => void;
+/**
+ * Owns top-level chart cells only. A chart's indicator panes remain internal to that chart and
+ * are never counted, laid out or synchronized as workspace cells.
+ */
+export declare class MultiChartWorkspace {
+    private readonly container;
+    private readonly factory;
+    private readonly entries;
+    private readonly listeners;
+    private readonly errors;
+    private readonly originalStyle;
+    private columnsValue;
+    private linksValue;
+    private syncValue;
+    private activeIdValue;
+    private nextId;
+    private syncingSelection;
+    private syncingRange;
+    private syncingCrosshair;
+    private disposed;
+    constructor(options: MultiChartWorkspaceOptions);
+    snapshot(): MultiChartWorkspaceSnapshot;
+    cells(): readonly WorkspaceCellSnapshot[];
+    chart(id: string): IChartApi | undefined;
+    host(id: string): HTMLElement | undefined;
+    add(id?: string): WorkspaceCellSnapshot;
+    remove(id: string): boolean;
+    setCount(count: number): void;
+    setColumns(columns: number | null): void;
+    setLayout(layout: WorkspaceLayoutRequest): void;
+    activate(id: string): void;
+    setLinks(options: WorkspaceLinkOptions): void;
+    setSync(options: WorkspaceSyncOptions): void;
+    setSelection(id: string, selection: ChartDataSelection): Promise<unknown>;
+    clearErrors(): void;
+    subscribe(listener: MultiChartWorkspaceListener): void;
+    unsubscribe(listener: MultiChartWorkspaceListener): void;
+    dispose(): void;
+    private resize;
+    private createEntry;
+    private disposeEntry;
+    private disposeEntries;
+    private handleSelection;
+    private propagateSelection;
+    private handleRange;
+    private propagateRange;
+    private handleCrosshair;
+    private propagateCrosshair;
+    private applyLayout;
+    private restoreContainerStyle;
+    private actualColumns;
+    private reindex;
+    private cellSnapshots;
+    private cellSnapshot;
+    private snapshotValue;
+    private createId;
+    private find;
+    private indexOf;
+    private requireEntry;
+    private readSelection;
+    private recordError;
+    private emit;
+    private assertAlive;
+}
+
+// Public API module: workspace/pane-controller.d.ts
+import type { IChartApi, ISeriesApi } from '../core/chart-api.js';
+import type { ICommandStack } from '../core/interaction/command-stack.js';
+import type { PaneState } from '../core/model/pane-model.js';
+export interface PaneControllerOptions {
+    readonly chart: IChartApi;
+    /** Defaults to the chart's shared command stack. */
+    readonly commands?: ICommandStack;
+}
+export interface PaneControllerSnapshot {
+    readonly id: string;
+    readonly height: number;
+    readonly minHeight: number;
+    readonly order: number;
+    readonly state: PaneState;
+}
+export type PaneControllerListener = (panes: readonly PaneControllerSnapshot[]) => void;
+/** Undoable pane sizing, ordering and visibility state without recreating pane contents. */
+export declare class PaneController {
+    private readonly chart;
+    private readonly commands;
+    private readonly listeners;
+    private disposed;
+    constructor(options: PaneControllerOptions);
+    panes(): readonly PaneControllerSnapshot[];
+    resizePair(beforePaneId: string, afterPaneId: string, delta: number): boolean;
+    reorder(paneIdValue: string, targetIndex: number): boolean;
+    moveSeries(series: ISeriesApi, targetPaneId: string): boolean;
+    setState(paneIdValue: string, state: PaneState): boolean;
+    toggleMinimized(paneIdValue: string): boolean;
+    toggleMaximized(paneIdValue: string): boolean;
+    subscribe(listener: PaneControllerListener): void;
+    unsubscribe(listener: PaneControllerListener): void;
+    dispose(): void;
+    private execute;
+    private apply;
+    private applySeriesMove;
+    private notify;
+    private requirePane;
+    private assertAlive;
+}
+
+// Public API module: workspace/templates.d.ts
+import type { LineStyleValue } from '../core/chart-api.js';
+import { type IndicatorCandleFieldSource, type IndicatorCandlesSource, type IndicatorParameterValue } from '../indicators/index.js';
+import type { IndicatorControllerSnapshot, IndicatorUpdatePatch } from './indicator-controller.js';
+export declare const INDICATOR_TEMPLATE_SCHEMA_VERSION: 1;
+export type IndicatorTemplateSource = IndicatorCandlesSource | IndicatorCandleFieldSource;
+export interface IndicatorTemplateOutputStyle {
+    readonly color?: string;
+    readonly lineWidth: number | null;
+    readonly lineStyle: LineStyleValue | null;
+    readonly visible: boolean;
+    readonly precision: number | null;
+}
+export interface IndicatorTemplateV1 {
+    readonly schemaVersion: typeof INDICATOR_TEMPLATE_SCHEMA_VERSION;
+    readonly id: string;
+    readonly name: string;
+    readonly indicatorType: string;
+    readonly parameters: Readonly<Record<string, IndicatorParameterValue>>;
+    /** Null means a runtime indicator-output source was intentionally not captured. */
+    readonly source: IndicatorTemplateSource | null;
+    readonly visible: boolean;
+    readonly outputs: Readonly<Record<string, IndicatorTemplateOutputStyle>>;
+}
+export interface IndicatorTemplateDocumentV1 {
+    readonly schemaVersion: typeof INDICATOR_TEMPLATE_SCHEMA_VERSION;
+    readonly templates: readonly IndicatorTemplateV1[];
+}
+export interface IndicatorTemplateStorage {
+    load(): string | null | Promise<string | null>;
+    save(serialized: string): void | Promise<void>;
+}
+export interface IndicatorTemplateIndicatorController {
+    get(indicatorId: string): IndicatorControllerSnapshot | undefined;
+    update(indicatorId: string, patch: IndicatorUpdatePatch): IndicatorControllerSnapshot;
+}
+export interface IndicatorTemplateControllerOptions {
+    readonly indicators: IndicatorTemplateIndicatorController;
+    readonly storage?: IndicatorTemplateStorage;
+    readonly createId?: () => string;
+    readonly pretty?: boolean;
+}
+export interface IndicatorTemplateControllerSnapshot {
+    readonly document: IndicatorTemplateDocumentV1;
+    readonly loaded: boolean;
+}
+export type IndicatorTemplateListener = (snapshot: IndicatorTemplateControllerSnapshot) => void;
+export interface SerializeIndicatorTemplatesOptions {
+    readonly pretty?: boolean;
+}
+/** Validates and serializes the versioned, portable indicator-template document. */
+export declare function serializeIndicatorTemplates(value: IndicatorTemplateDocumentV1, options?: SerializeIndicatorTemplatesOptions): string;
+/** Parses and validates a versioned indicator-template document. */
+export declare function deserializeIndicatorTemplates(value: string | unknown): IndicatorTemplateDocumentV1;
+export declare function normalizeIndicatorTemplateDocument(value: unknown): IndicatorTemplateDocumentV1;
+/** CRUD, persistence and undoable application of portable indicator templates. */
+export declare class IndicatorTemplateController {
+    private readonly indicators;
+    private readonly storage?;
+    private readonly createIdValue;
+    private readonly pretty;
+    private readonly values;
+    private readonly listeners;
+    private loadPromise;
+    private saveTail;
+    private loadingMutations;
+    private loaded;
+    constructor(options: IndicatorTemplateControllerOptions);
+    templates(indicatorType?: string): readonly IndicatorTemplateV1[];
+    get(templateId: string): IndicatorTemplateV1 | undefined;
+    document(): IndicatorTemplateDocumentV1;
+    snapshot(): IndicatorTemplateControllerSnapshot;
+    subscribe(listener: IndicatorTemplateListener): void;
+    unsubscribe(listener: IndicatorTemplateListener): void;
+    load(): Promise<IndicatorTemplateDocumentV1>;
+    create(name: string, indicatorId: string): Promise<IndicatorTemplateV1>;
+    replace(templateId: string, indicatorId: string, name?: string): Promise<IndicatorTemplateV1>;
+    rename(templateId: string, name: string): Promise<IndicatorTemplateV1>;
+    remove(templateId: string): Promise<boolean>;
+    /** Applies calculation/source/appearance while deliberately preserving pane and scale. */
+    apply(templateId: string, indicatorId: string): IndicatorControllerSnapshot;
+    private requireIndicator;
+    private requireTemplate;
+    private nextId;
+    private write;
+    private persist;
+    private emit;
 }

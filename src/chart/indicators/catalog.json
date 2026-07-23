@@ -3518,7 +3518,7 @@
  {
   "kind": "VolumeProfileIndicator",
   "name": "Volume Profile Indicator",
-  "group": "Other",
+  "group": "Volume",
   "pane": "overlay",
   "params": [
    {

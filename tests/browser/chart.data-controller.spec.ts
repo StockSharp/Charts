@@ -161,3 +161,86 @@ test('history prefetch deduplicates the boundary and preserves the visible bar a
     expect(after.snapshot.loadingHistory).toBe(false);
     expect(after.snapshot.historyError).toBeNull();
 });
+
+test('navigator presets and go-to-date load directed history through ChartDataController', async ({ page }) => {
+    await page.goto('/tests/browser/fixtures/chart.html');
+    await page.evaluate(() => (window as any).ChartFixture.create());
+
+    const result = await page.evaluate(async () => {
+        const fixture = (window as any).__fixture;
+        const api = (window as any).SSChart;
+        fixture.chart.removeSeries(fixture.volume);
+        fixture.chart.removeSeries(fixture.average);
+        const requests: any[] = [];
+        const initial = fixture.bars.slice(100, 120);
+        const source = {
+            async resolveSymbol(request: any) { return { id: request.symbol }; },
+            async getBars(request: any) {
+                requests.push(request);
+                if (request.to === undefined)
+                    return { bars: initial, hasMoreBefore: true };
+                const boundary = fixture.bars.findIndex((bar: any) => bar.time === request.to);
+                const from = Math.max(0, boundary - 20);
+                return {
+                    bars: fixture.bars.slice(from, boundary + 1),
+                    hasMoreBefore: from > 0,
+                };
+            },
+            subscribeBars() { return () => {}; },
+        };
+        const controller = new api.ChartDataController({
+            chart: fixture.chart,
+            series: fixture.candles,
+            dataSource: source,
+            initialCount: 20,
+            historyCount: 20,
+            autoPrefetch: false,
+        });
+        await controller.setSelection({ symbol: 'NAV', resolution: '1m' });
+        const navigator = new api.ChartNavigator({
+            chart: fixture.chart,
+            data: controller,
+            maxPoints: 12,
+            presets: [{
+                id: 'window',
+                label: 'Window',
+                range: () => ({
+                    from: fixture.bars[40].time,
+                    to: fixture.bars[110].time,
+                }),
+            }],
+        });
+        const selected = await navigator.selectPreset('window');
+        const date = await navigator.goToDate(fixture.bars[90].time, {
+            spanSeconds: 10 * 60,
+            alignment: api.NavigatorDateAlignment.Center,
+        });
+        const state = navigator.snapshot();
+        navigator.dispose();
+        controller.dispose();
+        return {
+            selected,
+            date,
+            state,
+            requests,
+            expectedBounds: {
+                from: fixture.bars[40].time,
+                to: fixture.bars[119].time,
+                count: 80,
+            },
+        };
+    });
+
+    expect(result.selected.outcome).toBe('applied');
+    expect(result.selected.pagesLoaded).toBe(3);
+    expect(result.selected.barsLoaded).toBe(60);
+    expect(result.date.outcome).toBe('applied');
+    expect(result.state.bounds).toEqual(result.expectedBounds);
+    expect(result.state.samples.length).toBeLessThanOrEqual(12);
+    expect(result.requests).toHaveLength(4);
+    expect(result.requests.slice(1).map((request: any) => request.to)).toEqual([
+        await page.evaluate(() => (window as any).__fixture.bars[100].time),
+        await page.evaluate(() => (window as any).__fixture.bars[80].time),
+        await page.evaluate(() => (window as any).__fixture.bars[60].time),
+    ]);
+});

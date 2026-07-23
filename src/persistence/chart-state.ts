@@ -6,6 +6,10 @@ import {
     normalizePersistedObject,
     type PersistedObject,
 } from './json-value.js';
+import {
+    normalizeIndicatorSource,
+    type IndicatorSource,
+} from '../indicators/indicator-source.js';
 
 export const CHART_STATE_SCHEMA_VERSION = 1 as const;
 
@@ -45,6 +49,10 @@ export interface PersistedIndicator {
     readonly paneId: string | null;
     readonly params: PersistedIndicatorParameters;
     readonly styles: PersistedIndicatorStyles;
+    readonly source?: IndicatorSource;
+    readonly visible?: boolean;
+    /** Omitted for automatic scale routing. */
+    readonly priceScaleId?: string;
 }
 
 export interface ChartStateV1 {
@@ -170,7 +178,13 @@ function indicator(
 ): PersistedIndicator {
     const path = `indicators[${index}]`;
     const source = record(value, path);
-    exactKeys(source, ['id', 'type', 'paneId', 'params', 'styles'], path);
+    exactKeys(source, [
+        'id', 'type', 'paneId', 'params', 'styles', 'source', 'visible', 'priceScaleId',
+    ], path, true);
+    for (const key of ['id', 'type', 'paneId', 'params', 'styles']) {
+        if (!Object.prototype.hasOwnProperty.call(source, key))
+            throw new TypeError(`sschart: persisted ${path}.${key} is required`);
+    }
     const paneId = source.paneId === null ? null : identifier(source.paneId, `${path}.paneId`);
     if (paneId !== null) requirePane(paneId, paneIds, path);
     const styles = normalizePersistedObject(source.styles, `${path}.styles`);
@@ -178,12 +192,24 @@ function indicator(
         if (options === null || typeof options !== 'object' || Array.isArray(options))
             throw new TypeError(`sschart: persisted ${path}.styles.${styleId} must be an object`);
     }
+    const indicatorSource = source.source === undefined
+        ? undefined
+        : normalizeIndicatorSource(source.source);
+    const visible = source.visible === undefined
+        ? undefined
+        : boolean(source.visible, `${path}.visible`);
+    const priceScaleId = source.priceScaleId === undefined
+        ? undefined
+        : identifier(source.priceScaleId, `${path}.priceScaleId`);
     return Object.freeze({
         id: identifier(source.id, `${path}.id`),
         type: identifier(source.type, `${path}.type`),
         paneId,
         params: normalizePersistedObject(source.params, `${path}.params`),
         styles,
+        ...(indicatorSource === undefined ? {} : { source: indicatorSource }),
+        ...(visible === undefined ? {} : { visible }),
+        ...(priceScaleId === undefined ? {} : { priceScaleId }),
     });
 }
 

@@ -1,4 +1,5 @@
 import {
+    BandSeries,
     CandlestickSeries,
     type CustomSeriesDefinition,
     type IChartApi,
@@ -70,3 +71,12 @@ const candles = chart.addSeries(CandlestickSeries);
 candles.update({ time: 1, open: 10, high: 12, low: 9, close: 11 });
 // @ts-expect-error built-in definitions preserve their data type
 candles.update({ time: 2, value: 11 });
+
+const band = chart.addSeries(BandSeries, {
+    upperLineWidth: 3,
+    lowerLineStyle: 2,
+    upperLineVisible: false,
+    fillVisible: true,
+    visible: true,
+});
+band.applyOptions({ visible: false, lowerLineVisible: false });

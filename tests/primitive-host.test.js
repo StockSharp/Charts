@@ -115,4 +115,26 @@ describe('PrimitiveHost', () => {
         assert.deepEqual(events, ['series', 'pane']);
         assert.deepEqual(host.primitives(), [survivor]);
     });
+
+    it('reroutes an attachment without restarting its lifecycle', () => {
+        const events = [];
+        const host = new PrimitiveHost(() => events.push('invalidate'));
+        const primitive = {
+            attached() { events.push('attached'); },
+            updateAllViews() { events.push('update'); },
+            detached() { events.push('detached'); },
+        };
+        const firstPane = {};
+        const secondPane = {};
+        attach(host, primitive, { pane: firstPane, priceScaleId: 'right' });
+        events.splice(0);
+
+        assert.equal(host.updateOptions(primitive, {
+            pane: secondPane,
+            priceScaleId: 'left',
+        }), true);
+        assert.equal(host.attachments()[0].options.pane, secondPane);
+        assert.equal(host.attachments()[0].options.priceScaleId, 'left');
+        assert.deepEqual(events, ['update', 'invalidate']);
+    });
 });

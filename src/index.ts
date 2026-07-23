@@ -10,3 +10,4 @@ export * from './time/index.js';
 export * from './indicators/index.js';
 export * from './drawings/index.js';
 export * from './persistence/index.js';
+export * from './workspace/index.js';

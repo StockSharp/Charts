@@ -17,7 +17,7 @@ export type PrimitiveContextFactory = (
 
 interface PrimitiveRecord {
     readonly primitive: IChartPrimitive;
-    readonly options: PrimitiveAttachOptions;
+    options: PrimitiveAttachOptions;
     readonly resources: DisposableStore;
     active: boolean;
 }
@@ -44,6 +44,18 @@ export class PrimitiveHost implements IDisposable {
 
     attachments(): readonly PrimitiveAttachment[] {
         return this.attachmentSnapshot;
+    }
+
+    /** Re-routes an attachment without restarting its lifecycle or resources. */
+    updateOptions(primitive: IChartPrimitive, options: PrimitiveAttachOptions): boolean {
+        if (this.disposed) throw new Error('sschart: primitive host is disposed');
+        const record = this.records.get(primitive);
+        if (record === undefined || !record.active) return false;
+        record.options = Object.freeze({ ...options });
+        this.rebuildSnapshot();
+        try { primitive.updateAllViews(); } catch { /* routing must remain structural */ }
+        this.invalidate();
+        return true;
     }
 
     updateAllViews(): void {

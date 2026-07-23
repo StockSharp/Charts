@@ -37,6 +37,9 @@ function state() {
             id: 'indicator-1', type: 'RelativeStrengthIndex', paneId: 'rsi',
             params: { length: 14 },
             styles: { value: { color: '#7e57c2', lineWidth: 2, visible: true } },
+            source: { kind: 'candle-field', field: 'hlc3' },
+            visible: false,
+            priceScaleId: 'rsi-scale',
         }],
         drawings: [{
             id: 'future-tool', type: 'plugin-unknown-to-this-host', paneId: 'main',
@@ -91,6 +94,21 @@ describe('ChartStateV1 serializer', () => {
                 styles: { value: '#not-an-options-object' },
             }],
         }), /styles\.value must be an object/);
+        assert.throws(() => normalizeChartStateV1({
+            ...state(),
+            indicators: [{
+                ...state().indicators[0],
+                source: { kind: 'candle-field', field: 'adjusted-close' },
+            }],
+        }), /source field is invalid/);
+        assert.throws(() => normalizeChartStateV1({
+            ...state(),
+            indicators: [{ ...state().indicators[0], visible: 'sometimes' }],
+        }), /visible must be boolean/);
+        assert.throws(() => normalizeChartStateV1({
+            ...state(),
+            indicators: [{ ...state().indicators[0], priceScaleId: '  ' }],
+        }), /priceScaleId must be a non-empty string/);
     });
 
     it('rejects malformed and newer JSON with actionable errors', () => {

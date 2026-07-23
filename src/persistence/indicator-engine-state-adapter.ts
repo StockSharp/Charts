@@ -8,6 +8,13 @@ import type {
     ChartStateIndicatorAdapter,
     MaybePromise,
 } from './chart-state-persistence.js';
+import {
+    DefaultIndicatorSource,
+    IndicatorSourceKind,
+    indicatorSourcesEqual,
+    normalizeIndicatorSource,
+    type IndicatorSource,
+} from '../indicators/indicator-source.js';
 
 export interface PersistableIndicatorStyleSeries {
     options?(): object;
@@ -27,8 +34,15 @@ export interface PersistableIndicatorEntry {
         readonly series?: PersistableIndicatorStyleSeries;
         readonly field?: string;
         readonly colorOption?: string;
+        readonly lineWidthOption?: string;
+        readonly lineStyleOption?: string;
+        readonly visibilityOption?: string;
     }>>;
     colors?: string[];
+    readonly source?: IndicatorSource;
+    readonly visible?: boolean;
+    /** Explicit scale selection; undefined means automatic routing. */
+    readonly priceScaleId?: string;
 }
 
 export interface IndicatorEnginePersistenceApi {
@@ -38,8 +52,13 @@ export interface IndicatorEnginePersistenceApi {
         type: string,
         params: object,
         targetPaneId?: string,
-        persistence?: { readonly persistenceId?: string },
+        persistence?: {
+            readonly persistenceId?: string;
+            readonly source?: IndicatorSource;
+            readonly priceScaleId?: string;
+        },
     ): MaybePromise<PersistableIndicatorEntry | null>;
+    setVisible(id: string | number, visible: boolean): boolean;
 }
 
 export interface IndicatorEngineStateAdapterOptions {
@@ -62,7 +81,8 @@ export class IndicatorEngineStateAdapter implements ChartStateIndicatorAdapter {
             || options.engine === null || typeof options.engine !== 'object'
             || typeof options.engine.getIndicators !== 'function'
             || typeof options.engine.removeAll !== 'function'
-            || typeof options.engine.add !== 'function') {
+            || typeof options.engine.add !== 'function'
+            || typeof options.engine.setVisible !== 'function') {
             throw new TypeError('sschart: indicator engine state adapter engine is invalid');
         }
         for (const [name, callback] of [
@@ -88,6 +108,9 @@ export class IndicatorEngineStateAdapter implements ChartStateIndicatorAdapter {
             const type = identifier(entry.type, `indicator '${id}' type`);
             const paneId = entry.paneId === null
                 ? null : identifier(entry.paneId, `indicator '${id}' paneId`);
+            const source = entry.source === undefined
+                ? DefaultIndicatorSource
+                : normalizeIndicatorSource(entry.source);
             return Object.freeze({
                 id,
                 type,
@@ -100,6 +123,11 @@ export class IndicatorEngineStateAdapter implements ChartStateIndicatorAdapter {
                     `indicator '${id}' styles`,
                     { omitUndefined: true },
                 ),
+                ...(indicatorSourcesEqual(source, DefaultIndicatorSource) ? {} : { source }),
+                ...(entry.visible === false ? { visible: false } : {}),
+                ...(entry.priceScaleId === undefined
+                    ? {}
+                    : { priceScaleId: identifier(entry.priceScaleId, `indicator '${id}' priceScaleId`) }),
             });
         }));
     }
@@ -112,7 +140,7 @@ export class IndicatorEngineStateAdapter implements ChartStateIndicatorAdapter {
         if (!Array.isArray(indicators))
             throw new TypeError('sschart: persisted indicators must be an array');
         const normalized = normalizeIndicators(indicators);
-        const plan = normalized.map(indicator => Object.freeze({
+        const plan = orderIndicatorsBySource(normalized).map(indicator => Object.freeze({
             indicator,
             targetPaneId: this.targetPaneId(indicator),
         }));
@@ -121,7 +149,11 @@ export class IndicatorEngineStateAdapter implements ChartStateIndicatorAdapter {
                 indicator.type,
                 indicator.params,
                 targetPaneId,
-                { persistenceId: indicator.id },
+                {
+                    persistenceId: indicator.id,
+                    source: indicator.source,
+                    priceScaleId: indicator.priceScaleId,
+                },
             );
             if (entry === null || entry === undefined) {
                 this.onUnknownIndicator?.(indicator);
@@ -130,6 +162,7 @@ export class IndicatorEngineStateAdapter implements ChartStateIndicatorAdapter {
             entry.persistenceId = indicator.id;
             const skipped = applyIndicatorStyles(entry, indicator.styles);
             for (const styleId of skipped) this.onUnknownStyle?.(indicator, styleId);
+            if (indicator.visible === false) this.engine.setVisible(entry.id, false);
         }
     }
 
@@ -138,6 +171,36 @@ export class IndicatorEngineStateAdapter implements ChartStateIndicatorAdapter {
             ?? (indicator.paneId === null ? '__main__' : indicator.paneId);
         return identifier(resolved, `indicator '${indicator.id}' target pane`);
     }
+}
+
+function orderIndicatorsBySource(
+    indicators: readonly PersistedIndicator[],
+): readonly PersistedIndicator[] {
+    const byId = new Map(indicators.map(indicator => [indicator.id, indicator]));
+    const visiting = new Set<string>();
+    const visited = new Set<string>();
+    const ordered: PersistedIndicator[] = [];
+    const visit = (indicator: PersistedIndicator): void => {
+        if (visited.has(indicator.id)) return;
+        if (visiting.has(indicator.id))
+            throw new RangeError('sschart: persisted indicator source graph contains a cycle');
+        visiting.add(indicator.id);
+        const source = indicator.source;
+        if (source?.kind === IndicatorSourceKind.IndicatorOutput) {
+            const upstream = byId.get(source.indicatorId);
+            if (upstream === undefined) {
+                throw new RangeError(
+                    `sschart: persisted indicator source '${source.indicatorId}' is unavailable`,
+                );
+            }
+            visit(upstream);
+        }
+        visiting.delete(indicator.id);
+        visited.add(indicator.id);
+        ordered.push(indicator);
+    };
+    for (const indicator of indicators) visit(indicator);
+    return Object.freeze(ordered);
 }
 
 function identifier(value: unknown, name: string): string {
@@ -155,12 +218,14 @@ function normalizeIndicators(value: readonly PersistedIndicator[]): readonly Per
         if (prototype !== Object.prototype && prototype !== null)
             throw new TypeError(`sschart: persisted indicator ${index} must be a plain object`);
         const source = raw as unknown as Readonly<Record<string, unknown>>;
-        const allowed = new Set(['id', 'type', 'paneId', 'params', 'styles']);
+        const allowed = new Set([
+            'id', 'type', 'paneId', 'params', 'styles', 'source', 'visible', 'priceScaleId',
+        ]);
         for (const key of Object.keys(source)) {
             if (!allowed.has(key))
                 throw new TypeError(`sschart: persisted indicator ${index}.${key} is not supported`);
         }
-        for (const key of allowed) {
+        for (const key of ['id', 'type', 'paneId', 'params', 'styles']) {
             if (!Object.prototype.hasOwnProperty.call(source, key))
                 throw new TypeError(`sschart: persisted indicator ${index}.${key} is required`);
         }
@@ -174,12 +239,23 @@ function normalizeIndicators(value: readonly PersistedIndicator[]): readonly Per
             if (options === null || typeof options !== 'object' || Array.isArray(options))
                 throw new TypeError(`sschart: indicator '${id}' style '${styleId}' must be an object`);
         }
+        const sourceBinding = source.source === undefined
+            ? undefined
+            : normalizeIndicatorSource(source.source);
+        if (source.visible !== undefined && typeof source.visible !== 'boolean')
+            throw new TypeError(`sschart: persisted indicator '${id}' visible must be boolean`);
+        const priceScaleId = source.priceScaleId === undefined
+            ? undefined
+            : identifier(source.priceScaleId, `persisted indicator '${id}' priceScaleId`);
         return Object.freeze({
             id,
             type: identifier(source.type, `persisted indicator '${id}' type`),
             paneId,
             params: normalizePersistedObject(source.params, `indicator '${id}' params`),
             styles,
+            ...(sourceBinding === undefined ? {} : { source: sourceBinding }),
+            ...(source.visible === undefined ? {} : { visible: source.visible }),
+            ...(priceScaleId === undefined ? {} : { priceScaleId }),
         });
     }));
 }

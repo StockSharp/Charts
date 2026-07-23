@@ -103,6 +103,14 @@ export class ChartDataStore<TBar extends TimedSeriesData> {
 
     raw(): readonly TBar[] { return Object.freeze(this.rawStore.snapshot()); }
 
+    rawSlice(fromIndex = 0, toIndex = this.rawStore.length): readonly TBar[] {
+        const from = dataIndex(fromIndex, this.rawStore.length, 'fromIndex');
+        const to = dataIndex(toIndex, this.rawStore.length, 'toIndex');
+        if (to < from)
+            throw new RangeError('sschart: chart data slice toIndex must not precede fromIndex');
+        return Object.freeze(this.rawStore.values.slice(from, to));
+    }
+
     view(context: ChartDataViewContext): readonly TBar[] {
         const normalizedContext = normalizeContext(context);
         return this.lodCache.getOrCreate(
@@ -135,4 +143,13 @@ function normalizeContext(context: ChartDataViewContext): ChartDataViewContext {
         resolution: context.resolution.trim(),
         groupingLevel: context.groupingLevel,
     });
+}
+
+function dataIndex(value: unknown, length: number, name: string): number {
+    if (!Number.isSafeInteger(value) || (value as number) < 0 || (value as number) > length) {
+        throw new RangeError(
+            `sschart: chart data ${name} must be an integer from 0 to ${length}`,
+        );
+    }
+    return value as number;
 }

@@ -16,13 +16,30 @@
 import { IndicatorSettings } from './indicator-settings.js';
 import { IndicatorRenderer } from './indicator-renderer.js';
 import {
+    applyIndicatorOutputStyle,
     applyIndicatorStyles,
+    captureIndicatorOutputStyles,
     captureIndicatorStyles,
+    enforceIndicatorVisibility,
+    indicatorOutputVisible,
+    replaceIndicatorStyles,
+    setIndicatorStyleVisibility,
 } from './indicator-styles.js';
 import {
     IndicatorRuntime,
     getIndicatorDefinition,
+    IndicatorInputKind,
+    DefaultIndicatorSource,
+    IndicatorCandleField,
+    IndicatorSourceKind,
+    IndicatorSourceStatusReason,
+    indicatorSourcesEqual,
+    normalizeIndicatorSource,
+    type IndicatorOutputAppearance,
+    type IndicatorOutputStylePatch,
     type IndicatorRuntimePatch,
+    type IndicatorSource,
+    type IndicatorSourceStatus,
 } from '../../indicators/index.js';
 
 export class IndicatorEngine {
@@ -43,6 +60,7 @@ export class IndicatorEngine {
     // full spine rebuild on every intra-bar tick.
     _lastSpineTime: any;
     _lastSpineCount: number;
+    _changeListeners: Set<() => void>;
 
     /// Drop warm-up points where `value` is not a finite number. Operates on
     /// either a flat `[{time,value}]` series (single-output indicators like SMA)
@@ -74,6 +92,7 @@ export class IndicatorEngine {
         this._candles = [];
         this._retainRuntimeHistory = false;
         this._lastSpineCount = 0;
+        this._changeListeners = new Set();
         this.onChange = null;
     }
 
@@ -90,6 +109,23 @@ export class IndicatorEngine {
     setSymbol(symbol) { this._symbol = symbol; }
     setTimeframe(timeframe) { this._timeframe = timeframe; }
 
+    subscribeChange(listener: () => void): void {
+        if (typeof listener !== 'function')
+            throw new TypeError('sschart: indicator change listener must be a function');
+        this._changeListeners.add(listener);
+    }
+
+    unsubscribeChange(listener: () => void): void {
+        this._changeListeners.delete(listener);
+    }
+
+    _emitChange(): void {
+        try { this.onChange?.(); } catch { /* legacy callback is an observer */ }
+        for (const listener of this._changeListeners) {
+            try { listener(); } catch { /* listeners are observers */ }
+        }
+    }
+
     // Keep the raw candle window as the source for incremental runtime reseeds
     // and shifted sparse timestamps. The same data
     // also drives the invisible pane spine.
@@ -102,7 +138,7 @@ export class IndicatorEngine {
         // Re-render every active indicator against the fresh candle window.
         // This fires on symbol switch / timeframe change after the chart
         // pulled new candles via api.getCandles.
-        for (const entry of this._indicators) this._resetIncrementalAndRender(entry);
+        for (const entry of this._orderedIndicators()) this._resetIncrementalAndRender(entry);
     }
 
     /// Live-tick update. terminal-app shares the chart's raw-candle array
@@ -164,7 +200,7 @@ export class IndicatorEngine {
         this._renderPending = true;
         const run = () => {
             this._renderPending = false;
-            for (const entry of this._indicators) this._updateIncrementalAndRender(entry);
+            for (const entry of this._orderedIndicators()) this._updateIncrementalAndRender(entry);
         };
         if (typeof window !== 'undefined' && window.requestAnimationFrame) {
             window.requestAnimationFrame(run);
@@ -184,7 +220,11 @@ export class IndicatorEngine {
         type,
         params,
         targetPaneId?,
-        persistence: { persistenceId?: string } = {},
+        persistence: {
+            persistenceId?: string;
+            source?: IndicatorSource;
+            priceScaleId?: string;
+        } = {},
     ) {
         if (persistence === null || typeof persistence !== 'object' || Array.isArray(persistence))
             throw new TypeError('sschart: indicator persistence options must be an object');
@@ -199,6 +239,12 @@ export class IndicatorEngine {
             && this._indicators.some(entry => entry.persistenceId === normalizedPersistenceId)) {
             throw new Error(`sschart: duplicate indicator persistence id '${normalizedPersistenceId}'`);
         }
+        if (persistence.priceScaleId !== undefined
+            && (typeof persistence.priceScaleId !== 'string'
+                || persistence.priceScaleId.trim().length === 0)) {
+            throw new TypeError('sschart: indicator price scale id must be a non-empty string');
+        }
+        const priceScaleId = persistence.priceScaleId?.trim();
         const settings = IndicatorSettings.getIndicator(type);
         if (!settings) return null;
 
@@ -211,6 +257,11 @@ export class IndicatorEngine {
 
         const id = this._nextId++;
         const persistenceId = normalizedPersistenceId || `indicator-${id}`;
+        const source = persistence.source === undefined
+            ? DefaultIndicatorSource
+            : normalizeIndicatorSource(persistence.source);
+        this._assertSourceAcyclic(persistenceId, source);
+        this._assertSourceOutput(source, true);
         const mergedParams = this._mergeParams(settings, params);
         let runtime;
         try {
@@ -229,12 +280,23 @@ export class IndicatorEngine {
             id, persistenceId, type,
             params: mergedParams,
             seriesRefs: [], paneId: null, colors: [], outputNames: [], legendSources: {},
+            visible: true,
+            source,
+            sourceStatus: IndicatorSourceStatusReason.Ready,
+            _outputRevision: 0,
+            _outputPreviousRevision: -1,
+            _outputChangedFromTime: -Infinity,
+            _lastOutputChanges: null,
+            _sourceRevision: null,
             definition, runtime,
             _runtimeFirstTime: null,
             _runtimePreviewTime: null,
             // Per-indicator price scale inside a sub-pane; 'right' (the visible axis) by default,
             // reassigned below for the 2nd+ indicator in a pane. Declared here so the type carries it.
             paneScaleId: 'right',
+            // Undefined means automatic routing. An explicit id survives pane
+            // rebalancing and is persisted by the workspace adapter.
+            priceScaleId,
         };
 
         // Explicit user placement from the picker's pane selector (or a sub-pane's
@@ -242,7 +304,7 @@ export class IndicatorEngine {
         //   '__main__' -> overlay on the main chart, '__new__' -> a fresh pane,
         //   '<paneId>' -> that existing pane. Absent -> automatic (overlay vs a
         //   measure-resolved sub-pane).
-        if (targetPaneId === '__main__') {
+        if (targetPaneId === '__main__' || targetPaneId === 'main') {
             entry.paneId = null;
         } else if (targetPaneId === '__new__' && this._paneManager) {
             const label = settings.name + ' (' + this._formatParams(mergedParams) + ')';
@@ -259,14 +321,16 @@ export class IndicatorEngine {
         // -2..+2) each auto-fit and overlay instead of squashing on one shared
         // scale — the multi-axis-per-area model the C# chart uses.
         if (entry.paneId) {
-            const firstInPane = !this._indicators.some(e => e.paneId === entry.paneId);
-            entry.paneScaleId = firstInPane ? 'right' : `indicator:${persistenceId}`;
+            const firstAutomaticInPane = !this._indicators.some(e => (
+                e.paneId === entry.paneId && e.priceScaleId === undefined
+            ));
+            entry.paneScaleId = firstAutomaticInPane ? 'right' : `indicator:${persistenceId}`;
         }
 
         this._indicators.push(entry);
-        this._resetIncrementalAndRender(entry);
+        this._resetCascade(entry.persistenceId);
 
-        if (this.onChange) this.onChange();
+        this._emitChange();
         return entry;
     }
 
@@ -276,6 +340,7 @@ export class IndicatorEngine {
         if (!entry.seriesRefs.length) {
             entry.seriesRefs = this._renderer.render(entry, data, chart, settings) || [];
             entry.colors = this._renderer.getLastColors();
+            enforceIndicatorVisibility(entry);
             this._applyPaneScale(entry, chart);
         } else {
             try { this._renderer.update(entry, data, chart, settings); }
@@ -286,14 +351,19 @@ export class IndicatorEngine {
     _resetIncrementalAndRender(entry) {
         const runtime = entry.runtime;
         if (!runtime) return;
+        const status = this._resolveSourceStatus(entry);
+        entry.sourceStatus = status.reason;
+        if (!status.available) {
+            this._clearRuntimeAndRender(entry);
+            return;
+        }
         try {
-            const inputs = new Array(this._candles.length > 0 ? this._candles.length - 1 : 0);
-            for (let index = 0; index < inputs.length; index++) {
-                inputs[index] = this._runtimeInput(this._candles[index]);
-            }
-            const preview = this._candles.length > 0
-                ? this._runtimeInput(this._candles[this._candles.length - 1])
-                : undefined;
+            const timeline = this._runtimeTimeline(entry);
+            const inputs = Array.from(
+                { length: timeline.committedCount },
+                (_, index) => timeline.committedAt(index),
+            );
+            const preview = timeline.preview;
             let points;
             if (this._retainRuntimeHistory) {
                 runtime.reset(inputs);
@@ -306,13 +376,15 @@ export class IndicatorEngine {
             this._renderData(entry, this._runtimeRendererShape(entry, points));
             this._renderer.prepareRuntime(entry, runtime, points);
             this._syncRuntimeLegend(entry, points);
-            entry._runtimeFirstTime = this._candles.length
-                ? this._toSec(this._candles[0].time)
-                : null;
-            entry._runtimePreviewTime = this._candles.length
-                ? this._toSec(this._candles[this._candles.length - 1].time)
-                : null;
+            entry._runtimeFirstTime = timeline.firstTime;
+            entry._runtimeLastCommittedTime = timeline.lastCommittedTime;
+            entry._runtimePreviewTime = preview?.time ?? null;
+            entry.sourceStatus = IndicatorSourceStatusReason.Ready;
+            this._markOutputsChanged(entry, -Infinity, null);
+            this._rememberSourceRevision(entry);
         } catch (err) {
+            entry.sourceStatus = IndicatorSourceStatusReason.Error;
+            try { this._clearRuntimeAndRender(entry); } catch { /* retain the original diagnostic */ }
             console.error('[Indicators] incremental reset failed for', entry.type, err);
         }
     }
@@ -320,73 +392,90 @@ export class IndicatorEngine {
     _updateIncrementalAndRender(entry) {
         const runtime = entry.runtime;
         if (!runtime) return;
+        const status = this._resolveSourceStatus(entry);
+        if (!status.available) {
+            if (entry.sourceStatus !== status.reason) this._clearRuntimeAndRender(entry);
+            entry.sourceStatus = status.reason;
+            return;
+        }
+        if (entry.sourceStatus !== IndicatorSourceStatusReason.Ready) {
+            if (entry.sourceStatus !== IndicatorSourceStatusReason.Error)
+                this._resetIncrementalAndRender(entry);
+            return;
+        }
+        if (this._sourceNeedsHistoricalReset(entry)) {
+            this._resetIncrementalAndRender(entry);
+            return;
+        }
         let patchFailed = false;
+        let outputChangedFromTime = Infinity;
+        const outputChanges: any[] = [];
         const apply = (patch: IndicatorRuntimePatch) => {
-            if (this._applyRuntimePatch(entry, patch)) return;
+            if (this._applyRuntimePatch(entry, patch)) {
+                outputChangedFromTime = Math.min(
+                    outputChangedFromTime,
+                    entry._lastRuntimePatchChangedFromTime ?? Infinity,
+                );
+                outputChanges.push(...patch.operations);
+                return;
+            }
             patchFailed = true;
             throw new Error('indicator painter rejected a runtime tail patch');
         };
         try {
-            if (!this._candles.length) {
+            const timeline = this._runtimeTimeline(entry);
+            const preview = timeline.preview;
+            const firstTime = timeline.firstTime;
+            if (entry._runtimeFirstTime !== null && entry._runtimeFirstTime !== firstTime) {
+                this._resetIncrementalAndRender(entry);
+                return;
+            }
+
+            if (runtime.committedCount > timeline.committedCount) {
                 if (!this._retainRuntimeHistory) {
                     this._resetIncrementalAndRender(entry);
                     return;
                 }
                 if (runtime.hasPreview) apply(runtime.discardPreview());
-                while (runtime.committedCount > 0) apply(runtime.truncateTail());
-                entry._runtimeFirstTime = null;
-                entry._runtimePreviewTime = null;
-            } else {
-                const firstTime = this._toSec(this._candles[0].time);
-                let logicalCount = runtime.committedCount + (runtime.hasPreview ? 1 : 0);
-                if ((entry._runtimeFirstTime !== null && entry._runtimeFirstTime !== firstTime)
-                    || (!this._retainRuntimeHistory && logicalCount > this._candles.length)) {
+                while (runtime.committedCount > timeline.committedCount)
+                    apply(runtime.truncateTail());
+            }
+
+            if (runtime.hasPreview) {
+                const nextCommitted = runtime.committedCount < timeline.committedCount
+                    ? timeline.committedAt(runtime.committedCount)
+                    : undefined;
+                if (nextCommitted?.time === entry._runtimePreviewTime) {
+                    apply(runtime.update(nextCommitted, true));
+                } else if (preview?.time !== entry._runtimePreviewTime) {
+                    apply(runtime.discardPreview());
+                }
+            }
+
+            while (runtime.committedCount < timeline.committedCount)
+                apply(runtime.update(timeline.committedAt(runtime.committedCount), true));
+
+            if (preview !== undefined) {
+                if (runtime.hasPreview && entry._runtimePreviewTime !== preview.time) {
                     this._resetIncrementalAndRender(entry);
                     return;
                 }
-
-                if (this._retainRuntimeHistory && logicalCount > this._candles.length) {
-                    if (runtime.hasPreview) apply(runtime.discardPreview());
-                    const desiredCommitted = Math.max(0, this._candles.length - 1);
-                    while (runtime.committedCount > desiredCommitted)
-                        apply(runtime.truncateTail());
-                    logicalCount = runtime.committedCount;
-                }
-
-                if (runtime.hasPreview) {
-                    const previewIndex = runtime.committedCount;
-                    const previewCandle = this._candles[previewIndex];
-                    if (!previewCandle
-                        || entry._runtimePreviewTime !== this._toSec(previewCandle.time)) {
-                        this._resetIncrementalAndRender(entry);
-                        return;
-                    }
-                    if (logicalCount < this._candles.length)
-                        apply(runtime.update(this._runtimeInput(previewCandle), true));
-                }
-
-                while (runtime.committedCount < this._candles.length - 1) {
-                    apply(runtime.update(
-                        this._runtimeInput(this._candles[runtime.committedCount]),
-                        true,
-                    ));
-                }
-
-                const last = this._candles[this._candles.length - 1];
-                if (!runtime.hasPreview) {
-                    apply(runtime.update(this._runtimeInput(last), false));
-                } else if (runtime.committedCount + 1 === this._candles.length) {
-                    apply(runtime.update(this._runtimeInput(last), false));
-                }
-                entry._runtimeFirstTime = firstTime;
-                entry._runtimePreviewTime = this._toSec(last.time);
+                apply(runtime.update(preview, false));
+            } else if (runtime.hasPreview) {
+                apply(runtime.discardPreview());
             }
+            entry._runtimeFirstTime = firstTime;
+            entry._runtimeLastCommittedTime = timeline.lastCommittedTime;
+            entry._runtimePreviewTime = preview?.time ?? null;
         } catch (err) {
             if (!patchFailed)
                 console.error('[Indicators] incremental update failed for', entry.type, err);
             this._resetIncrementalAndRender(entry);
             return;
         }
+        if (Number.isFinite(outputChangedFromTime))
+            this._markOutputsChanged(entry, outputChangedFromTime, outputChanges);
+        this._rememberSourceRevision(entry);
         if (!this._retainRuntimeHistory) runtime.compactHistory();
     }
 
@@ -395,11 +484,231 @@ export class IndicatorEngine {
         try { applied = this._renderer.updateRuntime(entry, patch, entry.runtime); }
         catch (err) { console.warn('[Indicators] runtime painter update failed for', entry.type, err); }
         if (!applied) return false;
-        return this._applyRuntimeLegendPatch(entry, patch);
+        const changedFromTime = this._runtimePatchChangedFromTime(entry, patch);
+        entry._lastRuntimePatchChangedFromTime = changedFromTime;
+        const legendApplied = this._applyRuntimeLegendPatch(entry, patch);
+        if (legendApplied) this._refreshRuntimePreviewOutputTimes(entry);
+        return legendApplied;
     }
 
-    _runtimeInput(candle) {
-        return { time: this._toSec(candle.time), value: candle };
+    _runtimeInput(entry, candle) {
+        const time = this._toSec(candle.time);
+        const scalarInput = entry.definition?.input?.kind === IndicatorInputKind.Scalar;
+        const source: IndicatorSource = entry.source || DefaultIndicatorSource;
+        if (source.kind === IndicatorSourceKind.Candles) {
+            return {
+                time,
+                value: scalarInput ? this._candleFieldValue(candle, IndicatorCandleField.Close) : candle,
+            };
+        }
+        const scalar = source.kind === IndicatorSourceKind.CandleField
+            ? this._candleFieldValue(candle, source.field)
+            : this._indicatorOutputAt(source.indicatorId, source.outputId, time);
+        return {
+            time,
+            value: scalarInput ? scalar : this._scalarCandle(candle, time, scalar, source),
+        };
+    }
+
+    _runtimeTimeline(entry) {
+        const source: IndicatorSource = entry.source || DefaultIndicatorSource;
+        if (source.kind !== IndicatorSourceKind.IndicatorOutput) {
+            const committedCount = Math.max(0, this._candles.length - 1);
+            const previewCandle = this._candles.at(-1);
+            return {
+                committedCount,
+                committedAt: index => this._runtimeInput(entry, this._candles[index]),
+                preview: previewCandle === undefined
+                    ? undefined : this._runtimeInput(entry, previewCandle),
+                firstTime: this._candles.length > 0
+                    ? this._toSec(this._candles[0].time) : null,
+                lastCommittedTime: committedCount > 0
+                    ? this._toSec(this._candles[committedCount - 1].time) : null,
+            };
+        }
+
+        const upstream = this._indicators.find(candidate => (
+            candidate.persistenceId === source.indicatorId
+        ));
+        const samples = upstream === undefined ? [] : this._sourceSamples(entry, upstream, source);
+        const hasPreview = samples.length > 0
+            && upstream?._runtimePreviewOutputTimes?.[source.outputId]
+                === samples.at(-1).input.time;
+        const committedCount = samples.length - (hasPreview ? 1 : 0);
+        return {
+            committedCount,
+            committedAt: index => samples[index].input,
+            preview: hasPreview ? samples.at(-1).input : undefined,
+            firstTime: samples[0]?.input.time ?? null,
+            lastCommittedTime: committedCount > 0
+                ? samples[committedCount - 1].input.time : null,
+        };
+    }
+
+    _sourceSamples(entry, upstream, source) {
+        const key = `${source.indicatorId}\u0000${source.outputId}`;
+        let cache = entry._sourceTimelineCache;
+        if (!cache || cache.key !== key) cache = null;
+        if (cache && cache.revision !== upstream._outputRevision) {
+            if (cache.revision === upstream._outputPreviousRevision
+                && Array.isArray(upstream._lastOutputChanges)) {
+                this._applySourceSampleChanges(entry, cache.samples, source, upstream._lastOutputChanges);
+                cache.revision = upstream._outputRevision;
+            } else cache = null;
+        }
+        if (!cache) {
+            const samples: any[] = [];
+            const points = upstream._points || [];
+            const targets = upstream._runtimeLegendTailTargets || [];
+            for (let index = 0; index < points.length; index++) {
+                const point = points[index];
+                const scalar = point.values?.[source.outputId];
+                if (typeof scalar !== 'number' || !Number.isFinite(scalar)) continue;
+                samples.push(this._sourceSample(entry, source, targets[index], point.time, scalar));
+            }
+            cache = { key, revision: upstream._outputRevision, samples };
+            entry._sourceTimelineCache = cache;
+        }
+        const last = cache.samples.at(-1);
+        if (last) {
+            last.input = this._runtimeInputFromScalar(
+                entry,
+                this._candleAtTime(last.input.time),
+                last.input.time,
+                last.scalar,
+                source,
+            );
+        }
+        return cache.samples;
+    }
+
+    _applySourceSampleChanges(entry, samples, source, changes) {
+        for (const operation of changes) {
+            if (operation.outputId !== source.outputId) continue;
+            const index = samples.findIndex(sample => sample.targetIndex === operation.targetIndex);
+            const point = operation.point;
+            if (operation.operation === 'remove' || !point || point.time === null
+                || typeof point.value !== 'number' || !Number.isFinite(point.value)) {
+                if (index >= 0) samples.splice(index, 1);
+                continue;
+            }
+            const sample = this._sourceSample(
+                entry,
+                source,
+                point.targetIndex,
+                point.time,
+                point.value,
+            );
+            if (index >= 0) samples[index] = sample;
+            else {
+                samples.push(sample);
+                samples.sort((left, right) => left.targetIndex - right.targetIndex);
+            }
+        }
+    }
+
+    _sourceSample(entry, source, targetIndex, time, scalar) {
+        const candle = this._candleAtTime(time);
+        return {
+            targetIndex,
+            scalar,
+            input: this._runtimeInputFromScalar(entry, candle, time, scalar, source),
+        };
+    }
+
+    _runtimeInputFromScalar(entry, candle, time, scalar, source: IndicatorSource) {
+        const scalarInput = entry.definition?.input?.kind === IndicatorInputKind.Scalar;
+        return {
+            time,
+            value: scalarInput ? scalar : this._scalarCandle(candle, time, scalar, source),
+        };
+    }
+
+    _candleAtTime(time) {
+        let low = 0;
+        let high = this._candles.length - 1;
+        while (low <= high) {
+            const middle = (low + high) >> 1;
+            const candle = this._candles[middle];
+            const candleTime = this._toSec(candle.time);
+            if (candleTime === time) return candle;
+            if (candleTime < time) low = middle + 1;
+            else high = middle - 1;
+        }
+        return null;
+    }
+
+    _scalarCandle(candle, time, scalar, source: IndicatorSource) {
+        const value = typeof scalar === 'number' && Number.isFinite(scalar) ? scalar : null;
+        const volume = source.kind === IndicatorSourceKind.CandleField
+            && source.field === IndicatorCandleField.Volume
+            ? value
+            : candle?.volume;
+        return {
+            time,
+            open: value,
+            high: value,
+            low: value,
+            close: value,
+            ...(volume === undefined ? {} : { volume }),
+        };
+    }
+
+    _candleFieldValue(candle, field) {
+        const finite = (value) => typeof value === 'number' && Number.isFinite(value) ? value : null;
+        if (field === IndicatorCandleField.Open) return finite(candle?.open);
+        if (field === IndicatorCandleField.High) return finite(candle?.high);
+        if (field === IndicatorCandleField.Low) return finite(candle?.low);
+        if (field === IndicatorCandleField.Close) return finite(candle?.close);
+        if (field === IndicatorCandleField.Volume) return finite(candle?.volume);
+        const open = finite(candle?.open);
+        const high = finite(candle?.high);
+        const low = finite(candle?.low);
+        const close = finite(candle?.close);
+        if (field === IndicatorCandleField.Median)
+            return high === null || low === null ? null : (high + low) / 2;
+        if (field === IndicatorCandleField.Typical)
+            return high === null || low === null || close === null ? null : (high + low + close) / 3;
+        return open === null || high === null || low === null || close === null
+            ? null : (open + high + low + close) / 4;
+    }
+
+    _indicatorOutputAt(indicatorId, outputId, time) {
+        const entry = this._indicators.find(candidate => candidate.persistenceId === indicatorId);
+        const points = entry?._points || [];
+        let low = 0;
+        let high = points.length - 1;
+        while (low <= high) {
+            const middle = (low + high) >> 1;
+            const point = points[middle];
+            if (point.time === time) {
+                const value = point.values?.[outputId];
+                return typeof value === 'number' && Number.isFinite(value) ? value : null;
+            }
+            if (point.time < time) low = middle + 1;
+            else high = middle - 1;
+        }
+        return null;
+    }
+
+    _clearRuntimeAndRender(entry) {
+        const runtime = entry.runtime;
+        let points;
+        if (this._retainRuntimeHistory) {
+            runtime.reset([]);
+            points = runtime.points();
+        } else {
+            points = runtime.resetStreaming([]);
+        }
+        entry.outputNames = runtime.outputs.map((output) => output.id);
+        this._renderData(entry, this._runtimeRendererShape(entry, points));
+        this._renderer.prepareRuntime(entry, runtime, points);
+        this._syncRuntimeLegend(entry, points);
+        entry._runtimeFirstTime = null;
+        entry._runtimeLastCommittedTime = null;
+        entry._runtimePreviewTime = null;
+        this._markOutputsChanged(entry, -Infinity, null);
+        this._rememberSourceRevision(entry);
     }
 
     _runtimeRendererShape(entry, points = entry.runtime.points()) {
@@ -426,6 +735,7 @@ export class IndicatorEngine {
             entry._lastValues = entry._points.length
                 ? entry._points[entry._points.length - 1].values
                 : null;
+            this._refreshRuntimePreviewOutputTimes(entry, points);
             return;
         }
 
@@ -446,6 +756,32 @@ export class IndicatorEngine {
         entry._lastValues = entry._points.length
             ? entry._points[entry._points.length - 1].values
             : null;
+        this._refreshRuntimePreviewOutputTimes(entry, points);
+    }
+
+    _runtimePatchChangedFromTime(entry, patch) {
+        let changedFromTime = Infinity;
+        for (const operation of patch.operations) {
+            const point = operation.point;
+            if (point?.time !== null && point?.time !== undefined)
+                changedFromTime = Math.min(changedFromTime, point.time);
+            const index = entry._runtimeLegendTailTargets?.lastIndexOf(operation.targetIndex) ?? -1;
+            const previousTime = index >= 0 ? entry._points?.[index]?.time : undefined;
+            if (previousTime !== undefined)
+                changedFromTime = Math.min(changedFromTime, previousTime);
+        }
+        return changedFromTime;
+    }
+
+    _refreshRuntimePreviewOutputTimes(entry, points = entry.runtime.points()) {
+        const times: Record<string, number> = {};
+        if (entry.runtime.hasPreview) {
+            for (const point of points) {
+                if (point.time !== null && point.sourceIndex === entry.runtime.committedCount)
+                    times[point.outputId] = point.time;
+            }
+        }
+        entry._runtimePreviewOutputTimes = times;
     }
 
     _applyRuntimeLegendPatch(entry, patch) {
@@ -495,11 +831,12 @@ export class IndicatorEngine {
     /// engine draws axes only for 'right'/'left', so these extra scales stay
     /// invisible — they exist purely to keep the overlays from squashing.
     _applyPaneScale(entry, chart) {
-        const sid = entry.paneScaleId;
-        if (!chart || !sid || sid === 'right') return;
+        const sid = entry.priceScaleId || entry.paneScaleId;
+        if (!sid) return;
         for (const s of entry.seriesRefs) {
             try { s.applyOptions({ priceScaleId: sid }); } catch { }
         }
+        if (!chart || sid === 'right') return;
         try { chart.priceScale(sid).applyOptions({ scaleMargins: { top: 0.1, bottom: 0.1 } }); } catch { }
     }
 
@@ -540,12 +877,162 @@ export class IndicatorEngine {
         return isFinite(p) ? Math.floor(p / 1000) : 0;
     }
 
+    _orderedIndicators() {
+        const byId = new Map(this._indicators.map(entry => [entry.persistenceId, entry]));
+        const visiting = new Set<string>();
+        const visited = new Set<string>();
+        const ordered: any[] = [];
+        const visit = (entry) => {
+            if (visited.has(entry.persistenceId)) return;
+            if (visiting.has(entry.persistenceId))
+                throw new Error('sschart: indicator source graph contains a cycle');
+            visiting.add(entry.persistenceId);
+            const source: IndicatorSource = entry.source || DefaultIndicatorSource;
+            if (source.kind === IndicatorSourceKind.IndicatorOutput) {
+                const upstream = byId.get(source.indicatorId);
+                if (upstream) visit(upstream);
+            }
+            visiting.delete(entry.persistenceId);
+            visited.add(entry.persistenceId);
+            ordered.push(entry);
+        };
+        for (const entry of this._indicators) visit(entry);
+        return ordered;
+    }
+
+    _resetCascade(rootPersistenceId) {
+        const affected = new Set([rootPersistenceId]);
+        for (const entry of this._orderedIndicators()) {
+            const source: IndicatorSource = entry.source || DefaultIndicatorSource;
+            if (source.kind === IndicatorSourceKind.IndicatorOutput
+                && affected.has(source.indicatorId)) affected.add(entry.persistenceId);
+            if (affected.has(entry.persistenceId)) this._resetIncrementalAndRender(entry);
+        }
+    }
+
+    _resetDependents(removedPersistenceId) {
+        const affected = new Set([removedPersistenceId]);
+        for (const entry of this._orderedIndicators()) {
+            const source: IndicatorSource = entry.source || DefaultIndicatorSource;
+            if (source.kind !== IndicatorSourceKind.IndicatorOutput
+                || !affected.has(source.indicatorId)) continue;
+            affected.add(entry.persistenceId);
+            this._resetIncrementalAndRender(entry);
+        }
+    }
+
+    _resolveSourceStatus(entry): IndicatorSourceStatus {
+        const source: IndicatorSource = entry.source || DefaultIndicatorSource;
+        if (source.kind !== IndicatorSourceKind.IndicatorOutput) {
+            return Object.freeze({
+                source,
+                available: true,
+                reason: IndicatorSourceStatusReason.Ready,
+            });
+        }
+        const upstream = this._indicators.find(candidate => (
+            candidate.persistenceId === source.indicatorId
+        ));
+        if (!upstream) return Object.freeze({
+            source,
+            available: false,
+            reason: IndicatorSourceStatusReason.MissingIndicator,
+        });
+        const outputs = upstream.outputNames?.length
+            ? upstream.outputNames
+            : upstream.runtime?.outputs?.map(output => output.id) || [];
+        if (!outputs.includes(source.outputId)) return Object.freeze({
+            source,
+            available: false,
+            reason: IndicatorSourceStatusReason.MissingOutput,
+        });
+        if (upstream.sourceStatus !== IndicatorSourceStatusReason.Ready) {
+            return Object.freeze({
+                source,
+                available: false,
+                reason: IndicatorSourceStatusReason.UpstreamUnavailable,
+            });
+        }
+        return Object.freeze({
+            source,
+            available: true,
+            reason: IndicatorSourceStatusReason.Ready,
+        });
+    }
+
+    _sourceEntry(entry) {
+        const source: IndicatorSource = entry.source || DefaultIndicatorSource;
+        return source.kind === IndicatorSourceKind.IndicatorOutput
+            ? this._indicators.find(candidate => candidate.persistenceId === source.indicatorId) || null
+            : null;
+    }
+
+    _sourceNeedsHistoricalReset(entry) {
+        const upstream = this._sourceEntry(entry);
+        if (!upstream || entry._sourceRevision === upstream._outputRevision) return false;
+        return entry._runtimeLastCommittedTime !== null
+            && upstream._outputChangedFromTime <= entry._runtimeLastCommittedTime;
+    }
+
+    _rememberSourceRevision(entry) {
+        const upstream = this._sourceEntry(entry);
+        entry._sourceRevision = upstream?._outputRevision ?? null;
+    }
+
+    _markOutputsChanged(entry, time, changes) {
+        const previous = entry._outputRevision || 0;
+        entry._outputPreviousRevision = previous;
+        entry._outputRevision = previous + 1;
+        entry._outputChangedFromTime = time;
+        entry._lastOutputChanges = changes;
+    }
+
+    _assertSourceAcyclic(ownerPersistenceId, source: IndicatorSource) {
+        let current = source;
+        const visited = new Set<string>();
+        while (current.kind === IndicatorSourceKind.IndicatorOutput) {
+            if (current.indicatorId === ownerPersistenceId)
+                throw new RangeError('sschart: indicator source dependency cannot contain a cycle');
+            if (visited.has(current.indicatorId))
+                throw new Error('sschart: existing indicator source graph contains a cycle');
+            visited.add(current.indicatorId);
+            const upstream = this._indicators.find(candidate => (
+                candidate.persistenceId === current.indicatorId
+            ));
+            if (!upstream) return;
+            current = upstream.source || DefaultIndicatorSource;
+        }
+    }
+
+    _assertSourceOutput(source: IndicatorSource, allowMissingIndicator) {
+        if (source.kind !== IndicatorSourceKind.IndicatorOutput) return;
+        const upstream = this._indicators.find(candidate => (
+            candidate.persistenceId === source.indicatorId
+        ));
+        if (!upstream) {
+            if (allowMissingIndicator) return;
+            throw new RangeError(
+                `sschart: indicator source '${source.indicatorId}' is unavailable`,
+            );
+        }
+        const outputs = upstream.outputNames?.length
+            ? upstream.outputNames
+            : upstream.runtime?.outputs?.map(output => output.id) || [];
+        if (!outputs.includes(source.outputId)) {
+            throw new RangeError(
+                `sschart: indicator source output '${source.outputId}' is unavailable`,
+            );
+        }
+    }
+
     remove(id) {
         const idx = this._indicators.findIndex(e => e.id === id);
         if (idx < 0) return;
         const entry = this._indicators[idx];
+        const persistenceId = entry.persistenceId;
         this._removeEntry(entry);
-        if (this.onChange) this.onChange();
+        this._resetDependents(persistenceId);
+        this._emitChange();
     }
 
     _removeEntry(entry) {
@@ -562,7 +1049,99 @@ export class IndicatorEngine {
             const stillUsed = this._indicators.some(e => e.paneId === entry.paneId);
             if (!stillUsed) {
                 try { this._paneManager.removePane(entry.paneId); } catch { }
+            } else {
+                this._rebalancePaneScales(entry.paneId);
             }
+        }
+    }
+
+    move(id, targetPaneId) {
+        const entry = this._indicators.find(item => item.id === id);
+        if (!entry) return false;
+        if (typeof targetPaneId !== 'string' || targetPaneId.trim().length === 0)
+            throw new TypeError('sschart: indicator target pane id must be non-empty');
+        const target = targetPaneId.trim();
+        const toMain = target === '__main__' || target === 'main';
+        const previousPaneId = entry.paneId;
+        if (toMain && previousPaneId === null) return false;
+        if (!toMain && target !== '__new__' && previousPaneId === target) return false;
+        if (!this._renderer || typeof this._renderer.moveSeries !== 'function')
+            throw new Error('sschart: indicator renderer cannot move series');
+
+        let nextPaneId = null;
+        let targetChart = null;
+        let createdPaneId = null;
+        let restoredPaneId = null;
+        if (!toMain) {
+            if (!this._paneManager)
+                throw new Error('sschart: indicator pane manager is unavailable');
+            if (target === '__new__') {
+                const settings = IndicatorSettings.getIndicator(entry.type);
+                const label = settings.name + ' (' + this._formatParams(entry.params) + ')';
+                createdPaneId = this._paneManager.addPane(label, settings.measure || null);
+                if (!createdPaneId) throw new Error('sschart: indicator pane could not be created');
+                nextPaneId = createdPaneId;
+            } else {
+                nextPaneId = target;
+            }
+            targetChart = this._paneManager.getChart(nextPaneId);
+            if (!targetChart && typeof this._paneManager.restorePane === 'function') {
+                restoredPaneId = this._paneManager.restorePane(nextPaneId);
+                if (restoredPaneId === nextPaneId)
+                    targetChart = this._paneManager.getChart(nextPaneId);
+            }
+            if (!targetChart) {
+                if (createdPaneId) this._paneManager.removePane(createdPaneId);
+                throw new Error(`sschart: indicator target pane '${nextPaneId}' is unavailable`);
+            }
+        }
+
+        try {
+            this._renderer.moveSeries(entry, targetChart);
+        } catch (error) {
+            if (createdPaneId) this._paneManager.removePane(createdPaneId);
+            if (restoredPaneId) this._paneManager.removePane(restoredPaneId);
+            throw error;
+        }
+        entry.paneId = nextPaneId;
+        this._rebalancePaneScales(previousPaneId);
+        this._rebalancePaneScales(nextPaneId);
+        if (previousPaneId && this._paneManager
+            && !this._indicators.some(item => item.paneId === previousPaneId)) {
+            this._paneManager.removePane(previousPaneId);
+        }
+        this._emitChange();
+        return true;
+    }
+
+    /** Selects an explicit price scale; null returns the indicator to automatic routing. */
+    setScale(id, priceScaleId: string | null): boolean {
+        const entry = this._indicators.find(item => item.id === id);
+        if (!entry) return false;
+        if (priceScaleId !== null
+            && (typeof priceScaleId !== 'string' || priceScaleId.trim().length === 0)) {
+            throw new TypeError('sschart: indicator price scale id must be non-empty or null');
+        }
+        const next = priceScaleId === null ? undefined : priceScaleId.trim();
+        if (entry.priceScaleId === next) return false;
+        entry.priceScaleId = next;
+        this._rebalancePaneScales(entry.paneId);
+        this._emitChange();
+        return true;
+    }
+
+    _rebalancePaneScales(paneId) {
+        const entries = this._indicators.filter(entry => entry.paneId === paneId);
+        const chart = paneId && this._paneManager ? this._paneManager.getChart(paneId) : null;
+        let automaticIndex = 0;
+        for (const entry of entries) {
+            if (entry.priceScaleId === undefined) {
+                entry.paneScaleId = paneId && automaticIndex > 0
+                    ? `indicator:${entry.persistenceId}`
+                    : 'right';
+                automaticIndex++;
+            }
+            this._applyPaneScale(entry, chart);
         }
     }
 
@@ -574,7 +1153,7 @@ export class IndicatorEngine {
     // Re-seeds every active local runtime after a timeframe/source change.
     // Series identity, pane placement, persistence ids and user styles stay intact.
     async resubscribeAll() {
-        for (const entry of this._indicators) this._resetIncrementalAndRender(entry);
+        for (const entry of this._orderedIndicators()) this._resetIncrementalAndRender(entry);
     }
 
     // Called by indicator-dialog's edit-save path: keep the row but re-fetch
@@ -582,7 +1161,7 @@ export class IndicatorEngine {
     // old subscription and add a fresh one with the same type — the server
     // keys each IIndicator instance per subscription so new params mean new
     // compute state anyway.
-    async replaceParams(id, newParams) {
+    replaceParams(id, newParams) {
         const idx = this._indicators.findIndex(e => e.id === id);
         if (idx < 0) return;
         const entry = this._indicators[idx];
@@ -592,13 +1171,119 @@ export class IndicatorEngine {
         const styles = captureIndicatorStyles(entry);
         const targetPaneId = entry.paneId || '__main__';
         const persistenceId = entry.persistenceId;
+        const source = entry.source || DefaultIndicatorSource;
+        const priceScaleId = entry.priceScaleId;
+        const visible = entry.visible !== false;
         this.remove(id);
-        const replacement = this.add(type, merged, targetPaneId, { persistenceId });
-        if (replacement) applyIndicatorStyles(replacement, styles);
+        let restoredPaneId = null;
+        if (targetPaneId !== '__main__' && this._paneManager
+            && !this._paneManager.getChart(targetPaneId)
+            && typeof this._paneManager.restorePane === 'function') {
+            const restored = this._paneManager.restorePane(targetPaneId);
+            if (restored === targetPaneId) restoredPaneId = restored;
+        }
+        const replacement = this.add(type, merged, targetPaneId, {
+            persistenceId,
+            source,
+            priceScaleId,
+        });
+        if (replacement) {
+            // Parameter replacement recreates the runtime, but it must not reorder
+            // the stable workspace row. add() appends, so put the replacement back
+            // at the exact previous position before publishing the final state.
+            const appendedIndex = this._indicators.indexOf(replacement);
+            if (appendedIndex >= 0 && appendedIndex !== idx) {
+                this._indicators.splice(appendedIndex, 1);
+                this._indicators.splice(Math.min(idx, this._indicators.length), 0, replacement);
+                this._rebalancePaneScales(replacement.paneId);
+            }
+            applyIndicatorStyles(replacement, styles);
+            if (!visible) setIndicatorStyleVisibility(replacement, false);
+            // add() notifies before restored styles/order are applied. Publish one
+            // final coherent snapshot for legends, editors and persistence.
+            this._emitChange();
+        } else if (restoredPaneId && this._paneManager) {
+            this._paneManager.removePane(restoredPaneId);
+        }
         return replacement;
     }
 
     getIndicators() { return this._indicators.slice(); }
+
+    /** Rebinds one runtime and every transitive dependent in graph order. */
+    setSource(id, value: IndicatorSource): boolean {
+        const entry = this._indicators.find(candidate => candidate.id === id);
+        if (!entry) return false;
+        const source = normalizeIndicatorSource(value);
+        if (indicatorSourcesEqual(entry.source || DefaultIndicatorSource, source)) return false;
+        this._assertSourceAcyclic(entry.persistenceId, source);
+        this._assertSourceOutput(source, false);
+        entry.source = source;
+        this._resetCascade(entry.persistenceId);
+        this._emitChange();
+        return true;
+    }
+
+    getSourceStatus(id): IndicatorSourceStatus | null {
+        const entry = this._indicators.find(candidate => candidate.id === id);
+        if (!entry) return null;
+        if (entry.sourceStatus === IndicatorSourceStatusReason.Error) {
+            return Object.freeze({
+                source: entry.source || DefaultIndicatorSource,
+                available: false,
+                reason: IndicatorSourceStatusReason.Error,
+            });
+        }
+        return this._resolveSourceStatus(entry);
+    }
+
+    /** Applies one output's visual options without rebuilding its runtime or series. */
+    setOutputStyle(id, outputId: string, patch: IndicatorOutputStylePatch): boolean {
+        const entry = this._indicators.find(candidate => candidate.id === id);
+        if (!entry) return false;
+        const changed = applyIndicatorOutputStyle(entry, outputId, patch);
+        if (changed) this._emitChange();
+        return changed;
+    }
+
+    /** Hides all painter-owned series while retaining computation and object identity. */
+    setVisible(id, visible: boolean): boolean {
+        if (typeof visible !== 'boolean')
+            throw new TypeError('sschart: indicator visible must be boolean');
+        const entry = this._indicators.find(candidate => candidate.id === id);
+        if (!entry) return false;
+        const changed = setIndicatorStyleVisibility(entry, visible);
+        if (changed) this._emitChange();
+        return changed;
+    }
+
+    /** Returns a detached snapshot keyed by the painter's stable style ids. */
+    getStyles(id): Readonly<Record<string, Readonly<Record<string, unknown>>>> | null {
+        const entry = this._indicators.find(candidate => candidate.id === id);
+        if (!entry) return null;
+        const styles = captureIndicatorStyles(entry);
+        return Object.freeze(Object.fromEntries(Object.entries(styles).map(([key, options]) => [
+            key,
+            Object.freeze({ ...options }),
+        ])));
+    }
+
+    /** Returns effective editor fields keyed by semantic output id. */
+    getOutputStyles(id): Readonly<Record<string, IndicatorOutputAppearance>> | null {
+        const entry = this._indicators.find(candidate => candidate.id === id);
+        return entry ? captureIndicatorOutputStyles(entry) : null;
+    }
+
+    /** Restores a complete painter-style snapshot, including clearing newer fields. */
+    replaceStyles(id, styles: Readonly<Record<string, unknown>>): boolean {
+        const entry = this._indicators.find(candidate => candidate.id === id);
+        if (!entry) return false;
+        const skipped = replaceIndicatorStyles(entry, styles);
+        if (skipped.length > 0)
+            throw new Error(`sschart: unavailable indicator styles: ${skipped.join(', ')}`);
+        this._emitChange();
+        return true;
+    }
 
     // Called by chart-legend on crosshair hover. A supplied `time` means the
     // value must belong to that exact candle. Carrying the previous value
@@ -608,6 +1293,7 @@ export class IndicatorEngine {
     getValuesAt(time, seriesData?) {
         const result: any[] = [];
         for (const entry of this._indicators) {
+            if (entry.visible === false) continue;
             const fromSeries = seriesData?.get && Object.keys(entry.legendSources || {}).length > 0;
             const values = fromSeries
                 ? this._pickValuesFromSeriesData(entry, seriesData)
@@ -624,7 +1310,7 @@ export class IndicatorEngine {
                 type: entry.type,
                 name,
                 values,
-                colors: entry.colors,
+                colors: this._visibleOutputColors(entry),
                 // paneId=null → overlay on the main chart; anything else is in
                 // a sub-pane. Legend consumers can filter to avoid listing a
                 // sub-pane indicator's values inside the main price-chart legend.
@@ -639,14 +1325,15 @@ export class IndicatorEngine {
         const keys = Array.isArray(entry.outputNames) && entry.outputNames.length > 0
             ? entry.outputNames
             : Object.keys(entry.legendSources || {});
-        for (const key of keys) {
+        const visibleKeys = keys.filter(key => indicatorOutputVisible(entry, key));
+        for (const key of visibleKeys) {
             const source = entry.legendSources?.[key];
             const point = source ? seriesData.get(source.series) : null;
             const raw = point == null ? null : point[source.field || 'value'];
             const numeric = raw == null ? NaN : Number(raw);
             values[key] = Number.isFinite(numeric) ? numeric : null;
         }
-        return keys.length > 0 ? values : null;
+        return visibleKeys.length > 0 ? values : null;
     }
 
     _pickValues(entry, time) {
@@ -676,14 +1363,23 @@ export class IndicatorEngine {
         const keys = Array.isArray(entry.outputNames) && entry.outputNames.length > 0
             ? entry.outputNames
             : Object.keys(values || {});
-        if (keys.length === 0) return null;
+        const visibleKeys = keys.filter(key => indicatorOutputVisible(entry, key));
+        if (visibleKeys.length === 0) return null;
 
         const complete: Record<string, number | null> = {};
-        for (const key of keys) {
+        for (const key of visibleKeys) {
             const value = values && values[key];
             complete[key] = value == null ? null : Number(value);
         }
         return complete;
+    }
+
+    _visibleOutputColors(entry) {
+        const outputs = Array.isArray(entry.outputNames) ? entry.outputNames : [];
+        return outputs.reduce((colors, outputId, index) => {
+            if (indicatorOutputVisible(entry, outputId)) colors.push(entry.colors?.[index]);
+            return colors;
+        }, [] as any[]);
     }
 
     // Called by the wsClient client when the hub pushes a point for one of our subs.

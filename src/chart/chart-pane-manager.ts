@@ -10,6 +10,7 @@ class LegacyPaneChartAdapter {
     ) {}
 
     addSeries(definition, options = {}) { return this.nativePane.addSeries(definition, options); }
+    adoptSeries(series) { return this.owner.moveSeries(series, this.nativePane); }
     removeSeries(series) { this.nativePane.removeSeries(series); }
     priceScale(scaleId = 'right') { return this.nativePane.priceScale(scaleId); }
     timeScale() { return this.owner.timeScale(); }
@@ -47,6 +48,7 @@ export class ChartPaneManager {
     _containerId: string;
     _mainContainer: HTMLElement | null;
     _panes: Map<string, any>;
+    _removedPanes: Map<string, any>;
     _nextId: number;
     _mainChart: any;
     _wrapper: HTMLDivElement | null;
@@ -61,6 +63,7 @@ export class ChartPaneManager {
         this._containerId = containerId;
         this._mainContainer = null;
         this._panes = new Map();
+        this._removedPanes = new Map();
         this._nextId = 1;
         this._mainChart = null;
         this._wrapper = null;
@@ -124,16 +127,29 @@ export class ChartPaneManager {
         return null;
     }
 
-    addPane(label, measure) {
+    addPane(label, measure, restoration: any = null) {
         if (!this._wrapper || !this._mainChart?.addPane) return null;
-        const paneId = 'pane_' + this._nextId++;
+        let paneId = restoration?.id;
+        if (paneId !== undefined
+            && (typeof paneId !== 'string' || paneId.trim().length === 0 || this._panes.has(paneId))) {
+            throw new Error(`sschart: pane '${String(paneId)}' cannot be restored`);
+        }
+        if (paneId === undefined) {
+            do { paneId = 'pane_' + this._nextId++; } while (this._panes.has(paneId));
+        }
+        const restoredOptions = restoration?.paneOptions || {};
         const nativePane = this._mainChart.addPane({
             id: paneId,
-            height: 160,
-            minHeight: 64,
-            order: this._panes.size + 1,
+            height: restoredOptions.height ?? 160,
+            minHeight: restoredOptions.minHeight ?? 64,
+            order: restoredOptions.order ?? this._panes.size + 1,
+            state: restoredOptions.state ?? 'normal',
         });
-        nativePane.priceScale('right').applyOptions({ scaleMargins: { top: 0.1, bottom: 0.1 } });
+        nativePane.priceScale('right').applyOptions(
+            restoration?.rightPriceScale || { scaleMargins: { top: 0.1, bottom: 0.1 } },
+        );
+        if (restoration?.leftPriceScale)
+            nativePane.priceScale('left').applyOptions(restoration.leftPriceScale);
         const chart = new LegacyPaneChartAdapter(this._mainChart, nativePane);
 
         const paneEl = document.createElement('div');
@@ -187,6 +203,7 @@ export class ChartPaneManager {
             measure,
             ctxMenu,
         });
+        this._removedPanes.delete(paneId);
         this._scheduleHeaderSync();
         return paneId;
     }
@@ -194,11 +211,29 @@ export class ChartPaneManager {
     removePane(paneId) {
         const pane = this._panes.get(paneId);
         if (!pane) return;
+        const scaleIds = pane.nativePane.priceScaleIds?.() || [];
+        this._removedPanes.set(paneId, {
+            id: paneId,
+            label: pane.label,
+            measure: pane.measure,
+            paneOptions: pane.nativePane.options?.(),
+            rightPriceScale: pane.nativePane.priceScale('right').options?.(),
+            leftPriceScale: scaleIds.includes('left')
+                ? pane.nativePane.priceScale('left').options?.()
+                : undefined,
+        });
         try { pane.ctxMenu?.dispose(); } catch { /* keep releasing */ }
         try { this._mainChart.removePane(pane.nativePane); } catch { /* already removed */ }
         pane.el.remove();
         this._panes.delete(paneId);
         this._scheduleHeaderSync();
+    }
+
+    /** Recreates a recently emptied pane with the same native id and layout options. */
+    restorePane(paneId) {
+        const snapshot = this._removedPanes.get(paneId);
+        if (!snapshot) return null;
+        return this.addPane(snapshot.label, snapshot.measure, snapshot);
     }
 
     getChart(paneId) {
@@ -260,6 +295,7 @@ export class ChartPaneManager {
 
     dispose() {
         for (const paneId of Array.from(this._panes.keys())) this.removePane(paneId);
+        this._removedPanes.clear();
         const chartEl = document.getElementById(this._containerId);
         if (chartEl && this._onPointerMove) {
             chartEl.removeEventListener('pointermove', this._onPointerMove);
