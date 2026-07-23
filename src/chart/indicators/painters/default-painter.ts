@@ -33,7 +33,14 @@ export class DefaultIndicatorPainter implements IndicatorPainter {
             }
         }
 
-        return { series, colors };
+        return {
+            series,
+            colors,
+            legendSources: Object.fromEntries(outputs.map((key, index) => [
+                key,
+                { seriesIndex: index, field: 'value' },
+            ])),
+        };
     }
 
     update(context: IndicatorPainterContext, series: any[]): void {

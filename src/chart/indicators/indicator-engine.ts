@@ -175,7 +175,7 @@ export class IndicatorEngine {
         const entry = {
             id, type, calcKind, calcFn,
             params: mergedParams,
-            seriesRefs: [], paneId: null, colors: [], outputNames: [],
+            seriesRefs: [], paneId: null, colors: [], outputNames: [], legendSources: {},
             // Per-indicator price scale inside a sub-pane; 'right' (the visible axis) by default,
             // reassigned below for the 2nd+ indicator in a pane. Declared here so the type carries it.
             paneScaleId: 'right',
@@ -385,10 +385,13 @@ export class IndicatorEngine {
     // forward is wrong for sparse studies (Fractals, pivots, signals): it makes
     // the legend describe a marker from another bar. Without a hover time we
     // still show the most recently formed value.
-    getValuesAt(time) {
+    getValuesAt(time, seriesData?) {
         const result: any[] = [];
         for (const entry of this._indicators) {
-            const values = this._pickValues(entry, time);
+            const fromSeries = seriesData?.get && Object.keys(entry.legendSources || {}).length > 0;
+            const values = fromSeries
+                ? this._pickValuesFromSeriesData(entry, seriesData)
+                : this._pickValues(entry, time);
             if (!values) continue;
             const settings = IndicatorSettings.getIndicator(entry.type);
             const baseName = settings ? settings.name : entry.type;
@@ -409,6 +412,21 @@ export class IndicatorEngine {
             });
         }
         return result;
+    }
+
+    _pickValuesFromSeriesData(entry, seriesData) {
+        const values: Record<string, number | null> = {};
+        const keys = Array.isArray(entry.outputNames) && entry.outputNames.length > 0
+            ? entry.outputNames
+            : Object.keys(entry.legendSources || {});
+        for (const key of keys) {
+            const source = entry.legendSources?.[key];
+            const point = source ? seriesData.get(source.series) : null;
+            const raw = point == null ? null : point[source.field || 'value'];
+            const numeric = raw == null ? NaN : Number(raw);
+            values[key] = Number.isFinite(numeric) ? numeric : null;
+        }
+        return keys.length > 0 ? values : null;
     }
 
     _pickValues(entry, time) {

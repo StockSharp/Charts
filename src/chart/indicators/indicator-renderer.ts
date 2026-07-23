@@ -46,8 +46,20 @@ export class IndicatorRenderer {
 
         entry._painter = entry._painter || painter;
         entry._painterContext = context;
+        const series = result?.series || [];
+        entry.legendSources = {};
+        for (const [key, source] of Object.entries(result?.legendSources || {})) {
+            const typed = source as { seriesIndex: number; field?: string };
+            const sourceSeries = series[typed.seriesIndex];
+            if (sourceSeries !== undefined) {
+                entry.legendSources[key] = {
+                    series: sourceSeries,
+                    field: typed.field || 'value',
+                };
+            }
+        }
         this._lastColors = result?.colors?.slice() || [];
-        return result?.series || [];
+        return series;
     }
 
     update(entry: any, data: any, paneChart: any, settings: any): void {
@@ -73,6 +85,7 @@ export class IndicatorRenderer {
         }
 
         entry.seriesRefs = [];
+        entry.legendSources = {};
         entry._painter = null;
         entry._painterContext = null;
     }

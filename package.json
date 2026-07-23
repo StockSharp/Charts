@@ -11,7 +11,7 @@
     "build": "node build.mjs",
     "build:browser-fixtures": "node build-browser-fixtures.mjs",
     "serve": "node serve.mjs",
-    "typecheck:core": "tsc -p tsconfig.core.json",
+    "typecheck:core": "tsc -p tsconfig.typecheck.json",
     "api:check": "node tools/check-public-api.mjs",
     "api:update": "node tools/check-public-api.mjs --update",
     "test": "npm run typecheck:core && npm run api:check && node build-tests.mjs && node --test \"tests/_dist/**/*.test.cjs\"",

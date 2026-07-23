@@ -28,12 +28,27 @@ test('pans, zooms and publishes a snapped crosshair event', async ({ page }) => 
     expect(zoomed.to - zoomed.from).toBeLessThan(panned.to - panned.from);
 
     const crosshair = await page.evaluate(() => {
-        const events = (window as any).__fixture.crosshairEvents;
-        return events[events.length - 1];
+        const fixture = (window as any).__fixture;
+        const events = fixture.crosshairEvents;
+        const event = events[events.length - 1];
+        return {
+            time: event.time,
+            logical: event.logical,
+            point: event.point,
+            paneId: event.paneId,
+            seriesCount: event.seriesData.size,
+            candleTime: event.seriesData.get(fixture.candles)?.time,
+            sourceType: event.sourceEvent?.type,
+        };
     });
     expect(crosshair.time).toEqual(expect.any(Number));
+    expect(crosshair.logical).toEqual(expect.any(Number));
     expect(crosshair.point.x).toEqual(expect.any(Number));
     expect(crosshair.point.y).toEqual(expect.any(Number));
+    expect(crosshair.paneId).toBe('main');
+    expect(crosshair.seriesCount).toBeGreaterThan(0);
+    expect(crosshair.candleTime).toBe(crosshair.time);
+    expect(crosshair.sourceType).toBe('pointermove');
 });
 
 test('drags a price line and commits the final price once', async ({ page }) => {
@@ -89,9 +104,81 @@ test('clears the crosshair event when the pointer leaves the chart', async ({ pa
     await page.mouse.move(box!.x - 20, box!.y + 220);
     const last = await page.evaluate(() => {
         const events = (window as any).__fixture.crosshairEvents;
-        return events[events.length - 1];
+        const event = events[events.length - 1];
+        return {
+            time: event.time,
+            logical: event.logical,
+            point: event.point,
+            paneId: event.paneId,
+            seriesCount: event.seriesData.size,
+            hoveredObject: event.hoveredObject,
+            sourceType: event.sourceEvent?.type,
+        };
     });
-    expect(last).toEqual({});
+    expect(last).toEqual({
+        time: null,
+        logical: null,
+        point: null,
+        paneId: null,
+        seriesCount: 0,
+        hoveredObject: null,
+        sourceType: 'pointerleave',
+    });
+});
+
+test('sets and clears a controlled crosshair through the same event model', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+        const fixture = (window as any).__fixture;
+        const point = fixture.average.data()[70];
+        fixture.chart.setCrosshairPosition({
+            time: point.time,
+            price: point.value,
+            series: fixture.average,
+        });
+        await fixture.settle();
+        const positioned = fixture.crosshairEvents[fixture.crosshairEvents.length - 1];
+        const summary = {
+            time: positioned.time,
+            logical: positioned.logical,
+            paneId: positioned.paneId,
+            point: positioned.point,
+            expectedX: fixture.chart.timeScale().timeToCoordinate(point.time),
+            expectedY: fixture.average.priceToCoordinate(point.value),
+            value: positioned.seriesData.get(fixture.average)?.value,
+            hoveredType: positioned.hoveredObject?.type,
+            hoveredSeries: positioned.hoveredObject?.series === fixture.average,
+            sourceEvent: positioned.sourceEvent,
+        };
+        fixture.chart.clearCrosshairPosition();
+        const cleared = fixture.crosshairEvents[fixture.crosshairEvents.length - 1];
+        return {
+            summary,
+            cleared: {
+                time: cleared.time,
+                point: cleared.point,
+                paneId: cleared.paneId,
+                seriesCount: cleared.seriesData.size,
+                sourceEvent: cleared.sourceEvent,
+            },
+        };
+    });
+
+    expect(result.summary.time).toEqual(expect.any(Number));
+    expect(result.summary.logical).toEqual(expect.any(Number));
+    expect(result.summary.paneId).toBe('main');
+    expect(result.summary.point.x).toBeCloseTo(result.summary.expectedX, 8);
+    expect(result.summary.point.y).toBeCloseTo(result.summary.expectedY, 8);
+    expect(result.summary.value).toEqual(expect.any(Number));
+    expect(result.summary.hoveredType).toBe('series');
+    expect(result.summary.hoveredSeries).toBe(true);
+    expect(result.summary.sourceEvent).toBeNull();
+    expect(result.cleared).toEqual({
+        time: null,
+        point: null,
+        paneId: null,
+        seriesCount: 0,
+        sourceEvent: null,
+    });
 });
 
 test('repaints only the overlay when the pointer moves', async ({ page }) => {

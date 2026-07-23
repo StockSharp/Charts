@@ -31,12 +31,12 @@ describe('SeriesModel', () => {
     it('sorts snapshots and accepts only tail updates', () => {
         const series = new SeriesModel();
         series.replaceData([{ time: 3, value: 3 }, { time: 1, value: 1 }]);
-        assert.deepEqual(series.data.map((item) => item.time), [1, 3]);
+        assert.deepEqual(series.values.map((item) => item.time), [1, 3]);
 
-        assert.equal(series.updateTail({ time: 3, value: 30 }), true);
-        assert.equal(series.updateTail({ time: 2, value: 20 }), false);
-        assert.equal(series.updateTail({ time: 4, value: 40 }), true);
-        assert.deepEqual(series.data.map((item) => item.value), [1, 30, 40]);
+        assert.equal(series.updateTail({ time: 3, value: 30 }).kind, 'update');
+        assert.equal(series.updateTail({ time: 2, value: 20 }), null);
+        assert.equal(series.updateTail({ time: 4, value: 40 }).kind, 'append');
+        assert.deepEqual(series.values.map((item) => item.value), [1, 30, 40]);
     });
 });
 

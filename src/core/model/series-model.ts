@@ -1,34 +1,23 @@
-export interface TimedValue {
-    time: number;
-}
+import { SeriesStore, type TimedValue } from './series-store.js';
+import type { DataChangeSet } from './data-change-set.js';
+
+export type { TimedValue } from './series-store.js';
 
 /** Owns ordered series data independently from rendering and public handles. */
 export class SeriesModel<TValue extends TimedValue> {
-    readonly data: TValue[] = [];
+    readonly store = new SeriesStore<TValue>();
+    get values(): readonly TValue[] { return this.store.values; }
 
-    replaceData(points: ReadonlyArray<TValue>): void {
-        const ordered = points.slice().sort((a, b) => a.time - b.time);
-        this.data.splice(0, this.data.length, ...ordered);
+    replaceData(points: ReadonlyArray<TValue>): DataChangeSet {
+        return this.store.replace(points);
     }
 
     /** Returns true when the current tail changed. Older updates are ignored. */
-    updateTail(point: TValue): boolean {
-        const last = this.data[this.data.length - 1];
-        if (last === undefined) {
-            this.data.push(point);
-            return true;
-        }
-        if (Number.isFinite(point.time) && Number.isFinite(last.time)) {
-            if (point.time === last.time) this.data[this.data.length - 1] = point;
-            else if (point.time > last.time) this.data.push(point);
-            else return false;
-        } else {
-            this.data[this.data.length - 1] = point;
-        }
-        return true;
+    updateTail(point: TValue): DataChangeSet | null {
+        return this.store.update(point);
     }
 
     clear(): void {
-        this.data.length = 0;
+        this.store.replace([]);
     }
 }

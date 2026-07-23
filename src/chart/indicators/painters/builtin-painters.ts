@@ -35,7 +35,15 @@ class BandPainter implements IndicatorPainter {
             title: 'Band',
         }, mergeBand(c.output('upper'), c.output('lower')));
         const middle = c.addSeries('line', { color: middleColor, lineWidth: 2, title: 'Middle' }, c.output('middle'));
-        return { series: [band, middle], colors: [bandColor, middleColor, bandColor] };
+        return {
+            series: [band, middle],
+            colors: [bandColor, middleColor, bandColor],
+            legendSources: {
+                upper: { seriesIndex: 0, field: 'upper' },
+                middle: { seriesIndex: 1, field: 'value' },
+                lower: { seriesIndex: 0, field: 'lower' },
+            },
+        };
     }
 
     update(c: IndicatorPainterContext, series: any[]): void {
@@ -62,7 +70,15 @@ class MacdHistogramPainter implements IndicatorPainter {
             title: c.settings?.name || this.primary.toUpperCase(),
         }, c.output(this.primary));
         const signal = c.addSeries('line', { color: signalColor, lineWidth: 1, title: 'Signal' }, c.output('signal'));
-        return { series: [histogram, primary, signal], colors: [primaryColor, signalColor, histogramColor] };
+        return {
+            series: [histogram, primary, signal],
+            colors: [primaryColor, signalColor, histogramColor],
+            legendSources: {
+                [this.primary]: { seriesIndex: 1, field: 'value' },
+                signal: { seriesIndex: 2, field: 'value' },
+                histogram: { seriesIndex: 0, field: 'value' },
+            },
+        };
     }
 
     update(c: IndicatorPainterContext, series: any[]): void {
@@ -99,7 +115,14 @@ class LinesPainter implements IndicatorPainter {
 
         const colors = (c.entry.outputNames || specs.map(s => s.key))
             .map((name: string) => colorByKey.get(name) || '#d0d6de');
-        return { series, colors };
+        return {
+            series,
+            colors,
+            legendSources: Object.fromEntries(specs.map((spec, index) => [
+                spec.key,
+                { seriesIndex: index, field: 'value' },
+            ])),
+        };
     }
 
     update(c: IndicatorPainterContext, series: any[]): void {
@@ -151,6 +174,13 @@ class IchimokuPainter implements IndicatorPainter {
                 this.senkouBColor,
                 this.chikouColor,
             ],
+            legendSources: {
+                tenkan: { seriesIndex: 0, field: 'value' },
+                kijun: { seriesIndex: 1, field: 'value' },
+                senkouA: { seriesIndex: 3, field: 'upper' },
+                senkouB: { seriesIndex: 3, field: 'lower' },
+                chikou: { seriesIndex: 2, field: 'value' },
+            },
         };
     }
 
@@ -174,7 +204,10 @@ class DotsPainter implements IndicatorPainter {
             pointMarkersVisible: true,
             pointMarkersRadius: 4,
         }, c.output('value'));
-        return { series: [series], colors: [color] };
+        return {
+            series: [series], colors: [color],
+            legendSources: { value: { seriesIndex: 0, field: 'value' } },
+        };
     }
 
     update(c: IndicatorPainterContext, series: any[]): void {
@@ -192,7 +225,13 @@ class FractalsPainter implements IndicatorPainter {
         });
         const up = c.addSeries('line', options(upColor, 'Fractal Up'), c.output('up'));
         const down = c.addSeries('line', options(downColor, 'Fractal Down'), c.output('down'));
-        return { series: [up, down], colors: [upColor, downColor] };
+        return {
+            series: [up, down], colors: [upColor, downColor],
+            legendSources: {
+                up: { seriesIndex: 0, field: 'value' },
+                down: { seriesIndex: 1, field: 'value' },
+            },
+        };
     }
 
     update(c: IndicatorPainterContext, series: any[]): void {
@@ -207,7 +246,13 @@ class GatorPainter implements IndicatorPainter {
         const lowerColor = '#ff3d57';
         const upper = c.addSeries('histogram', { color: upperColor, title: 'Upper', priceScaleId: 'right' }, c.output('upper'));
         const lower = c.addSeries('histogram', { color: lowerColor, title: 'Lower', priceScaleId: 'right' }, c.output('lower'));
-        return { series: [upper, lower], colors: [upperColor, lowerColor] };
+        return {
+            series: [upper, lower], colors: [upperColor, lowerColor],
+            legendSources: {
+                upper: { seriesIndex: 0, field: 'value' },
+                lower: { seriesIndex: 1, field: 'value' },
+            },
+        };
     }
 
     update(c: IndicatorPainterContext, series: any[]): void {
@@ -225,7 +270,10 @@ class VolumePainter implements IndicatorPainter {
             priceFormat: { type: 'volume' },
             priceScaleId: 'right',
         }, this.colored(c.output('value')));
-        return { series: [series], colors: [color] };
+        return {
+            series: [series], colors: [color],
+            legendSources: { value: { seriesIndex: 0, field: 'value' } },
+        };
     }
 
     update(c: IndicatorPainterContext, series: any[]): void {

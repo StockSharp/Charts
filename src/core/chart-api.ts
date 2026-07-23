@@ -18,11 +18,57 @@ import { PaneLayout, type PaneLayoutRect, type PaneLayoutResult, type PaneSplitt
 import { ChartModel } from './model/chart-model.js';
 import { PaneModel, type PaneOptions } from './model/pane-model.js';
 import { SeriesModel } from './model/series-model.js';
+import {
+    MismatchDirection,
+    SeriesStore,
+    type BarsInfo,
+    type MismatchDirectionValue,
+} from './model/series-store.js';
+import type { DataChangeSet } from './model/data-change-set.js';
 import { RenderDirty, RenderScheduler, type RenderDirtyFlags } from './render-scheduler.js';
 import type { TimeRange } from './scale/time-scale.js';
+import {
+    InternalPriceScaleMode,
+    isRelativePriceScale,
+    priceToScale,
+    scaleToPrice,
+} from './scale/price-transform.js';
+import { registerBuiltInSeries } from '../series/built-in-renderers.js';
+import { preparePointFigureData, prepareRenkoData } from '../series/derived-data.js';
+import {
+    seriesRendererRegistry,
+    type CustomSeriesDefinition,
+    type SeriesDefinition,
+    type SeriesRendererContext,
+    type TimedSeriesData,
+} from '../series/registry.js';
 
 export type { TimeRange } from './scale/time-scale.js';
 export type { PaneOptions, PaneState } from './model/pane-model.js';
+export { MismatchDirection } from './model/series-store.js';
+export type { BarsInfo, MismatchDirectionValue } from './model/series-store.js';
+export type { DataChangeKind, DataChangeSet } from './model/data-change-set.js';
+export {
+    getSeriesDefinition,
+    getSeriesTypes,
+    registerSeries,
+    seriesRendererRegistry,
+    unregisterSeries,
+} from '../series/registry.js';
+export type {
+    CustomSeriesDefinition,
+    ISeriesRenderer,
+    PreparedSeriesData,
+    SeriesDefinition,
+    SeriesDataProcessor,
+    SeriesPriceRange,
+    SeriesRendererContext,
+    SeriesRendererPane,
+    SeriesRendererTheme,
+    TimedSeriesData,
+} from '../series/registry.js';
+
+registerBuiltInSeries(seriesRendererRegistry);
 
 export type Time = number; // UNIX seconds (the only form the app feeds)
 
@@ -32,22 +78,31 @@ export interface LineData { time: Time; value: number }
 export interface HistogramData { time: Time; value: number; color?: string }
 export interface AreaData { time: Time; value: number }
 export interface BandData { time: Time; value: number; upper: number; lower: number }
+export interface VolumeProfileData extends CandlestickData { vol?: number }
+export interface PriceLevelData { price: number; vol: number }
+export interface ClusterData {
+    time: Time;
+    high: number;
+    low: number;
+    open?: number;
+    close?: number;
+    levels: readonly PriceLevelData[];
+}
 
 export type SeriesKind = 'Candlestick' | 'Bar' | 'Line' | 'Histogram' | 'Area'
     | 'Band' | 'PointFigure' | 'Renko' | 'VolumeProfile' | 'Cluster' | 'Box';
-export interface SeriesDefinition { type: SeriesKind }
 
-export const CandlestickSeries: SeriesDefinition = { type: 'Candlestick' };
-export const BarSeries: SeriesDefinition = { type: 'Bar' };
-export const LineSeries: SeriesDefinition = { type: 'Line' };
-export const HistogramSeries: SeriesDefinition = { type: 'Histogram' };
-export const AreaSeries: SeriesDefinition = { type: 'Area' };
-export const BandSeries: SeriesDefinition = { type: 'Band' };
-export const PointFigureSeries: SeriesDefinition = { type: 'PointFigure' };
-export const RenkoSeries: SeriesDefinition = { type: 'Renko' };
-export const VolumeProfileSeries: SeriesDefinition = { type: 'VolumeProfile' };
-export const ClusterSeries: SeriesDefinition = { type: 'Cluster' };
-export const BoxSeries2: SeriesDefinition = { type: 'Box' };
+export const CandlestickSeries = seriesRendererRegistry.reference<CandlestickData, SeriesOptions>('Candlestick');
+export const BarSeries = seriesRendererRegistry.reference<CandlestickData, SeriesOptions>('Bar');
+export const LineSeries = seriesRendererRegistry.reference<LineData, SeriesOptions>('Line');
+export const HistogramSeries = seriesRendererRegistry.reference<HistogramData, SeriesOptions>('Histogram');
+export const AreaSeries = seriesRendererRegistry.reference<AreaData, SeriesOptions>('Area');
+export const BandSeries = seriesRendererRegistry.reference<BandData, SeriesOptions>('Band');
+export const PointFigureSeries = seriesRendererRegistry.reference<CandlestickData, SeriesOptions>('PointFigure');
+export const RenkoSeries = seriesRendererRegistry.reference<CandlestickData, SeriesOptions>('Renko');
+export const VolumeProfileSeries = seriesRendererRegistry.reference<VolumeProfileData, SeriesOptions>('VolumeProfile');
+export const ClusterSeries = seriesRendererRegistry.reference<ClusterData, SeriesOptions>('Cluster');
+export const BoxSeries2 = seriesRendererRegistry.reference<ClusterData, SeriesOptions>('Box');
 
 export const ColorType = { Solid: 'solid', VerticalGradient: 'gradient' } as const;
 
@@ -65,8 +120,14 @@ export type LineStyleValue = typeof LineStyle[keyof typeof LineStyle];
 export const CrosshairMode = { Magnet: 0, Normal: 1 } as const;
 export type CrosshairModeValue = typeof CrosshairMode[keyof typeof CrosshairMode];
 
-// Price-scale display mode (Normal / Logarithmic).
-export const PriceScaleMode = { Normal: 0, Logarithmic: 1 } as const;
+// Price-scale display mode. Relative modes normalize every series against
+// its own first visible value so differently-priced instruments compare fairly.
+export const PriceScaleMode = {
+    Normal: InternalPriceScaleMode.Normal,
+    Logarithmic: InternalPriceScaleMode.Logarithmic,
+    Percentage: InternalPriceScaleMode.Percentage,
+    IndexedTo100: InternalPriceScaleMode.IndexedTo100,
+} as const;
 export type PriceScaleModeValue = typeof PriceScaleMode[keyof typeof PriceScaleMode];
 
 // Per-series horizontal "price line" — used by the terminal/host to draw
@@ -204,99 +265,90 @@ function textOn(bg: string): string {
     return lum > 150 ? '#111' : '#fff';
 }
 
-// ---- Renko / Point&Figure transforms ------------------------------------
-// Renko and P&F re-bin price into bricks / columns whose count differs from the
-// source candles. To keep them on the SAME axis as everything else — so overlay
-// indicators recomputed on the bricks/columns line up, the crosshair works, and
-// panning/zoom behave like every other series — each derived bar is given a
-// synthetic time spread evenly across the source time span. The renderers draw
-// these via timeToX(); the same functions are exported so a host can feed the
-// derived bars to its indicator engine and have the studies align natively.
-function evenSpan(src: ReadonlyArray<{ time: Time }>, n: number): number[] {
-    if (n <= 0) return [];
-    const t0 = src[0].time, t1 = src[src.length - 1].time;
-    const out = new Array<number>(n);
-    if (n === 1 || !(t1 > t0)) { for (let i = 0; i < n; i += 1) out[i] = t0 + i; return out; }
-    for (let i = 0; i < n; i += 1) out[i] = t0 + (i / (n - 1)) * (t1 - t0);
-    return out;
-}
-function renkoBox(src: ReadonlyArray<CandlestickData>, boxSize?: number): number {
-    if (num(boxSize, 0) > 0) return boxSize as number;
-    let lo = Infinity, hi = -Infinity;
-    for (const p of src) { const c = p.close; if (c < lo) lo = c; if (c > hi) hi = c; }
-    return ((Number.isFinite(hi - lo) && hi > lo) ? (hi - lo) : 1) / 40;
-}
-function renkoBricks(src: ReadonlyArray<CandlestickData>, box: number): Array<{ up: boolean; lo: number; hi: number }> {
-    const bricks: Array<{ up: boolean; lo: number; hi: number }> = [];
-    if (src.length === 0 || !(box > 0)) return bricks;
-    let base = src[0].close;
-    for (const p of src) {
-        while (p.close >= base + box) { bricks.push({ up: true, lo: base, hi: base + box }); base += box; }
-        while (p.close <= base - box) { bricks.push({ up: false, lo: base - box, hi: base }); base -= box; }
-    }
-    return bricks;
-}
-// Derived OHLC bars (one per brick) for feeding an indicator engine.
+// Public transforms use the same processors as the built-in renderers, so
+// indicator inputs and the visible derived series can never drift apart.
 export function renkoBars(candles: ReadonlyArray<CandlestickData>, boxSize?: number): CandlestickData[] {
-    if (candles.length < 2) return [];
-    const bricks = renkoBricks(candles, renkoBox(candles, boxSize));
-    const times = evenSpan(candles, bricks.length);
-    return bricks.map((bk, i) => (bk.up
-        ? { time: times[i], open: bk.lo, high: bk.hi, low: bk.lo, close: bk.hi }
-        : { time: times[i], open: bk.hi, high: bk.hi, low: bk.lo, close: bk.lo }) as AnyPoint);
+    return Array.from(prepareRenkoData(candles, boxSize).data);
 }
-function pnfBox(src: ReadonlyArray<CandlestickData>, boxSize?: number): number {
-    if (num(boxSize, 0) > 0) return boxSize as number;
-    let lo = Infinity, hi = -Infinity;
-    for (const p of src) { if (p.low < lo) lo = p.low; if (p.high > hi) hi = p.high; }
-    return ((Number.isFinite(hi - lo) && hi > lo) ? (hi - lo) : 1) / 50;
-}
-function pnfColumns(src: ReadonlyArray<CandlestickData>, box: number, rev: number): Array<{ up: boolean; lo: number; hi: number }> {
-    const cols: Array<{ up: boolean; lo: number; hi: number }> = [];
-    if (src.length === 0 || !(box > 0)) return cols;
-    let ref = Infinity;
-    for (const p of src) if (p.close < ref) ref = p.close;
-    let dir = 0, top = src[0].close, bot = src[0].close;
-    for (const p of src) {
-        const c = p.close;
-        if (dir >= 0 && c >= top + box) { dir = 1; top = Math.floor((c - ref) / box) * box + ref; if (cols.length === 0 || !cols[cols.length - 1].up) cols.push({ up: true, lo: bot, hi: top }); else cols[cols.length - 1].hi = top; }
-        else if (dir <= 0 && c <= bot - box) { dir = -1; bot = Math.ceil((c - ref) / box) * box + ref; if (cols.length === 0 || cols[cols.length - 1].up) cols.push({ up: false, lo: bot, hi: top }); else cols[cols.length - 1].lo = bot; }
-        else if (dir === 1 && c <= top - rev * box) { dir = -1; bot = c; cols.push({ up: false, lo: bot, hi: top - box }); }
-        else if (dir === -1 && c >= bot + rev * box) { dir = 1; top = c; cols.push({ up: true, lo: bot + box, hi: top }); }
-    }
-    return cols;
-}
-// Derived OHLC bars (one per column) for feeding an indicator engine.
-export function pnfBars(candles: ReadonlyArray<CandlestickData>, boxSize?: number, reversal?: number): CandlestickData[] {
-    if (candles.length < 2) return [];
-    const cols = pnfColumns(candles, pnfBox(candles, boxSize), num(reversal, 2));
-    const times = evenSpan(candles, cols.length);
-    return cols.map((col, i) => (col.up
-        ? { time: times[i], open: col.lo, high: col.hi, low: col.lo, close: col.hi }
-        : { time: times[i], open: col.hi, high: col.hi, low: col.lo, close: col.lo }) as AnyPoint);
+export function pnfBars(
+    candles: ReadonlyArray<CandlestickData>,
+    boxSize?: number,
+    reversal?: number,
+): CandlestickData[] {
+    return Array.from(preparePointFigureData(candles, boxSize, reversal).data);
 }
 
-class Series extends SeriesModel<AnyPoint> implements ISeriesApi {
-    readonly kind: SeriesKind;
+class Series extends SeriesModel<AnyPoint> implements ISeriesApi<AnyPoint, SeriesOptions> {
+    readonly kind: string;
+    readonly definition: CustomSeriesDefinition<AnyPoint, SeriesOptions>;
     opts: SeriesOptions;
-    markers: SeriesMarker[] = [];
-    constructor(kind: SeriesKind, opts: SeriesOptions) {
+    readonly markerStore = new SeriesStore<SeriesMarker>();
+    get affectsTimeScale(): boolean { return this.definition.affectsTimeScale !== false; }
+    get markers(): readonly SeriesMarker[] { return this.markerStore.values; }
+    get points(): readonly AnyPoint[] { return this.values; }
+    private prepared: {
+        key: string;
+        store: SeriesStore<AnyPoint>;
+        metadata: Readonly<Record<string, unknown>>;
+    } | null = null;
+    private optionsVersion = 0;
+    constructor(definition: CustomSeriesDefinition<AnyPoint, SeriesOptions>, opts: SeriesOptions) {
         super();
-        this.kind = kind;
+        this.definition = definition;
+        this.kind = definition.type;
         this.opts = opts;
     }
-    setData(points: ReadonlyArray<unknown>): void {
-        this.replaceData(points as ReadonlyArray<AnyPoint>);
-        this.chart?.onDataChanged();
+    setData(points: ReadonlyArray<AnyPoint>): void {
+        const change = this.replaceData(points);
+        this.chart?.onDataChanged(change);
     }
     // Streaming-style single-point push:
     // same time as last -> replace; newer time -> append; older -> ignore.
-    update(point: unknown): void {
-        if (this.updateTail(point as AnyPoint)) this.chart?.onDataChanged();
+    update(point: AnyPoint): void {
+        const change = this.updateTail(point);
+        if (change !== null) this.chart?.onDataChanged(change);
     }
-    applyOptions(patch: SeriesOptions): void {
+    prependData(points: ReadonlyArray<AnyPoint>): void {
+        const change = this.store.prepend(points);
+        if (change !== null) this.chart?.onDataChanged(change);
+    }
+    pop(count = 1): AnyPoint[] {
+        const result = this.store.pop(count);
+        if (result.change !== null) this.chart?.onDataChanged(result.change);
+        return result.points;
+    }
+    data(): readonly AnyPoint[] { return this.store.snapshot(); }
+    dataByIndex(logicalIndex: number, mismatchDirection: MismatchDirectionValue = MismatchDirection.None): AnyPoint | null {
+        return this.chart?.seriesDataByLogicalIndex(this, logicalIndex, mismatchDirection)
+            ?? this.store.dataByIndex(logicalIndex, mismatchDirection);
+    }
+    barsInLogicalRange(range: LogicalRange): BarsInfo | null {
+        return this.chart?.seriesBarsInLogicalRange(this, range) ?? this.store.barsInLogicalRange(range);
+    }
+    applyOptions(patch: Partial<SeriesOptions>): void {
         this.opts = { ...this.opts, ...patch };
+        this.optionsVersion++;
         this.chart?.scheduleDraw();
+    }
+    renderData(): {
+        key: string;
+        store: SeriesStore<AnyPoint>;
+        metadata: Readonly<Record<string, unknown>>;
+    } {
+        const key = `${this.kind}:${this.store.version}:${this.optionsVersion}`;
+        const processor = this.definition.dataProcessor;
+        if (processor === undefined) return { key, store: this.store, metadata: {} };
+        if (this.prepared?.key === key) return this.prepared;
+
+        const result = processor(this.points, this.opts);
+        const store = new SeriesStore<AnyPoint>();
+        store.replace(result.data as readonly AnyPoint[]);
+        this.prepared = {
+            key,
+            store,
+            metadata: Object.freeze({ ...(result.metadata ?? {}) }),
+        };
+        return this.prepared;
     }
     priceScaleId(): string { return this.opts.priceScaleId ?? 'right'; }
     // Per-series price-scale handle. Lets the host adjust scaleMargins
@@ -322,11 +374,11 @@ class Series extends SeriesModel<AnyPoint> implements ISeriesApi {
     // Public so external order-overlay code can hit-test / drag.
     priceToCoordinate(price: number): number | null {
         if (this.chart === null || !Number.isFinite(price)) return null;
-        return this.chart.priceToY(price, this.priceScaleId(), this.pane);
+        return this.chart.priceToY(price, this.priceScaleId(), this.pane, this);
     }
     coordinateToPrice(y: number): number | null {
         if (this.chart === null || !Number.isFinite(y)) return null;
-        return this.chart.yToPrice(y, this.priceScaleId(), this.pane);
+        return this.chart.yToPrice(y, this.priceScaleId(), this.pane, this);
     }
 }
 
@@ -358,7 +410,7 @@ class PriceLine implements IPriceLine {
 // Public price-scale handle.
 export interface PriceScaleOptions {
     scaleMargins?: { top?: number; bottom?: number };
-    mode?: PriceScaleModeValue;     // Normal | Logarithmic
+    mode?: PriceScaleModeValue;
     // When false, pin the price range at its current value instead of auto-fitting it to the
     // visible data on every frame. Used by hosts during an interactive gesture (e.g. dragging a
     // resting order line): with autoscale on, a live candle arriving mid-drag re-fits the range
@@ -389,14 +441,42 @@ class PriceScaleApi implements IPriceScaleApi {
 class MarkersPlugin implements ISeriesMarkersPlugin {
     constructor(private readonly series: Series) {}
     setMarkers(markers: SeriesMarker[]): void {
-        this.series.markers = markers.slice().sort((a, b) => a.time - b.time);
+        this.series.markerStore.replace(markers);
         this.series.chart?.scheduleDraw();
     }
 }
 
-export interface CrosshairMoveEvent { time?: Time; point?: { x: number; y: number } }
+export interface SeriesHoveredObject {
+    readonly type: 'series';
+    readonly series: ISeriesApi<any, any>;
+    readonly data: TimedSeriesData;
+}
+export interface PriceLineHoveredObject {
+    readonly type: 'price-line';
+    readonly series: ISeriesApi<any, any>;
+    readonly priceLine: IPriceLine;
+    readonly id: string | null;
+}
+export type HoveredObject = SeriesHoveredObject | PriceLineHoveredObject;
+export interface CrosshairEvent {
+    readonly time: Time | null;
+    readonly logical: number | null;
+    readonly point: { x: number; y: number } | null;
+    readonly paneId: string | null;
+    readonly seriesData: ReadonlyMap<ISeriesApi<any, any>, TimedSeriesData>;
+    readonly hoveredObject: HoveredObject | null;
+    readonly sourceEvent: PointerEvent | MouseEvent | null;
+}
+/** @deprecated Use CrosshairEvent. */
+export type CrosshairMoveEvent = CrosshairEvent;
+export interface CrosshairPosition {
+    readonly time: Time;
+    readonly price?: number;
+    readonly pane?: IPaneApi;
+    readonly series?: ISeriesApi<any, any>;
+}
 export type RangeListener = (range: TimeRange | null) => void;
-export type CrosshairListener = (param: CrosshairMoveEvent) => void;
+export type CrosshairListener = (param: CrosshairEvent) => void;
 // A press-release on the plot that did not move and did not grab a draggable line. Carries the
 // price/time under the cursor and the keyboard modifiers, so a host can place a resting order
 // (e.g. Ctrl+click) without wiring its own pointer handlers — the chart owns the gesture.
@@ -438,10 +518,18 @@ export interface ISeriesMarkersPlugin {
     setMarkers(markers: SeriesMarker[]): void;
 }
 
-export interface ISeriesApi {
-    setData(points: ReadonlyArray<unknown>): void;
-    update(point: unknown): void;
-    applyOptions(patch: SeriesOptions): void;
+export interface ISeriesApi<
+    TData extends TimedSeriesData = TimedSeriesData,
+    TOptions extends SeriesOptions = SeriesOptions,
+> {
+    setData(points: ReadonlyArray<TData>): void;
+    update(point: TData): void;
+    prependData(points: ReadonlyArray<TData>): void;
+    pop(count?: number): TData[];
+    data(): readonly TData[];
+    dataByIndex(logicalIndex: number, mismatchDirection?: MismatchDirectionValue): TData | null;
+    barsInLogicalRange(range: LogicalRange): BarsInfo | null;
+    applyOptions(patch: Partial<TOptions>): void;
     priceScaleId(): string;
     priceScale(): IPriceScaleApi;
     createPriceLine(options: PriceLineOptions): IPriceLine;
@@ -475,7 +563,10 @@ export interface PaneSize {
 
 export interface IPaneApi {
     id(): string;
-    addSeries(definition: SeriesDefinition, options?: SeriesOptions): ISeriesApi;
+    addSeries<TData extends TimedSeriesData, TOptions extends SeriesOptions = SeriesOptions>(
+        definition: SeriesDefinition<TData, TOptions>,
+        options?: Partial<TOptions>,
+    ): ISeriesApi<TData, TOptions>;
     removeSeries(series: ISeriesApi): void;
     series(): readonly ISeriesApi[];
     priceScale(scaleId?: string): IPriceScaleApi;
@@ -495,7 +586,11 @@ export interface IChartApi {
     addPane(options?: PaneOptions): IPaneApi;
     panes(): readonly IPaneApi[];
     removePane(pane: IPaneApi): void;
-    addSeries(definition: SeriesDefinition, options?: SeriesOptions, pane?: IPaneApi): ISeriesApi;
+    addSeries<TData extends TimedSeriesData, TOptions extends SeriesOptions = SeriesOptions>(
+        definition: SeriesDefinition<TData, TOptions>,
+        options?: Partial<TOptions>,
+        pane?: IPaneApi,
+    ): ISeriesApi<TData, TOptions>;
     removeSeries(series: ISeriesApi): void;
     timeScale(): ITimeScaleApi;
     priceScale(scaleId?: string): IPriceScaleApi;
@@ -503,6 +598,8 @@ export interface IChartApi {
     unsubscribeClick(cb: ClickListener): void;
     subscribeCrosshairMove(cb: CrosshairListener): void;
     unsubscribeCrosshairMove(cb: CrosshairListener): void;
+    setCrosshairPosition(position: CrosshairPosition): void;
+    clearCrosshairPosition(): void;
     setOrderPlacement(options: OrderPlacementOptions | null): void;
     subscribeOrderPlace(cb: OrderPlaceListener): void;
     unsubscribeOrderPlace(cb: OrderPlaceListener): void;
@@ -556,7 +653,10 @@ class PaneApi implements IPaneApi {
     ) {}
 
     id(): string { return this.model.id; }
-    addSeries(definition: SeriesDefinition, options: SeriesOptions = {}): ISeriesApi {
+    addSeries<TData extends TimedSeriesData, TOptions extends SeriesOptions = SeriesOptions>(
+        definition: SeriesDefinition<TData, TOptions>,
+        options?: Partial<TOptions>,
+    ): ISeriesApi<TData, TOptions> {
         return this.chart.addSeries(definition, options, this);
     }
     removeSeries(series: ISeriesApi): void { this.chart.removeSeries(series); }
@@ -576,6 +676,14 @@ class PaneApi implements IPaneApi {
     getSize(): PaneSize { return this.chart.paneSize(this); }
 }
 
+interface ScaleBounds {
+    min: number;
+    max: number;
+    mode: PriceScaleModeValue;
+    baseValue: number;
+    baseValues: ReadonlyMap<Series, number>;
+}
+
 class ChartImpl implements IChartApi {
     private readonly host: HTMLElement;
     private readonly root: HTMLDivElement;
@@ -588,6 +696,7 @@ class ChartImpl implements IChartApi {
     private readonly model = new ChartModel<Series>();
     private readonly tsApi = new TimeScaleApi(this);
     private readonly paneLayout = new PaneLayout();
+    private readonly fullRangeCache = new WeakMap<Series, { key: string; min: number; max: number }>();
     private paneLayoutResult: PaneLayoutResult = { panes: [], splitters: [] };
     private readonly paneApis = new Map<string, PaneApi>();
     private activePane: PaneModel<Series> = this.model.mainPane;
@@ -624,6 +733,7 @@ class ChartImpl implements IChartApi {
     // pointer state
     private mouseX: number | null = null;
     private mouseY: number | null = null;
+    private controlledCrosshairTime: Time | null = null;
     private dragging = false;
     private lastDragX = 0;
     // manual vertical price-scale stretch (drag the price axis)
@@ -779,9 +889,15 @@ class ChartImpl implements IChartApi {
         this.recomputePaneLayout();
         this.onDataChanged();
     }
-    addSeries(def: SeriesDefinition, options: SeriesOptions = {}, pane?: IPaneApi): Series {
+    addSeries<TData extends TimedSeriesData, TOptions extends SeriesOptions = SeriesOptions>(
+        def: SeriesDefinition<TData, TOptions>,
+        options?: Partial<TOptions>,
+        pane?: IPaneApi,
+    ): ISeriesApi<TData, TOptions>;
+    addSeries(def: SeriesDefinition<any, any>, options: SeriesOptions = {}, pane?: IPaneApi): Series {
         const target = pane === undefined ? this.model.mainPane : this.resolvePane(pane);
-        const s = new Series(def.type, options);
+        const resolved = seriesRendererRegistry.resolve(def) as CustomSeriesDefinition<AnyPoint, SeriesOptions>;
+        const s = new Series(resolved, { ...resolved.defaultOptions, ...options });
         s.chart = this;
         s.pane = target;
         this.model.addSeries(s, target);
@@ -907,7 +1023,7 @@ class ChartImpl implements IChartApi {
         const pane = this.mouseY === null ? this.model.mainPane : (this.paneAt(this.mouseY) ?? this.model.mainPane);
         const s = this.mainSeries(pane);
         if (!ok || placement === null || s === null) { this.clearPlacementPreview(); return; }
-        const p = this.yToPrice(this.mouseY as number, s.priceScaleId(), pane);
+        const p = this.yToPrice(this.mouseY as number, s.priceScaleId(), pane, s);
         if (p === null) { this.clearPlacementPreview(); return; }
         const color = placement.color;
         const title = placement.title + ' @ ' + this.fmtPrice(p, s.opts.priceFormat);
@@ -932,6 +1048,43 @@ class ChartImpl implements IChartApi {
     subscribeCrosshairMove(cb: CrosshairListener): void { this.crosshairListeners.push(cb); }
     unsubscribeCrosshairMove(cb: CrosshairListener): void {
         this.crosshairListeners = this.crosshairListeners.filter((x) => x !== cb);
+    }
+    setCrosshairPosition(position: CrosshairPosition): void {
+        if (!Number.isFinite(position.time))
+            throw new RangeError('sschart: crosshair time must be a finite UNIX timestamp');
+        if (position.price !== undefined && !Number.isFinite(position.price))
+            throw new RangeError('sschart: crosshair price must be finite');
+
+        const series = position.series === undefined ? null : position.series as Series;
+        if (series !== null && (!(series instanceof Series) || series.chart !== this))
+            throw new Error('sschart: crosshair series does not belong to this chart');
+        const explicitPane = position.pane === undefined ? null : this.resolvePane(position.pane);
+        if (series !== null && series.pane !== null && explicitPane !== null && series.pane !== explicitPane)
+            throw new Error('sschart: crosshair pane and series refer to different panes');
+        const pane = explicitPane ?? series?.pane ?? this.model.mainPane;
+        const rect = this.paneRect(pane);
+        if (rect === undefined) throw new Error(`sschart: pane '${pane.id}' is not visible`);
+        this.activatePane(pane, rect);
+
+        const x = this.timeToX(position.time);
+        const coordinateSeries = series ?? this.mainSeries(pane);
+        const y = position.price === undefined
+            ? (this.plotT() + this.plotB()) / 2
+            : this.priceToY(position.price, coordinateSeries?.priceScaleId() ?? 'right', pane, coordinateSeries ?? undefined);
+        if (y === null) throw new Error('sschart: crosshair price cannot be mapped to the selected pane');
+        this.mouseX = x;
+        this.mouseY = y;
+        this.controlledCrosshairTime = position.time;
+        this.emitCrosshair(null);
+        this.scheduleDraw(RenderDirty.Overlay);
+    }
+    clearCrosshairPosition(): void {
+        this.controlledCrosshairTime = null;
+        this.mouseX = null;
+        this.mouseY = null;
+        this.clearPlacementPreview();
+        this.emitCrosshair(null);
+        this.scheduleDraw(RenderDirty.Overlay);
     }
     applyOptions(patch: ChartOptions): void {
         Object.assign(this.opts, patch);
@@ -1042,13 +1195,13 @@ class ChartImpl implements IChartApi {
         }
     }
 
-    onDataChanged(): void {
+    onDataChanged(_change?: DataChangeSet): void {
         let lo = Infinity;
         let hi = -Infinity;
         for (const s of this.series) {
-            if (s.data.length === 0 || s.kind === 'VolumeProfile') continue;   // VP has no time axis
-            const t0 = s.data[0].time;
-            const t1 = s.data[s.data.length - 1].time;
+            if (s.points.length === 0 || !s.affectsTimeScale) continue;
+            const t0 = s.points[0].time;
+            const t1 = s.points[s.points.length - 1].time;
             if (!Number.isFinite(t0) || !Number.isFinite(t1)) continue;
             lo = Math.min(lo, t0);
             hi = Math.max(hi, t1);
@@ -1110,9 +1263,9 @@ class ChartImpl implements IChartApi {
     private indexRefSeries(): Series | null {
         let best: Series | null = null;
         for (const s of this.series) {
-            if (s.kind === 'VolumeProfile') continue;
-            if (s.data.length === 0) continue;
-            if (best === null || s.data.length > best.data.length) best = s;
+            if (!s.affectsTimeScale) continue;
+            if (s.points.length === 0) continue;
+            if (best === null || s.points.length > best.points.length) best = s;
         }
         return best;
     }
@@ -1122,7 +1275,7 @@ class ChartImpl implements IChartApi {
     timeToLogical(t: Time): number | null {
         const s = this.indexRefSeries();
         if (s === null) return null;
-        const d = s.data;
+        const d = s.points;
         if (d.length === 0) return null;
         if (d.length === 1) return 0;
         if (t <= d[0].time) {
@@ -1146,7 +1299,7 @@ class ChartImpl implements IChartApi {
     logicalToTime(idx: number): Time | null {
         const s = this.indexRefSeries();
         if (s === null) return null;
-        const d = s.data;
+        const d = s.points;
         if (d.length === 0) return null;
         if (d.length === 1) return d[0].time;
         if (idx <= 0) {
@@ -1176,6 +1329,40 @@ class ChartImpl implements IChartApi {
         this.clampView(fromT, toT);
         if (emit) this.emitRange();
         this.scheduleDraw();
+    }
+
+    seriesDataByLogicalIndex(
+        series: Series,
+        logicalIndex: number,
+        mismatchDirection: MismatchDirectionValue,
+    ): AnyPoint | null {
+        const time = this.logicalToTime(logicalIndex);
+        if (time === null) return null;
+        const exact = series.store.pointAtTime(time);
+        if (exact !== null || mismatchDirection === MismatchDirection.None) return exact;
+        const right = series.store.lowerBound(time);
+        if (mismatchDirection === MismatchDirection.NearestLeft)
+            return series.store.dataByIndex(right - 1, MismatchDirection.None);
+        return series.store.dataByIndex(right, MismatchDirection.None);
+    }
+
+    seriesBarsInLogicalRange(series: Series, range: LogicalRange): BarsInfo | null {
+        const fromTime = this.logicalToTime(range.from);
+        const toTime = this.logicalToTime(range.to);
+        if (fromTime === null || toTime === null || series.store.length === 0) return null;
+        const fromIndex = series.store.lowerBound(fromTime);
+        const exclusiveTo = series.store.upperBound(toTime);
+        if (fromIndex >= exclusiveTo || fromIndex >= series.store.length) return null;
+        const toIndex = exclusiveTo - 1;
+        const from = series.store.dataByIndex(fromIndex);
+        const to = series.store.dataByIndex(toIndex);
+        if (from === null || to === null) return null;
+        return {
+            barsBefore: fromIndex,
+            barsAfter: series.store.length - 1 - toIndex,
+            from: from.time,
+            to: to.time,
+        };
     }
     // Public time/coordinate (timeScale convenience for drawing tools).
     timeToXPublic(t: Time): number | null {
@@ -1260,65 +1447,83 @@ class ChartImpl implements IChartApi {
     private priceBounds(
         scaleId: string,
         pane: PaneModel<Series> = this.activePane,
-    ): { min: number; max: number; mode: PriceScaleModeValue } {
+    ): ScaleBounds {
         // Autoscale disabled: return the pinned range so live data / view changes cannot shift the
         // price<->pixel mapping (used by hosts to keep a drag WYSIWYG).
         const scale = pane.priceScale(scaleId);
-        if (scale.frozenRange !== null) return scale.frozenRange as { min: number; max: number; mode: PriceScaleModeValue };
+        if (scale.frozenRange !== null) return scale.frozenRange as ScaleBounds;
 
-        const scan = (windowed: boolean): { min: number; max: number } => {
-            let mn = Infinity;
-            let mx = -Infinity;
-            for (const s of pane.series) {
-                if (s.priceScaleId() !== scaleId) continue;
-                if (s.kind === 'VolumeProfile') continue;   // overlay — doesn't drive the scale
-                // Renko / P&F drive the scale from their derived bricks / columns
-                // (on synthetic times) — the same bars the renderer draws — so the
-                // visible price range matches what's on screen when zoomed / panned.
-                // Series currently stores a normalized internal point shape. The
-                // public transforms correctly expose OHLC bars; normalize that
-                // public shape only at this internal renderer boundary.
-                const pts = (s.kind === 'Renko' ? renkoBars(s.data, s.opts.boxSize)
-                    : s.kind === 'PointFigure' ? pnfBars(s.data, s.opts.boxSize, s.opts.reversal)
-                    : s.data) as unknown as ReadonlyArray<AnyPoint>;
-                for (const p of pts) {
-                    if (windowed && (p.time < this.viewFrom || p.time > this.viewTo)) continue;
-                    if (s.kind === 'Candlestick' || s.kind === 'Bar'
-                        || s.kind === 'PointFigure' || s.kind === 'Renko'
-                        || s.kind === 'Cluster' || s.kind === 'Box') {
-                        // Skip whitespace / warm-up points — a non-finite value
-                        // would poison Math.min/max with NaN for the whole scan
-                        // (e.g. the invisible spine series a sub-pane carries).
-                        if (!Number.isFinite(p.low) || !Number.isFinite(p.high)) continue;
-                        mn = Math.min(mn, p.low);
-                        mx = Math.max(mx, p.high);
-                    } else if (s.kind === 'Histogram') {
-                        if (!Number.isFinite(p.value)) continue;
-                        const base = num(s.opts.base, 0);
-                        mn = Math.min(mn, p.value, base);
-                        mx = Math.max(mx, p.value, base);
-                    } else if (s.kind === 'Band') {
-                        if (!Number.isFinite(p.upper) || !Number.isFinite(p.lower)) continue;
-                        mn = Math.min(mn, p.upper, p.lower);
-                        mx = Math.max(mx, p.upper, p.lower);
-                    } else {
-                        if (!Number.isFinite(p.value)) continue;
-                        mn = Math.min(mn, p.value);
-                        mx = Math.max(mx, p.value);
+        const mode = this.getScaleMode(scaleId, pane);
+        const candidates = pane.series.filter((series) => series.priceScaleId() === scaleId);
+        const baseValues = new Map<Series, number>();
+        let baseValue = 1;
+        let hasBaseValue = false;
+        let min = Infinity;
+        let max = -Infinity;
+        const accumulate = (visibleOnly: boolean): void => {
+            for (const series of candidates) {
+                const render = series.renderData();
+                const points = visibleOnly
+                    ? render.store.visibleRange(this.viewFrom, this.viewTo).points
+                    : render.store.values;
+                const range = visibleOnly
+                    ? this.scanSeriesRange(series, points)
+                    : this.fullSeriesRange(series);
+                if (!Number.isFinite(range.min) || !Number.isFinite(range.max)) continue;
+
+                let reference = 1;
+                if (isRelativePriceScale(mode)) {
+                    reference = this.referencePrice(series, points)
+                        ?? this.referencePrice(series, render.store.values)
+                        ?? NaN;
+                    if (!Number.isFinite(reference) || reference === 0) continue;
+                    baseValues.set(series, reference);
+                    if (!hasBaseValue) {
+                        baseValue = reference;
+                        hasBaseValue = true;
                     }
                 }
+
+                let rawMin = range.min;
+                let rawMax = range.max;
+                if (mode === PriceScaleMode.Logarithmic) {
+                    if (!(rawMax > 0)) continue;
+                    if (!(rawMin > 0)) rawMin = Math.max(1e-9, rawMax * 1e-6);
+                }
+                const first = priceToScale(rawMin, mode, reference);
+                const last = priceToScale(rawMax, mode, reference);
+                if (!Number.isFinite(first) || !Number.isFinite(last)) continue;
+                min = Math.min(min, first, last);
+                max = Math.max(max, first, last);
             }
-            return { min: mn, max: mx };
         };
-        let { min, max } = scan(true);
+
+        accumulate(true);
         // Fallback: no points fell inside the visible time window — e.g. an
         // ordinal-axis sub-pane whose view is tracked in bar-index space, where
         // a raw-time filter matches nothing. Scale to all data on this axis so
         // the series stays visible instead of collapsing to a default [0,1].
-        if (!Number.isFinite(min) || !Number.isFinite(max)) ({ min, max } = scan(false));
-        if (!Number.isFinite(min) || !Number.isFinite(max))
-            return { min: 0, max: 1, mode: this.getScaleMode(scaleId, pane) };
-        if (min === max) { min -= 1; max += 1; }
+        if (!Number.isFinite(min) || !Number.isFinite(max)) {
+            min = Infinity;
+            max = -Infinity;
+            baseValues.clear();
+            hasBaseValue = false;
+            baseValue = 1;
+            accumulate(false);
+        }
+        if (!Number.isFinite(min) || !Number.isFinite(max)) {
+            const fallback = mode === PriceScaleMode.Percentage
+                ? { min: -1, max: 1 }
+                : mode === PriceScaleMode.IndexedTo100
+                    ? { min: 99, max: 101 }
+                    : { min: 0, max: 1 };
+            return { ...fallback, mode, baseValue, baseValues };
+        }
+        if (min === max) {
+            const half = Math.max(1, Math.abs(min) * 0.01);
+            min -= half;
+            max += half;
+        }
         const pad = (max - min) * 0.08;
         let lo = min - pad;
         let hi = max + pad;
@@ -1342,30 +1547,66 @@ class ChartImpl implements IChartApi {
                 lo = lo - span * m.bottom / denom;
             }
         }
-        const mode = this.getScaleMode(scaleId, pane);
-        // Logarithmic: clamp lower bound to a tiny positive so log() is
-        // well-defined. Values <= 0 in data will be silently clamped at
-        // draw time (rare in practice for price series anyway).
-        if (mode === PriceScaleMode.Logarithmic && lo <= 0) {
-            lo = Math.max(1e-9, hi * 1e-6);
-        }
-        return { min: lo, max: hi, mode };
+        return { min: lo, max: hi, mode, baseValue, baseValues };
     }
-    private valueToY(v: number, b: { min: number; max: number; mode?: PriceScaleModeValue }): number {
-        if (b.mode === PriceScaleMode.Logarithmic && v > 0 && b.min > 0 && b.max > 0) {
-            const lspan = Math.log(b.max) - Math.log(b.min) || 1;
-            return this.plotB() - (Math.log(v) - Math.log(b.min)) / lspan * this.plotH();
+
+    private referencePrice(series: Series, points: readonly AnyPoint[]): number | null {
+        const priceValue = series.definition.renderer.priceValue;
+        if (priceValue === undefined) return null;
+        for (const point of points) {
+            const value = priceValue(point, series.opts);
+            if (value !== null && Number.isFinite(value) && value > 0) return value;
         }
-        const span = b.max - b.min || 1;
-        return this.plotB() - ((v - b.min) / span) * this.plotH();
+        return null;
     }
-    private yToValue(y: number, b: { min: number; max: number; mode?: PriceScaleModeValue }): number {
-        if (b.mode === PriceScaleMode.Logarithmic && b.min > 0 && b.max > 0) {
-            const lspan = Math.log(b.max) - Math.log(b.min) || 1;
-            return Math.exp(Math.log(b.min) + ((this.plotB() - y) / this.plotH()) * lspan);
-        }
-        const span = b.max - b.min || 1;
-        return b.min + ((this.plotB() - y) / this.plotH()) * span;
+
+    private fullSeriesRange(series: Series): { min: number; max: number } {
+        const render = series.renderData();
+        const key = `${render.key}:${num(series.opts.base, 0)}`;
+        const cached = this.fullRangeCache.get(series);
+        if (cached?.key === key) return cached;
+        const range = this.scanSeriesRange(series, render.store.values);
+        const result = { key, ...range };
+        this.fullRangeCache.set(series, result);
+        return result;
+    }
+
+    private scanSeriesRange(
+        series: Series,
+        points: readonly AnyPoint[],
+    ): { min: number; max: number } {
+        const range = series.definition.renderer.priceRange?.(points, series.opts) ?? null;
+        return range ?? { min: Infinity, max: -Infinity };
+    }
+    private scaleBase(bounds: ScaleBounds, series?: Series): number {
+        return series === undefined ? bounds.baseValue : (bounds.baseValues.get(series) ?? bounds.baseValue);
+    }
+    private valueToDomain(value: number, bounds: ScaleBounds, series?: Series): number {
+        return priceToScale(value, bounds.mode, this.scaleBase(bounds, series));
+    }
+    private domainToValue(value: number, bounds: ScaleBounds, series?: Series): number {
+        return scaleToPrice(value, bounds.mode, this.scaleBase(bounds, series));
+    }
+    private domainToY(value: number, bounds: ScaleBounds): number {
+        const span = bounds.max - bounds.min || 1;
+        return this.plotB() - ((value - bounds.min) / span) * this.plotH();
+    }
+    private yToDomain(y: number, bounds: ScaleBounds): number {
+        const span = bounds.max - bounds.min || 1;
+        return bounds.min + ((this.plotB() - y) / this.plotH()) * span;
+    }
+    private valueToY(value: number, bounds: ScaleBounds, series?: Series): number {
+        const scaled = this.valueToDomain(value, bounds, series);
+        if (!Number.isFinite(scaled)) return this.plotB();
+        return this.domainToY(scaled, bounds);
+    }
+    private yToValue(y: number, bounds: ScaleBounds, series?: Series): number {
+        return this.domainToValue(this.yToDomain(y, bounds), bounds, series);
+    }
+    private visiblePriceRange(bounds: ScaleBounds, series: Series): { min: number; max: number } {
+        const first = this.domainToValue(bounds.min, bounds, series);
+        const last = this.domainToValue(bounds.max, bounds, series);
+        return { min: Math.min(first, last), max: Math.max(first, last) };
     }
     // Format a price for display using the (optional) per-series
     // priceFormat. Snaps to minMove first (so 0.1234 with minMove=0.05
@@ -1382,12 +1623,19 @@ class ChartImpl implements IChartApi {
             v = Math.round(v / minMove) * minMove;
         return v.toFixed(Math.min(12, precision));
     }
+    private fmtScaleValue(value: number, bounds: ScaleBounds, fmt?: PriceFormat): string {
+        if (bounds.mode === PriceScaleMode.Percentage) return `${value.toFixed(2)}%`;
+        if (bounds.mode === PriceScaleMode.IndexedTo100) return value.toFixed(2);
+        return this.fmtPrice(this.domainToValue(value, bounds), fmt);
+    }
     // Find the primary right-scale series — used by axis ticks /
     // cursor pill (price-without-series). Falls back to "no format".
     private primaryFormat(scaleId: string = 'right'): PriceFormat | undefined {
         for (const s of this.activeSeries) {
             if (s.priceScaleId() !== scaleId) continue;
-            if (s.kind === 'VolumeProfile') continue;
+            const data = s.renderData().store.values;
+            const point = data[data.length - 1];
+            if (point === undefined || this.seriesPriceValue(s, point) === null) continue;
             if (s.opts.priceFormat !== undefined) return s.opts.priceFormat;
         }
         return undefined;
@@ -1398,6 +1646,7 @@ class ChartImpl implements IChartApi {
         price: number,
         scaleId: string = 'right',
         pane: PaneModel<Series> | null = null,
+        series?: Series,
     ): number | null {
         const target = pane ?? this.model.mainPane;
         const rect = this.paneRect(target);
@@ -1405,12 +1654,13 @@ class ChartImpl implements IChartApi {
         this.activatePane(target, rect);
         const b = this.priceBounds(scaleId, target);
         if (!Number.isFinite(b.min) || !Number.isFinite(b.max)) return null;
-        return this.valueToY(price, b);
+        return this.valueToY(price, b, series);
     }
     yToPrice(
         y: number,
         scaleId: string = 'right',
         pane: PaneModel<Series> | null = null,
+        series?: Series,
     ): number | null {
         const target = pane ?? this.model.mainPane;
         const rect = this.paneRect(target);
@@ -1418,7 +1668,7 @@ class ChartImpl implements IChartApi {
         this.activatePane(target, rect);
         const b = this.priceBounds(scaleId, target);
         if (!Number.isFinite(b.min) || !Number.isFinite(b.max)) return null;
-        return this.yToValue(y, b);
+        return this.yToValue(y, b, series);
     }
 
     // ---- drawing ----------------------------------------------------
@@ -1533,7 +1783,7 @@ class ChartImpl implements IChartApi {
     // stays at the true price; the LABEL slides along the axis with
     // collision avoidance + eased animation, so dragging one label
     // through another pushes it out of the way (industry-standard behaviour).
-    private drawPriceLines(rb: { min: number; max: number }, lb: { min: number; max: number }): void {
+    private drawPriceLines(rb: ScaleBounds, lb: ScaleBounds): void {
         const ctx = this.ctx;
         const lay = this.opts.layout ?? {};
         const font = `11px ${lay.fontFamily ?? DEF_FONT}`;
@@ -1544,7 +1794,7 @@ class ChartImpl implements IChartApi {
         // Pass 1 — collect drawables with their natural y per scale.
         interface Item {
             pl: PriceLine; s: Series; o: PriceLineOptions;
-            yLine: number; yLabelNatural: number; b: { min: number; max: number };
+            yLine: number; yLabelNatural: number; b: ScaleBounds;
         }
         const items: Item[] = [];
         for (const s of this.activeSeries) {
@@ -1559,7 +1809,8 @@ class ChartImpl implements IChartApi {
                 // line runs to the very edge — so the line ends up above/below its label. Clamping
                 // both identically keeps line and label together; the label text still shows the
                 // true price. In-range lines are unaffected.
-                const yNat = Math.max(this.plotT() + labelH / 2, Math.min(this.plotB() - labelH / 2, this.valueToY(o.price, b)));
+                const yNat = Math.max(this.plotT() + labelH / 2,
+                    Math.min(this.plotB() - labelH / 2, this.valueToY(o.price, b, s)));
                 items.push({ pl, s, o, yLine: yNat, yLabelNatural: yNat, b });
             }
         }
@@ -1634,7 +1885,9 @@ class ChartImpl implements IChartApi {
             ctx.textBaseline = 'middle';
             ctx.textAlign = 'left';
             const titleText = showLabels ? (o.title ?? '') : '';
-            const priceText = showLabels && Number.isFinite(o.price) ? this.fmtPrice(o.price, it.s.opts.priceFormat) : '';
+            const priceText = showLabels && Number.isFinite(o.price)
+                ? this.fmtScaleValue(this.valueToDomain(o.price, it.b, it.s), it.b, it.s.opts.priceFormat)
+                : '';
             const titleW = titleText ? ctx.measureText(titleText).width + 10 : 0;
             const priceW = priceText ? ctx.measureText(priceText).width + 10 : 0;
             // line stops at the title pill so the pill visually caps it
@@ -1735,22 +1988,22 @@ class ChartImpl implements IChartApi {
     }
     // Hover tooltip for the footprint: shows the price level and its
     // volume under the cursor (so each cluster bar is readable).
-    private drawClusterTip(rb: { min: number; max: number }, lb: { min: number; max: number }): void {
+    private drawClusterTip(rb: ScaleBounds, lb: ScaleBounds): void {
         if (this.mouseX === null || this.mouseY === null) return;
         if (this.mouseX < this.plotL() || this.mouseX > this.plotR()) return;
         if (this.mouseY < this.plotT() || this.mouseY > this.plotB()) return;
         const cs = this.activeSeries.find((s) => s.kind === 'Cluster');
         if (cs === undefined) return;
-        const st = this.snapTime(this.mouseX);
-        if (st === undefined) return;
-        const p = cs.data.find((d) => d.time === st) as
+        const st = this.crosshairTime(this.mouseX);
+        if (st === null) return;
+        const p = cs.store.pointAtTime(st) as
             (AnyPoint & { levels?: Array<{ price: number; vol: number }> }) | undefined;
         if (p === undefined || p.levels === undefined || p.levels.length === 0) return;
         const bnd = cs.priceScaleId() === 'left' ? lb : rb;
         let best = p.levels[0];
         let bestD = Infinity;
         for (const l of p.levels) {
-            const d = Math.abs(this.valueToY(l.price, bnd) - this.mouseY);
+            const d = Math.abs(this.valueToY(l.price, bnd, cs) - this.mouseY);
             if (d < bestD) { bestD = d; best = l; }
         }
         if (bestD > 18) return;
@@ -1760,7 +2013,7 @@ class ChartImpl implements IChartApi {
         const w = ctx.measureText(txt).width + 14;
         const h = 19;
         let x = this.mouseX + 14;
-        let y = this.valueToY(best.price, bnd) - h / 2;
+        let y = this.valueToY(best.price, bnd, cs) - h / 2;
         if (x + w > this.plotR()) x = this.mouseX - w - 14;
         y = Math.max(this.plotT(), Math.min(this.plotB() - h, y));
         ctx.fillStyle = '#1e222d';
@@ -1775,21 +2028,23 @@ class ChartImpl implements IChartApi {
     }
 
     private seriesColor(s: Series, p: AnyPoint): string {
-        return s.kind === 'Candlestick'
-            ? (p.close >= p.open ? (s.opts.upColor ?? '#31c15b') : (s.opts.downColor ?? '#ff6d6d'))
-            : (s.opts.lineColor ?? s.opts.color ?? '#89b4ff');
+        return s.definition.renderer.colorAt?.(p, s.opts)
+            ?? s.opts.lineColor ?? s.opts.color ?? '#89b4ff';
+    }
+    private seriesPriceValue(s: Series, p: AnyPoint): number | null {
+        return s.definition.renderer.priceValue?.(p, s.opts) ?? null;
     }
     // Per-series colour tag on the price axis — ALWAYS the rightmost
     // visible value of each series, live during pan/zoom (industry-
     // standard behaviour). Cursor-time values live in the top-left legend; the
     // axis tags must not chase the cursor, otherwise dragging the chart
     // looks frozen until you release.
-    private drawPriceTags(rb: { min: number; max: number }, lb: { min: number; max: number }): void {
+    private drawPriceTags(rb: ScaleBounds, lb: ScaleBounds): void {
         const ctx = this.ctx;
         ctx.font = `10px ${this.opts.layout?.fontFamily ?? DEF_FONT}`;
         ctx.textBaseline = 'middle';
         for (const s of this.activeSeries) {
-            if (s.data.length === 0 || s.kind === 'VolumeProfile') continue;   // VP has no single price
+            if (s.points.length === 0) continue;
             if (s.opts.lastValueVisible === false) continue;
             // lwc parity: priceLineSource = 'lastBar' (default) shows
             // the absolute last data point; 'lastVisible' tracks the
@@ -1797,21 +2052,17 @@ class ChartImpl implements IChartApi {
             let p: AnyPoint;
             const src = s.opts.priceLineSource ?? 'lastVisible';
             if (src === 'lastBar') {
-                p = s.data[s.data.length - 1];
+                p = s.points[s.points.length - 1];
             } else {
-                let lastVisible: AnyPoint | undefined;
-                for (let i = s.data.length - 1; i >= 0; i--) {
-                    const d = s.data[i];
-                    if (Number.isFinite(d.time) && d.time <= this.viewTo) { lastVisible = d; break; }
-                }
-                p = lastVisible ?? s.data[s.data.length - 1];
+                const index = s.store.upperBound(this.viewTo) - 1;
+                p = s.store.dataByIndex(index) ?? s.points[s.points.length - 1];
             }
-            const val = (s.kind === 'Candlestick' || s.kind === 'Bar') ? p.close : p.value;
-            if (!Number.isFinite(val)) continue;
+            const val = this.seriesPriceValue(s, p);
+            if (val === null || !Number.isFinite(val)) continue;
             const b = s.priceScaleId() === 'left' ? lb : rb;
-            const y = Math.max(this.plotT() + 7, Math.min(this.plotB() - 7, this.valueToY(val, b)));
+            const y = Math.max(this.plotT() + 7, Math.min(this.plotB() - 7, this.valueToY(val, b, s)));
             const col = this.seriesColor(s, p);
-            const txt = this.fmtPrice(val, s.opts.priceFormat);
+            const txt = this.fmtScaleValue(this.valueToDomain(val, b, s), b, s.opts.priceFormat);
             const w = ctx.measureText(txt).width + 8;
             const left = s.priceScaleId() === 'left';
             const x = left ? this.plotL() - w - 1 : this.plotR() + 1;
@@ -1839,15 +2090,24 @@ class ChartImpl implements IChartApi {
         for (let v = start; v <= max + 1e-9; v += step) out.push(v);
         return out;
     }
+    private scaleTicks(bounds: ScaleBounds, count: number): number[] {
+        if (bounds.mode !== PriceScaleMode.Logarithmic)
+            return this.niceTicks(bounds.min, bounds.max, count);
+        const rawMin = scaleToPrice(bounds.min, bounds.mode);
+        const rawMax = scaleToPrice(bounds.max, bounds.mode);
+        return this.niceTicks(rawMin, rawMax, count)
+            .filter((value) => value > 0)
+            .map((value) => priceToScale(value, bounds.mode));
+    }
 
-    private drawGrid(rb: { min: number; max: number }): void {
+    private drawGrid(rb: ScaleBounds): void {
         const ctx = this.ctx;
         const g = this.opts.grid ?? {};
         ctx.lineWidth = 1;
         if (g.horzLines?.visible !== false) {
             ctx.strokeStyle = g.horzLines?.color ?? DEF_GRID;
-            for (const v of this.niceTicks(rb.min, rb.max, this.priceTickCount())) {
-                const y = Math.round(this.valueToY(v, rb)) + 0.5;
+            for (const v of this.scaleTicks(rb, this.priceTickCount())) {
+                const y = Math.round(this.domainToY(v, rb)) + 0.5;
                 if (y < this.plotT() || y > this.plotB()) continue;
                 ctx.beginPath(); ctx.moveTo(this.plotL(), y); ctx.lineTo(this.plotR(), y); ctx.stroke();
             }
@@ -1877,375 +2137,62 @@ class ChartImpl implements IChartApi {
         return calculateBarStepPx(this.series, this.viewTo - this.viewFrom, this.plotW());
     }
 
-    private drawSeries(s: Series, b: { min: number; max: number }): void {
-        const ctx = this.ctx;
-
-        if (s.kind === 'VolumeProfile') {
-            // Visible-range volume profile: recomputed every frame from
-            // the candles inside [viewFrom,viewTo], so it updates on
-            // zoom / pan. Source = OHLC+vol points; volume spread across
-            // each bar's [low,high] over the current price scale.
-            const src = s.data as Array<AnyPoint & { vol?: number }>;
-            const vis = src.filter((p) => p.time >= this.viewFrom && p.time <= this.viewTo
-                && Number.isFinite(p.high) && Number.isFinite(p.low));
-            if (vis.length === 0) return;
-            const rng = (b.max - b.min) || 1;
-            const bins = Math.max(12, Math.min(90, Math.round(this.plotH() / 8)));
-            const step = rng / bins;
-            const agg = new Array(bins).fill(0);
-            for (const p of vis) {
-                const v = Number.isFinite(p.vol as number) ? (p.vol as number) : 1;
-                const b0 = Math.max(0, Math.min(bins - 1, Math.floor((p.low - b.min) / step)));
-                const b1 = Math.max(0, Math.min(bins - 1, Math.floor((p.high - b.min) / step)));
-                const per = v / (b1 - b0 + 1);
-                for (let bi = b0; bi <= b1; bi += 1) agg[bi] += per;
-            }
-            let maxV = 0;
-            for (const a of agg) maxV = Math.max(maxV, a);
-            if (maxV <= 0) return;
-            const maxW = this.plotW() * 0.22;
-            const bh = Math.max(1, this.plotH() / bins - 1);
-            ctx.fillStyle = s.opts.color ?? 'rgba(74,158,255,0.16)';
-            for (let bi = 0; bi < bins; bi += 1) {
-                if (agg[bi] <= 0) continue;
-                const w = (agg[bi] / maxV) * maxW;
-                const y = this.valueToY(b.min + (bi + 0.5) * step, b);
-                if (y < this.plotT() - bh || y > this.plotB() + bh) continue;
-                ctx.fillRect(this.plotR() - w, y - bh / 2, w, bh);
-            }
-            return;
-        }
-
-        const visible = s.data.filter((p) => p.time >= this.viewFrom - 1 && p.time <= this.viewTo + 1);
+    private drawSeries(s: Series, b: ScaleBounds): void {
+        const render = s.renderData();
+        const visible = render.store.visibleRange(
+            this.viewFrom,
+            this.viewTo,
+            s.definition.renderer.dataPadding ?? 1,
+        ).points;
         if (visible.length === 0) return;
-
-        if (s.kind === 'Candlestick') {
-            // body width scales with bar spacing (no fixed cap) → candles
-            // get wider on zoom, like the histogram.
-            const bw = Math.max(1, this.barStepPx() * 0.72);
-            for (const p of visible) {
-                const x = this.timeToX(p.time);
-                const up = p.close >= p.open;
-                const body = up ? (s.opts.upColor ?? '#31c15b') : (s.opts.downColor ?? '#ff6d6d');
-                const wick = up ? (s.opts.wickUpColor ?? body) : (s.opts.wickDownColor ?? body);
-                ctx.strokeStyle = wick;
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.moveTo(Math.round(x) + 0.5, this.valueToY(p.high, b));
-                ctx.lineTo(Math.round(x) + 0.5, this.valueToY(p.low, b));
-                ctx.stroke();
-                const yO = this.valueToY(p.open, b);
-                const yC = this.valueToY(p.close, b);
-                // Snap fill AND border to the SAME integer rect — a
-                // rounded strokeRect over an unrounded fillRect left a
-                // sub-pixel gap that showed the dark background as a
-                // "black strip" at the body's bottom edge.
-                const bx = Math.round(x - bw / 2);
-                const bwI = Math.max(1, Math.round(bw));
-                const yTop = Math.round(Math.min(yO, yC));
-                const bhI = Math.max(1, Math.round(Math.abs(yC - yO)));
-                ctx.fillStyle = body;
-                ctx.fillRect(bx, yTop, bwI, bhI);
-                const bcol = up ? s.opts.borderUpColor : s.opts.borderDownColor;
-                if (s.opts.borderVisible !== false && bcol && bcol !== body && bhI > 2) {
-                    ctx.strokeStyle = bcol;
-                    ctx.lineWidth = 1;
-                    ctx.strokeRect(bx + 0.5, yTop + 0.5, bwI - 1, bhI - 1);
-                }
-            }
-            return;
-        }
-
-        if (s.kind === 'Bar') {
-            // OHLC bar: high-low stick, open tick left, close tick right.
-            const tick = Math.max(2, this.barStepPx() * 0.36);
-            ctx.lineWidth = Math.max(1, Math.min(3, this.barStepPx() * 0.12));
-            for (const p of visible) {
-                const x = Math.round(this.timeToX(p.time)) + 0.5;
-                const up = p.close >= p.open;
-                ctx.strokeStyle = up ? (s.opts.upColor ?? '#00c853') : (s.opts.downColor ?? '#ff3d57');
-                ctx.beginPath();
-                ctx.moveTo(x, this.valueToY(p.high, b));
-                ctx.lineTo(x, this.valueToY(p.low, b));
-                ctx.moveTo(x - tick, this.valueToY(p.open, b));
-                ctx.lineTo(x, this.valueToY(p.open, b));
-                ctx.moveTo(x, this.valueToY(p.close, b));
-                ctx.lineTo(x + tick, this.valueToY(p.close, b));
-                ctx.stroke();
-            }
-            return;
-        }
-
-        if (s.kind === 'Cluster') {
-            // Footprint: per-candle horizontal volume-by-price bars.
-            const slot = Math.max(6, this.barStepPx());
-            const base = s.opts.color ?? 'rgba(74,158,255,0.55)';
-            const hiC = '#fcd535';
-            for (const p of visible) {
-                const lv = (p as unknown as { levels?: Array<{ price: number; vol: number }> }).levels;
-                if (lv === undefined || lv.length === 0) continue;
-                const cx = this.timeToX(p.time);
-                let mx = 0;
-                for (const l of lv) mx = Math.max(mx, l.vol);
-                if (mx <= 0) continue;
-                const cellH = Math.max(1, Math.abs(this.valueToY(p.high, b) - this.valueToY(p.low, b)) / lv.length);
-                for (const l of lv) {
-                    const y = this.valueToY(l.price, b);
-                    const w = (l.vol / mx) * (slot * 0.92);
-                    ctx.fillStyle = l.vol === mx ? hiC : base;
-                    ctx.fillRect(cx - slot * 0.46, y - cellH / 2, w, Math.max(1, cellH - 0.5));
-                }
-            }
-            return;
-        }
-
-        if (s.kind === 'Box') {
-            // Numbers grid: shared price buckets (rows) × candles
-            // (columns). Resizes by X (zoom → wider columns) and by Y
-            // (price scale → finer/taller rows).
-            const slot = Math.max(2, this.barStepPx());
-            const rng = (b.max - b.min) || 1;
-            const nRows = Math.max(5, Math.min(60, Math.round(this.plotH() / 20)));
-            const rowH = this.plotH() / nRows;
-            const cols = visible.map((p) => {
-                const lv = (p as unknown as { levels?: Array<{ price: number; vol: number }> }).levels ?? [];
-                const arr = new Array(nRows).fill(0);
-                for (const l of lv) {
-                    const ri = Math.max(0, Math.min(nRows - 1, Math.floor((l.price - b.min) / rng * nRows)));
-                    arr[ri] += l.vol;
-                }
-                return arr;
-            });
-            let gmax = 0;
-            for (const c of cols) for (const v of c) gmax = Math.max(gmax, v);
-            if (gmax <= 0) return;
-            const text = slot >= 26 && rowH >= 11;
-            // font scales with column width AND row height → grows on
-            // zoom (bounded so digits never overflow the cell).
-            const fpx = Math.max(7, Math.min(Math.floor(rowH - 3), Math.floor(slot * 0.4)));
-            // grid frame
-            ctx.strokeStyle = this.opts.grid?.horzLines?.color ?? DEF_GRID;
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            for (let ri = 0; ri <= nRows; ri += 1) {
-                const y = Math.round(this.plotB() - ri * rowH) + 0.5;
-                ctx.moveTo(this.plotL(), y); ctx.lineTo(this.plotR(), y);
-            }
-            ctx.stroke();
-            ctx.font = `${fpx}px ${this.opts.layout?.fontFamily ?? DEF_FONT}`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            const dim = this.opts.layout?.textColor ?? DEF_TEXT;
-            visible.forEach((p, ci) => {
-                const cx = this.timeToX(p.time);
-                if (cx < this.plotL() - slot || cx > this.plotR() + slot) return;
-                if (text) {
-                    ctx.strokeStyle = this.opts.grid?.vertLines?.color ?? DEF_GRID;
-                    ctx.strokeRect(Math.round(cx - slot / 2) + 0.5, this.plotT() + 0.5,
-                        Math.round(slot), Math.round(this.plotH()));
-                }
-                const col = cols[ci];
-                for (let ri = 0; ri < nRows; ri += 1) {
-                    const v = col[ri];
-                    if (v <= 0) continue;
-                    const y = this.plotB() - (ri + 0.5) * rowH;
-                    if (text) {
-                        ctx.fillStyle = v === gmax ? '#fcd535' : dim;
-                        ctx.fillText(String(v), cx, y, slot - 3);
-                    } else {
-                        // too tight for numbers → volume heat cell
-                        const a = 0.12 + 0.6 * (v / gmax);
-                        ctx.fillStyle = v === gmax ? 'rgba(252,213,53,0.8)' : `rgba(74,158,255,${a})`;
-                        ctx.fillRect(cx - slot / 2, y - rowH / 2, slot, Math.max(1, rowH - 1));
-                    }
-                }
-            });
-            return;
-        }
-
-        if (s.kind === 'Renko') {
-            // Brick chart: bricks are derived bars on synthetic, evenly-spread
-            // times (see renkoBars) so they sit on the shared time axis and any
-            // overlay indicators — recomputed on the same bricks — line up. The
-            // box is taken from the full close range (stable across zoom).
-            const up = s.opts.upColor ?? '#00c853';
-            const dn = s.opts.downColor ?? '#ff3d57';
-            const bricks = renkoBricks(s.data, renkoBox(s.data, s.opts.boxSize));
-            const times = evenSpan(s.data, bricks.length);
-            const bw = bricks.length > 1
-                ? Math.max(2, Math.abs(this.timeToX(times[1]) - this.timeToX(times[0])) * 0.85)
-                : Math.max(3, this.barStepPx());
-            bricks.forEach((bk, i) => {
-                const x = this.timeToX(times[i]);
-                if (x < this.plotL() - bw || x > this.plotR() + bw) return;
-                const yT = this.valueToY(bk.hi, b);
-                const yB = this.valueToY(bk.lo, b);
-                ctx.fillStyle = bk.up ? up : dn;
-                ctx.fillRect(x - bw / 2, Math.min(yT, yB), bw, Math.max(1, Math.abs(yB - yT)));
-            });
-            return;
-        }
-
-        if (s.kind === 'PointFigure') {
-            // X column = rising (X marks), O column = falling (O marks).
-            // Columns are derived bars on synthetic, evenly-spread times (see
-            // pnfBars) so they sit on the shared axis with overlay indicators
-            // (recomputed on the same columns). Box is from the full range and
-            // stays put across zoom; the symbol fills it (classic P&F density).
-            const up = s.opts.upColor ?? '#00c853';
-            const dn = s.opts.downColor ?? '#ff3d57';
-            const box = pnfBox(s.data, s.opts.boxSize);
-            const cols = pnfColumns(s.data, box, num(s.opts.reversal, 2));
-            if (cols.length === 0) return;
-            const times = evenSpan(s.data, cols.length);
-            const cw = cols.length > 1
-                ? Math.abs(this.timeToX(times[1]) - this.timeToX(times[0]))
-                : this.barStepPx();
-            const boxPx = Math.abs(this.valueToY(b.min + box, b) - this.valueToY(b.min, b));
-            const r = Math.max(2, Math.min(cw * 0.4, boxPx * 0.45));
-            ctx.lineWidth = 1.5;
-            cols.forEach((col, ci) => {
-                const cx = this.timeToX(times[ci]);
-                if (cx < this.plotL() - cw || cx > this.plotR() + cw) return;
-                ctx.strokeStyle = col.up ? up : dn;
-                for (let v = col.lo; v <= col.hi + 1e-6; v += box) {
-                    const yc = this.valueToY(v + box / 2, b);
-                    ctx.beginPath();
-                    if (col.up) {
-                        ctx.moveTo(cx - r, yc - r); ctx.lineTo(cx + r, yc + r);
-                        ctx.moveTo(cx + r, yc - r); ctx.lineTo(cx - r, yc + r);
-                    } else {
-                        ctx.arc(cx, yc, r, 0, Math.PI * 2);
-                    }
-                    ctx.stroke();
-                }
-            });
-            return;
-        }
-
-        if (s.kind === 'Histogram') {
-            // ~80% of the slot, scaling with spacing (industry-standard:
-            // chunky bars, ~1px gap), no fixed thin cap.
-            const bw = Math.max(1, this.barStepPx() * 0.8 - 1);
-            const baseY = this.valueToY(num(s.opts.base, 0), b);
-            for (const p of visible) {
-                const x = this.timeToX(p.time);
-                const y = this.valueToY(p.value, b);
-                ctx.fillStyle = p.color ?? s.opts.color ?? '#4aa3ff';
-                ctx.fillRect(x - bw / 2, Math.min(y, baseY), bw, Math.max(1, Math.abs(y - baseY)));
-            }
-            return;
-        }
-
-        if (s.kind === 'Band') {
-            const points = visible.filter(p => Number.isFinite(p.upper) && Number.isFinite(p.lower));
-            if (points.length === 0) return;
-
-            // Fill each adjacent quadrilateral independently. Apart from
-            // handling crossings correctly, this allows an Ichimoku cloud to
-            // use different colours depending on which Senkou span is above.
-            for (let i = 0; i < points.length - 1; i++) {
-                const a = points[i];
-                const n = points[i + 1];
-                const positive = (a.upper + n.upper) >= (a.lower + n.lower);
-                ctx.beginPath();
-                ctx.moveTo(this.timeToX(a.time), this.valueToY(a.upper, b));
-                ctx.lineTo(this.timeToX(n.time), this.valueToY(n.upper, b));
-                ctx.lineTo(this.timeToX(n.time), this.valueToY(n.lower, b));
-                ctx.lineTo(this.timeToX(a.time), this.valueToY(a.lower, b));
-                ctx.closePath();
-                ctx.fillStyle = positive
-                    ? (s.opts.positiveFillColor ?? s.opts.fillColor ?? 'rgba(50,205,50,0.16)')
-                    : (s.opts.negativeFillColor ?? s.opts.fillColor ?? 'rgba(255,61,87,0.16)');
-                ctx.fill();
-            }
-
-            const width = num(s.opts.lineWidth, 1);
-            const drawBoundary = (key: 'upper' | 'lower', color: string) => {
-                ctx.beginPath();
-                points.forEach((p, i) => {
-                    const x = this.timeToX(p.time);
-                    const y = this.valueToY(p[key], b);
-                    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-                });
-                ctx.strokeStyle = color;
-                ctx.lineWidth = width;
-                ctx.setLineDash(this.dashFor(s.opts.lineStyle ?? LineStyle.Solid, width));
-                ctx.stroke();
-                ctx.setLineDash([]);
-            };
-            drawBoundary('upper', s.opts.upperColor ?? s.opts.color ?? '#32CD32');
-            drawBoundary('lower', s.opts.lowerColor ?? s.opts.color ?? '#FF1493');
-            return;
-        }
-
-        // Line / Area share the polyline
-        const color = s.opts.lineColor ?? s.opts.color ?? '#89b4ff';
-        const lw = num(s.opts.lineWidth, s.kind === 'Area' ? 2 : 1);
-        ctx.lineJoin = 'round';
-        if (s.kind === 'Area') {
-            const grad = ctx.createLinearGradient(0, this.plotT(), 0, this.plotB());
-            grad.addColorStop(0, s.opts.topColor ?? 'rgba(74,163,255,0.35)');
-            grad.addColorStop(1, s.opts.bottomColor ?? 'rgba(74,163,255,0.02)');
-            ctx.beginPath();
-            visible.forEach((p, i) => {
-                const x = this.timeToX(p.time);
-                const y = this.valueToY(p.value, b);
-                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-            });
-            const lastX = this.timeToX(visible[visible.length - 1].time);
-            const firstX = this.timeToX(visible[0].time);
-            ctx.lineTo(lastX, this.plotB());
-            ctx.lineTo(firstX, this.plotB());
-            ctx.closePath();
-            ctx.fillStyle = grad;
-            ctx.fill();
-        }
-        if (s.opts.lineVisible !== false) {
-            ctx.beginPath();
-            visible.forEach((p, i) => {
-                const x = this.timeToX(p.time);
-                const y = this.valueToY(p.value, b);
-                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-            });
-            ctx.strokeStyle = color;
-            ctx.lineWidth = lw;
-            ctx.setLineDash(this.dashFor(s.opts.lineStyle ?? LineStyle.Solid, lw));
-            ctx.stroke();
-            ctx.setLineDash([]);
-        }
-
-        // Sparse indicators such as Parabolic SAR, ZigZag and Fractals use
-        // line series for their scale/crosshair integration but ask the
-        // painter for isolated dots instead of a connecting polyline.
-        if (s.opts.pointMarkersVisible) {
-            const radius = Math.max(1, num(s.opts.pointMarkersRadius, 3));
-            ctx.fillStyle = color;
-            for (const p of visible) {
-                ctx.beginPath();
-                ctx.arc(this.timeToX(p.time), this.valueToY(p.value, b), radius, 0, Math.PI * 2);
-                ctx.fill();
-            }
-        }
+        const context: SeriesRendererContext<AnyPoint, SeriesOptions> = {
+            target: this.ctx,
+            data: visible,
+            allData: render.store.values,
+            options: s.opts,
+            priceRange: this.visiblePriceRange(b, s),
+            pane: {
+                left: this.plotL(),
+                right: this.plotR(),
+                top: this.plotT(),
+                bottom: this.plotB(),
+                width: this.plotW(),
+                height: this.plotH(),
+            },
+            theme: {
+                fontFamily: this.opts.layout?.fontFamily ?? DEF_FONT,
+                textColor: this.opts.layout?.textColor ?? DEF_TEXT,
+                horizontalGridColor: this.opts.grid?.horzLines?.color ?? DEF_GRID,
+                verticalGridColor: this.opts.grid?.vertLines?.color ?? DEF_GRID,
+            },
+            barSpacing: this.barStepPx(),
+            metadata: render.metadata,
+            timeToCoordinate: (time) => this.timeToX(time),
+            priceToCoordinate: (price) => this.valueToY(price, b, s),
+        };
+        this.ctx.save();
+        try { s.definition.renderer.draw(context); }
+        finally { this.ctx.restore(); }
     }
 
-    private drawMarkers(rb: { min: number; max: number }, lb: { min: number; max: number }): void {
+    private drawMarkers(rb: ScaleBounds, lb: ScaleBounds): void {
         const ctx = this.ctx;
         ctx.font = `10px ${this.opts.layout?.fontFamily ?? DEF_FONT}`;
         for (const s of this.activeSeries) {
             if (s.markers.length === 0) continue;   // markers on ANY series kind
             const b = s.priceScaleId() === 'left' ? lb : rb;
-            const byTime = new Map(s.data.map((p) => [p.time, p]));
-            for (const m of s.markers) {
-                if (m.time < this.viewFrom || m.time > this.viewTo) continue;
-                const p = byTime.get(m.time) as AnyPoint | undefined;
-                if (p === undefined) continue;
+            const markers = s.markerStore.visibleRange(this.viewFrom, this.viewTo).points;
+            for (const m of markers) {
+                const p = s.store.pointAtTime(m.time) as AnyPoint | null;
+                if (p === null) continue;
                 const x = this.timeToX(m.time);
-                const ohlc = s.kind === 'Candlestick' || s.kind === 'Bar';
-                const anchorV = ohlc
-                    ? (m.position === 'aboveBar' ? p.high : p.low)
-                    : p.value;
-                const baseY = this.valueToY(anchorV, b);
+                const anchorV = m.position === 'aboveBar' && Number.isFinite(p.high)
+                    ? p.high
+                    : m.position === 'belowBar' && Number.isFinite(p.low)
+                        ? p.low
+                        : this.seriesPriceValue(s, p);
+                if (anchorV === null || !Number.isFinite(anchorV)) continue;
+                const baseY = this.valueToY(anchorV, b, s);
                 const dir = m.position === 'aboveBar' ? -1 : 1;
                 const y = baseY + dir * 14;
                 ctx.fillStyle = m.color;
@@ -2317,8 +2264,8 @@ class ChartImpl implements IChartApi {
     // label granularity via the average time each stride covers.
     private ordinalTimeTicks(): { ticks: Time[]; step: number } {
         const s = this.indexRefSeries();
-        if (s === null || s.data.length === 0) return { ticks: [], step: 60 };
-        const d = s.data;
+        if (s === null || s.points.length === 0) return { ticks: [], step: 60 };
+        const d = s.points;
         const n = d.length;
         const lfRaw = this.timeToLogical(this.viewFrom) ?? 0;
         const ltRaw = this.timeToLogical(this.viewTo) ?? (n - 1);
@@ -2358,8 +2305,8 @@ class ChartImpl implements IChartApi {
     }
 
     private drawAxes(
-        rb: { min: number; max: number } | null,
-        lb: { min: number; max: number } | null,
+        rb: ScaleBounds | null,
+        lb: ScaleBounds | null,
         drawTimeAxis: boolean,
     ): void {
         const ctx = this.ctx;
@@ -2377,10 +2324,10 @@ class ChartImpl implements IChartApi {
             ctx.textAlign = 'left';
             ctx.textBaseline = 'middle';
             const rFmt = this.primaryFormat('right');
-            for (const v of this.niceTicks(rb.min, rb.max, this.priceTickCount())) {
-                const y = this.valueToY(v, rb);
+            for (const v of this.scaleTicks(rb, this.priceTickCount())) {
+                const y = this.domainToY(v, rb);
                 if (y < this.plotT() - 1 || y > this.plotB() + 1) continue;
-                ctx.fillText(this.fmtPrice(v, rFmt), this.plotR() + 6, y);
+                ctx.fillText(this.fmtScaleValue(v, rb, rFmt), this.plotR() + 6, y);
             }
         }
 
@@ -2393,10 +2340,10 @@ class ChartImpl implements IChartApi {
             ctx.stroke();
             ctx.textAlign = 'right';
             const lFmt = this.primaryFormat('left');
-            for (const v of this.niceTicks(lb.min, lb.max, this.priceTickCount())) {
-                const y = this.valueToY(v, lb);
+            for (const v of this.scaleTicks(lb, this.priceTickCount())) {
+                const y = this.domainToY(v, lb);
                 if (y < this.plotT() - 1 || y > this.plotB() + 1) continue;
-                ctx.fillText(this.fmtPrice(v, lFmt), this.plotL() - 6, y);
+                ctx.fillText(this.fmtScaleValue(v, lb, lFmt), this.plotL() - 6, y);
             }
         }
 
@@ -2420,17 +2367,17 @@ class ChartImpl implements IChartApi {
     }
 
     private drawCrosshair(
-        rb: { min: number; max: number; mode?: PriceScaleModeValue },
-        lb: { min: number; max: number; mode?: PriceScaleModeValue },
+        rb: ScaleBounds,
+        lb: ScaleBounds,
         showTimeLabel: boolean,
     ): void {
         if (this.mouseX === null || this.mouseY === null) return;
         const ch = this.opts.crosshair ?? {};
         if (this.mouseX < this.plotL() || this.mouseX > this.plotR()) return;
         const ctx = this.ctx;
-        const st = this.snapTime(this.mouseX);
+        const st = this.crosshairTime(this.mouseX);
         // Vertical line snaps to the bar (industry-standard behaviour).
-        const vx = st !== undefined ? this.timeToX(st) : this.mouseX;
+        const vx = st !== null ? this.timeToX(st) : this.mouseX;
         const lineCol = ch.vertLine?.color ?? '#4a4a52';
         // Crosshair pill: solid dark slate + white text (industry-
         // standard style), distinct from the coloured per-series price tags.
@@ -2444,17 +2391,18 @@ class ChartImpl implements IChartApi {
         // exactly on a high/low/close.
         let crossY = this.mouseY;
         const crossMode = ch.mode ?? CrosshairMode.Normal;
-        if (crossMode === CrosshairMode.Magnet && st !== undefined) {
+        if (crossMode === CrosshairMode.Magnet && st !== null) {
             for (const s of this.activeSeries) {
-                if (s.kind !== 'Candlestick' && s.kind !== 'Bar') continue;
-                const p = s.data.find((d) => d.time === st);
-                if (p === undefined) continue;
+                const magnetValues = s.definition.renderer.magnetValues;
+                if (magnetValues === undefined) continue;
+                const p = s.renderData().store.pointAtTime(st);
+                if (p === null) continue;
                 const b = s.priceScaleId() === 'left' ? lb : rb;
-                const candidates = [p.open, p.high, p.low, p.close];
+                const candidates = magnetValues(p, s.opts);
                 let bestY = this.mouseY, bestD = Infinity;
                 for (const v of candidates) {
                     if (!Number.isFinite(v)) continue;
-                    const y = this.valueToY(v, b);
+                    const y = this.valueToY(v, b, s);
                     const d = Math.abs(y - this.mouseY);
                     if (d < bestD) { bestD = d; bestY = y; }
                 }
@@ -2484,20 +2432,17 @@ class ChartImpl implements IChartApi {
 
         // Per-series value dots at the snapped time (the little circles
         // the host puts on every series/indicator at the crosshair).
-        if (st !== undefined) {
+        if (st !== null) {
             for (const s of this.activeSeries) {
-                if (s.kind === 'VolumeProfile') continue;
-                const p = s.data.find((d) => d.time === st);
-                if (p === undefined) continue;
+                const p = s.renderData().store.pointAtTime(st);
+                if (p === null) continue;
                 const b = s.priceScaleId() === 'left' ? lb : rb;
-                const val = (s.kind === 'Candlestick' || s.kind === 'Bar') ? p.close : p.value;
-                if (!Number.isFinite(val)) continue;
+                const val = this.seriesPriceValue(s, p);
+                if (val === null || !Number.isFinite(val)) continue;
                 const dx = this.timeToX(st);
-                const dy = this.valueToY(val, b);
+                const dy = this.valueToY(val, b, s);
                 if (dy < this.plotT() - 2 || dy > this.plotB() + 2) continue;
-                const col = s.kind === 'Candlestick'
-                    ? (p.close >= p.open ? (s.opts.upColor ?? '#31c15b') : (s.opts.downColor ?? '#ff6d6d'))
-                    : (s.opts.lineColor ?? s.opts.color ?? '#89b4ff');
+                const col = this.seriesColor(s, p);
                 ctx.beginPath();
                 ctx.arc(dx, dy, 4, 0, Math.PI * 2);
                 ctx.fillStyle = col;
@@ -2533,7 +2478,7 @@ class ChartImpl implements IChartApi {
             ctx.textAlign = align === 'center' ? 'center' : 'left';
             ctx.fillText(text, align === 'center' ? cx : cx + 6, cy);
         };
-        if (showTimeLabel && st !== undefined && vx >= this.plotL() && vx <= this.plotR()
+        if (showTimeLabel && st !== null && vx >= this.plotL() && vx <= this.plotR()
             && ch.vertLine?.visible !== false)
             pill(this.fmtTime(st), vx, this.plotB() + 11, 'center');
         // Right-axis price pill at the cursor's y. Gated by horzLine.visible
@@ -2542,31 +2487,98 @@ class ChartImpl implements IChartApi {
         // the colored order label).
         if (crossY >= this.plotT() && crossY <= this.plotB()
             && ch.horzLine?.visible !== false) {
-            const price = this.yToValue(crossY, rb);
-            pill(this.fmtPrice(price, this.primaryFormat('right')), this.plotR() + 1, crossY, 'left');
+            const scaleValue = this.yToDomain(crossY, rb);
+            pill(this.fmtScaleValue(scaleValue, rb, this.primaryFormat('right')),
+                this.plotR() + 1, crossY, 'left');
         }
     }
 
     // ---- pointer / interaction --------------------------------------
     private snapTime(x: number): Time | undefined {
-        // The reference series for the crosshair must be a real
-        // time-based price series — NOT VolumeProfile (no time) or it
-        // would always return undefined and the legend would never
-        // update.
+        // Ignore overlays that explicitly opt out of the chart time domain.
         const primary =
-            this.series.find((s) => s.kind !== 'VolumeProfile' && s.data.length > 0
-                && Number.isFinite(s.data[0].time))
-            ?? this.series.find((s) => s.data.length > 0 && Number.isFinite(s.data[0].time));
+            this.series.find((s) => s.affectsTimeScale && s.points.length > 0
+                && Number.isFinite(s.points[0].time))
+            ?? this.series.find((s) => s.points.length > 0 && Number.isFinite(s.points[0].time));
         if (primary === undefined) return undefined;
         const t = this.xToTime(x);
-        let best = primary.data[0];
-        let bestD = Infinity;
-        for (const p of primary.data) {
-            if (!Number.isFinite(p.time)) continue;
-            const d = Math.abs(p.time - t);
-            if (d < bestD) { bestD = d; best = p; }
+        return primary.store.nearest(t)?.time;
+    }
+
+    private crosshairTime(x: number): Time | null {
+        return this.controlledCrosshairTime ?? this.snapTime(x) ?? null;
+    }
+
+    private hoveredCrosshairObject(
+        pane: PaneModel<Series> | null,
+        seriesData: ReadonlyMap<ISeriesApi<any, any>, TimedSeriesData>,
+        x: number,
+        y: number,
+    ): HoveredObject | null {
+        if (pane === null || this.inTimeGutter(y) || this.inPriceGutter(x)) return null;
+        const lineHit = this.hitPriceLine(y, x, false);
+        if (lineHit !== null) {
+            return {
+                type: 'price-line',
+                series: lineHit.series,
+                priceLine: lineHit.line,
+                id: lineHit.line.raw().id ?? null,
+            };
         }
-        return best.time;
+
+        this.activatePane(pane);
+        let closest: SeriesHoveredObject | null = null;
+        let closestDistance = 8;
+        for (const series of pane.series) {
+            const data = seriesData.get(series) as AnyPoint | undefined;
+            if (data === undefined) continue;
+            const price = this.seriesPriceValue(series, data);
+            if (price === null || !Number.isFinite(price)) continue;
+            const bounds = this.priceBounds(series.priceScaleId(), pane);
+            const distance = Math.abs(this.valueToY(price, bounds, series) - y);
+            if (distance <= closestDistance) {
+                closestDistance = distance;
+                closest = { type: 'series', series, data };
+            }
+        }
+        return closest;
+    }
+
+    private crosshairEvent(sourceEvent: PointerEvent | MouseEvent | null): CrosshairEvent {
+        if (this.mouseX === null || this.mouseY === null) {
+            return {
+                time: null,
+                logical: null,
+                point: null,
+                paneId: null,
+                seriesData: new Map(),
+                hoveredObject: null,
+                sourceEvent,
+            };
+        }
+        const time = this.crosshairTime(this.mouseX);
+        const pane = this.paneAt(this.mouseY);
+        const seriesData = new Map<ISeriesApi<any, any>, TimedSeriesData>();
+        if (time !== null) {
+            for (const series of this.series) {
+                const point = series.renderData().store.pointAtTime(time);
+                if (point !== null) seriesData.set(series, point);
+            }
+        }
+        return {
+            time,
+            logical: time === null ? null : this.timeToLogical(time),
+            point: { x: this.mouseX, y: this.mouseY },
+            paneId: pane?.id ?? null,
+            seriesData,
+            hoveredObject: this.hoveredCrosshairObject(pane, seriesData, this.mouseX, this.mouseY),
+            sourceEvent,
+        };
+    }
+
+    private emitCrosshair(sourceEvent: PointerEvent | MouseEvent | null): void {
+        const event = this.crosshairEvent(sourceEvent);
+        for (const listener of this.crosshairListeners) listener(event);
     }
 
     private inPriceGutter(x: number): boolean {
@@ -2596,9 +2608,13 @@ class ChartImpl implements IChartApi {
         return true;
     }
 
-    // Order-line engine: the nearest draggable price line whose rendered Y is within grab
-    // tolerance of `my`, or null when the cursor is over a gutter or not near one.
-    private hitDraggableLine(my: number, mx: number): { series: Series; line: PriceLine } | null {
+    // Nearest price line whose rendered Y is within grab tolerance. The general
+    // form feeds crosshair hover metadata; pointer dragging requests draggable lines only.
+    private hitPriceLine(
+        my: number,
+        mx: number,
+        draggableOnly: boolean,
+    ): { series: Series; line: PriceLine } | null {
         if (this.inTimeGutter(my) || this.inPriceGutter(mx)) return null;
         const pane = this.paneAt(my);
         if (pane === null) return null;
@@ -2608,8 +2624,8 @@ class ChartImpl implements IChartApi {
         let bestDist = TOL;
         for (const s of pane.series) {
             for (const pl of s.priceLines) {
-                if (pl.raw().draggable !== true) continue;
-                const raw = this.priceToY(pl.raw().price, s.priceScaleId(), pane);
+                if (draggableOnly && pl.raw().draggable !== true) continue;
+                const raw = this.priceToY(pl.raw().price, s.priceScaleId(), pane, s);
                 if (raw === null) continue;
                 // Hit-test against the RENDERED y: a line whose price is off-view is pinned to the
                 // edge (plotT/plotB ± half a label height), so grab it where it's actually drawn —
@@ -2620,6 +2636,10 @@ class ChartImpl implements IChartApi {
             }
         }
         return best;
+    }
+
+    private hitDraggableLine(my: number, mx: number): { series: Series; line: PriceLine } | null {
+        return this.hitPriceLine(my, mx, true);
     }
 
     // True when the cursor is over a price-line "✕" close button. The button is a click target,
@@ -2637,6 +2657,7 @@ class ChartImpl implements IChartApi {
             const r = this.canvas.getBoundingClientRect();
             this.mouseX = e.clientX - r.left;
             this.mouseY = e.clientY - r.top;
+            this.controlledCrosshairTime = null;
             const pointerPane = this.paneAt(this.mouseY);
             if (pointerPane !== null) this.activatePane(pointerPane);
             if (this.splitterDrag !== null) {
@@ -2663,7 +2684,7 @@ class ChartImpl implements IChartApi {
                 const pane = this.lineDrag.series.pane ?? this.model.mainPane;
                 this.activatePane(pane);
                 const y = Math.max(this.plotT(), Math.min(this.plotB(), this.mouseY));
-                const p = this.yToPrice(y, this.lineDrag.series.priceScaleId(), pane);
+                const p = this.yToPrice(y, this.lineDrag.series.priceScaleId(), pane, this.lineDrag.series);
                 if (p !== null) {
                     this.lineDrag.line.applyOptions({ price: p, anchored: true });
                     const cb = this.lineDrag.line.raw().onDrag;
@@ -2712,15 +2733,15 @@ class ChartImpl implements IChartApi {
                 this.emitRange();
                 viewChanged = true;
             }
-            const time = this.snapTime(this.mouseX);
-            for (const cb of this.crosshairListeners) cb({ time, point: { x: this.mouseX, y: this.mouseY } });
+            this.emitCrosshair(e);
             this.scheduleDraw(viewChanged ? RenderDirty.All : RenderDirty.Overlay);
         });
-        this.listen(this.canvas, 'pointerleave', () => {
+        this.listen<PointerEvent>(this.canvas, 'pointerleave', (e) => {
             this.mouseX = null;
             this.mouseY = null;
+            this.controlledCrosshairTime = null;
             this.clearPlacementPreview();   // no cursor over the plot → no placement preview
-            for (const cb of this.crosshairListeners) cb({});
+            this.emitCrosshair(e);
             this.scheduleDraw(RenderDirty.Overlay);
         });
         // Price-line "✕" close buttons: a mousedown landing on one fires its callback and
@@ -2814,6 +2835,7 @@ class ChartImpl implements IChartApi {
                         Math.max(this.plotT(), Math.min(this.plotB(), this.mouseY)),
                         this.lineDrag.series.priceScaleId(),
                         pane,
+                        this.lineDrag.series,
                     )
                     : null;
                 this.lineDrag.line.applyOptions({ anchored: false });
@@ -2833,7 +2855,8 @@ class ChartImpl implements IChartApi {
             if (e && !moved && this.mouseX !== null && this.mouseY !== null &&
                 !this.inTimeGutter(this.mouseY) && !this.inPriceGutter(this.mouseX)) {
                 const pane = this.paneAt(this.mouseY) ?? this.model.mainPane;
-                const price = this.yToPrice(this.mouseY, 'right', pane);
+                const clickSeries = this.mainSeries(pane);
+                const price = this.yToPrice(this.mouseY, 'right', pane, clickSeries ?? undefined);
                 if (this.placement !== null && this.modifierMatches(e) && price !== null) {
                     // Placement-mode click → EMIT the order-place signal (the chart does not form the
                     // order). Then drop the preview so it doesn't linger on the just-placed spot.

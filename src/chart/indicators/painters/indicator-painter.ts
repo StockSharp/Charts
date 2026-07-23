@@ -26,6 +26,9 @@ export interface IndicatorPaintResult {
 
     /** Legend colours in entry.outputNames order. */
     colors?: string[];
+
+    /** Maps each legend output to the rendered series field that owns it. */
+    legendSources?: Record<string, { seriesIndex: number; field?: string }>;
 }
 
 export interface IndicatorPainter {

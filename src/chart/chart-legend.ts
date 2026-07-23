@@ -179,7 +179,7 @@ export class ChartLegend {
     _onCrosshairMove(param) {
         if (!this._el) return;
 
-        if (!param.time || param.point === undefined) {
+        if (param.time == null || param.point == null) {
             // Show last candle
             if (this._rawCandles.length > 0) {
                 const last = this._rawCandles[this._rawCandles.length - 1];
@@ -189,13 +189,26 @@ export class ChartLegend {
             return;
         }
 
-        // Find candle at this time
+        // CrosshairEvent is the canonical bar snapshot. Reading the same map
+        // as renderers prevents shifted/sparse studies from being looked up on
+        // a neighbouring candle by a second subsystem.
         const time = param.time;
-        const candle = this._rawCandles.find(c => c.time === time);
+        let candle = null;
+        if (param.seriesData?.values) {
+            for (const point of param.seriesData.values()) {
+                if (point && Number.isFinite(point.open) && Number.isFinite(point.high)
+                    && Number.isFinite(point.low) && Number.isFinite(point.close)) {
+                    candle = point;
+                    break;
+                }
+            }
+        }
+        // Compatibility fallback for chart implementations predating seriesData.
+        candle = candle || this._rawCandles.find(c => c.time === time);
         if (candle) {
             this._renderOHLCV(candle);
         }
-        this._renderIndicators(time);
+        this._renderIndicators(time, param.seriesData);
     }
 
     _renderOHLCV(candle) {
@@ -260,7 +273,7 @@ export class ChartLegend {
         }
     }
 
-    _renderIndicators(time) {
+    _renderIndicators(time, seriesData?) {
         if (!this._indicatorEngine || !this._el) return;
         // Freeze updates while the cursor is over the legend row — see init().
         if (this._isHovered) return;
@@ -270,7 +283,7 @@ export class ChartLegend {
 
         // Only overlay (main-chart) indicators belong in this legend —
         // sub-pane indicators have their own pane headers, painted below.
-        const all = this._indicatorEngine.getValuesAt(time);
+        const all = this._indicatorEngine.getValuesAt(time, seriesData);
         const values = all.filter(v => v.paneId == null);
         const signature = values.map(v => v.id).join(',');
         // Sub-pane values: group by paneId and push to each pane's header.

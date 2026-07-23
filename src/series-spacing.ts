@@ -1,6 +1,6 @@
 export interface TimedSeriesLike {
-    kind: string;
-    data: ReadonlyArray<{ time: number }>;
+    readonly affectsTimeScale?: boolean;
+    points: ReadonlyArray<{ time: number }>;
 }
 
 /**
@@ -17,11 +17,11 @@ export function calculateBarStepPx(
 
     let densest = Infinity;
     for (const item of series) {
-        if (item.kind === 'VolumeProfile' || item.data.length < 2) continue;
-        const first = item.data[0].time;
-        const last = item.data[item.data.length - 1].time;
+        if (item.affectsTimeScale === false || item.points.length < 2) continue;
+        const first = item.points[0].time;
+        const last = item.points[item.points.length - 1].time;
         if (!Number.isFinite(first) || !Number.isFinite(last)) continue;
-        const timeStep = (last - first) / (item.data.length - 1);
+        const timeStep = (last - first) / (item.points.length - 1);
         const pixels = (timeStep / visibleTimeSpan) * plotWidth;
         if (Number.isFinite(pixels) && pixels > 0) densest = Math.min(densest, pixels);
     }

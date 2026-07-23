@@ -162,6 +162,42 @@ describe('indicator painters', () => {
         assert.deepEqual(renderer.getLastColors(), ['#FF6347', '#1E90FF', '#32CD32', '#FF1493', '#EE82EE']);
     });
 
+    it('resolves legend outputs from the exact rendered seriesData snapshot', () => {
+        const chart = chartMock();
+        const renderer = new IndicatorRenderer(chart);
+        const settings = getClientCatalog().find(entry => entry.id === 'BollingerBands');
+        const entry = {
+            id: 1,
+            type: settings.id,
+            params: { length: 20, stdDev: 2 },
+            paneId: null,
+            outputNames: ['upper', 'middle', 'lower'],
+            seriesRefs: [],
+            colors: [],
+        };
+        const line = value => [{ time: 10, value }];
+        entry.seriesRefs = renderer.render(entry, {
+            upper: line(20), middle: line(15), lower: line(10),
+        }, null, settings);
+
+        const engine = new IndicatorEngine();
+        engine._indicators = [entry];
+        const seriesData = new Map([
+            [entry.seriesRefs[0], { time: 10, value: 15.5, upper: 21, lower: 10 }],
+            [entry.seriesRefs[1], { time: 10, value: 16 }],
+        ]);
+        assert.deepEqual(engine.getValuesAt(10, seriesData)[0].values, {
+            upper: 21,
+            middle: 16,
+            lower: 10,
+        });
+        assert.deepEqual(engine.getValuesAt(11, new Map())[0].values, {
+            upper: null,
+            middle: null,
+            lower: null,
+        });
+    });
+
     it('falls back to a line when a configured painter is unavailable', () => {
         const chart = chartMock();
         const renderer = new IndicatorRenderer(chart);

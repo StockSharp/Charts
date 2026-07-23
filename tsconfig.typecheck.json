@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.core.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": [
+    "src/index.ts",
+    "src/sschart.ts",
+    "src/core/**/*.ts",
+    "src/series-spacing.ts",
+    "tests/types/**/*.ts"
+  ]
+}

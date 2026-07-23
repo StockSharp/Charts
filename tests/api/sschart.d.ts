@@ -1,7 +1,14 @@
 import { type PaneOptions } from './model/pane-model.js';
+import { type BarsInfo, type MismatchDirectionValue } from './model/series-store.js';
 import type { TimeRange } from './scale/time-scale.js';
+import { type SeriesDefinition, type TimedSeriesData } from '../series/registry.js';
 export type { TimeRange } from './scale/time-scale.js';
 export type { PaneOptions, PaneState } from './model/pane-model.js';
+export { MismatchDirection } from './model/series-store.js';
+export type { BarsInfo, MismatchDirectionValue } from './model/series-store.js';
+export type { DataChangeKind, DataChangeSet } from './model/data-change-set.js';
+export { getSeriesDefinition, getSeriesTypes, registerSeries, seriesRendererRegistry, unregisterSeries, } from '../series/registry.js';
+export type { CustomSeriesDefinition, ISeriesRenderer, PreparedSeriesData, SeriesDefinition, SeriesDataProcessor, SeriesPriceRange, SeriesRendererContext, SeriesRendererPane, SeriesRendererTheme, TimedSeriesData, } from '../series/registry.js';
 export type Time = number;
 export interface WhitespaceData {
     time: Time;
@@ -32,21 +39,33 @@ export interface BandData {
     upper: number;
     lower: number;
 }
-export type SeriesKind = 'Candlestick' | 'Bar' | 'Line' | 'Histogram' | 'Area' | 'Band' | 'PointFigure' | 'Renko' | 'VolumeProfile' | 'Cluster' | 'Box';
-export interface SeriesDefinition {
-    type: SeriesKind;
+export interface VolumeProfileData extends CandlestickData {
+    vol?: number;
 }
-export declare const CandlestickSeries: SeriesDefinition;
-export declare const BarSeries: SeriesDefinition;
-export declare const LineSeries: SeriesDefinition;
-export declare const HistogramSeries: SeriesDefinition;
-export declare const AreaSeries: SeriesDefinition;
-export declare const BandSeries: SeriesDefinition;
-export declare const PointFigureSeries: SeriesDefinition;
-export declare const RenkoSeries: SeriesDefinition;
-export declare const VolumeProfileSeries: SeriesDefinition;
-export declare const ClusterSeries: SeriesDefinition;
-export declare const BoxSeries2: SeriesDefinition;
+export interface PriceLevelData {
+    price: number;
+    vol: number;
+}
+export interface ClusterData {
+    time: Time;
+    high: number;
+    low: number;
+    open?: number;
+    close?: number;
+    levels: readonly PriceLevelData[];
+}
+export type SeriesKind = 'Candlestick' | 'Bar' | 'Line' | 'Histogram' | 'Area' | 'Band' | 'PointFigure' | 'Renko' | 'VolumeProfile' | 'Cluster' | 'Box';
+export declare const CandlestickSeries: SeriesDefinition<CandlestickData, SeriesOptions>;
+export declare const BarSeries: SeriesDefinition<CandlestickData, SeriesOptions>;
+export declare const LineSeries: SeriesDefinition<LineData, SeriesOptions>;
+export declare const HistogramSeries: SeriesDefinition<HistogramData, SeriesOptions>;
+export declare const AreaSeries: SeriesDefinition<AreaData, SeriesOptions>;
+export declare const BandSeries: SeriesDefinition<BandData, SeriesOptions>;
+export declare const PointFigureSeries: SeriesDefinition<CandlestickData, SeriesOptions>;
+export declare const RenkoSeries: SeriesDefinition<CandlestickData, SeriesOptions>;
+export declare const VolumeProfileSeries: SeriesDefinition<VolumeProfileData, SeriesOptions>;
+export declare const ClusterSeries: SeriesDefinition<ClusterData, SeriesOptions>;
+export declare const BoxSeries2: SeriesDefinition<ClusterData, SeriesOptions>;
 export declare const ColorType: {
     readonly Solid: 'solid';
     readonly VerticalGradient: 'gradient';
@@ -67,6 +86,8 @@ export type CrosshairModeValue = typeof CrosshairMode[keyof typeof CrosshairMode
 export declare const PriceScaleMode: {
     readonly Normal: 0;
     readonly Logarithmic: 1;
+    readonly Percentage: 2;
+    readonly IndexedTo100: 3;
 };
 export type PriceScaleModeValue = typeof PriceScaleMode[keyof typeof PriceScaleMode];
 export interface PriceLineOptions {
@@ -218,15 +239,40 @@ export interface PriceScaleOptions {
     mode?: PriceScaleModeValue;
     autoScale?: boolean;
 }
-export interface CrosshairMoveEvent {
-    time?: Time;
-    point?: {
+export interface SeriesHoveredObject {
+    readonly type: 'series';
+    readonly series: ISeriesApi<any, any>;
+    readonly data: TimedSeriesData;
+}
+export interface PriceLineHoveredObject {
+    readonly type: 'price-line';
+    readonly series: ISeriesApi<any, any>;
+    readonly priceLine: IPriceLine;
+    readonly id: string | null;
+}
+export type HoveredObject = SeriesHoveredObject | PriceLineHoveredObject;
+export interface CrosshairEvent {
+    readonly time: Time | null;
+    readonly logical: number | null;
+    readonly point: {
         x: number;
         y: number;
-    };
+    } | null;
+    readonly paneId: string | null;
+    readonly seriesData: ReadonlyMap<ISeriesApi<any, any>, TimedSeriesData>;
+    readonly hoveredObject: HoveredObject | null;
+    readonly sourceEvent: PointerEvent | MouseEvent | null;
+}
+/** @deprecated Use CrosshairEvent. */
+export type CrosshairMoveEvent = CrosshairEvent;
+export interface CrosshairPosition {
+    readonly time: Time;
+    readonly price?: number;
+    readonly pane?: IPaneApi;
+    readonly series?: ISeriesApi<any, any>;
 }
 export type RangeListener = (range: TimeRange | null) => void;
-export type CrosshairListener = (param: CrosshairMoveEvent) => void;
+export type CrosshairListener = (param: CrosshairEvent) => void;
 export interface ChartClick {
     price: number | null;
     time: Time | null;
@@ -261,10 +307,15 @@ export interface IPriceScaleApi {
 export interface ISeriesMarkersPlugin {
     setMarkers(markers: SeriesMarker[]): void;
 }
-export interface ISeriesApi {
-    setData(points: ReadonlyArray<unknown>): void;
-    update(point: unknown): void;
-    applyOptions(patch: SeriesOptions): void;
+export interface ISeriesApi<TData extends TimedSeriesData = TimedSeriesData, TOptions extends SeriesOptions = SeriesOptions> {
+    setData(points: ReadonlyArray<TData>): void;
+    update(point: TData): void;
+    prependData(points: ReadonlyArray<TData>): void;
+    pop(count?: number): TData[];
+    data(): readonly TData[];
+    dataByIndex(logicalIndex: number, mismatchDirection?: MismatchDirectionValue): TData | null;
+    barsInLogicalRange(range: LogicalRange): BarsInfo | null;
+    applyOptions(patch: Partial<TOptions>): void;
     priceScaleId(): string;
     priceScale(): IPriceScaleApi;
     createPriceLine(options: PriceLineOptions): IPriceLine;
@@ -295,7 +346,7 @@ export interface PaneSize {
 }
 export interface IPaneApi {
     id(): string;
-    addSeries(definition: SeriesDefinition, options?: SeriesOptions): ISeriesApi;
+    addSeries<TData extends TimedSeriesData, TOptions extends SeriesOptions = SeriesOptions>(definition: SeriesDefinition<TData, TOptions>, options?: Partial<TOptions>): ISeriesApi<TData, TOptions>;
     removeSeries(series: ISeriesApi): void;
     series(): readonly ISeriesApi[];
     priceScale(scaleId?: string): IPriceScaleApi;
@@ -313,7 +364,7 @@ export interface IChartApi {
     addPane(options?: PaneOptions): IPaneApi;
     panes(): readonly IPaneApi[];
     removePane(pane: IPaneApi): void;
-    addSeries(definition: SeriesDefinition, options?: SeriesOptions, pane?: IPaneApi): ISeriesApi;
+    addSeries<TData extends TimedSeriesData, TOptions extends SeriesOptions = SeriesOptions>(definition: SeriesDefinition<TData, TOptions>, options?: Partial<TOptions>, pane?: IPaneApi): ISeriesApi<TData, TOptions>;
     removeSeries(series: ISeriesApi): void;
     timeScale(): ITimeScaleApi;
     priceScale(scaleId?: string): IPriceScaleApi;
@@ -321,6 +372,8 @@ export interface IChartApi {
     unsubscribeClick(cb: ClickListener): void;
     subscribeCrosshairMove(cb: CrosshairListener): void;
     unsubscribeCrosshairMove(cb: CrosshairListener): void;
+    setCrosshairPosition(position: CrosshairPosition): void;
+    clearCrosshairPosition(): void;
     setOrderPlacement(options: OrderPlacementOptions | null): void;
     subscribeOrderPlace(cb: OrderPlaceListener): void;
     unsubscribeOrderPlace(cb: OrderPlaceListener): void;
