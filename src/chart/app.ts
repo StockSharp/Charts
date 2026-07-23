@@ -121,23 +121,20 @@ function boot() {
     const typeSwitcher = new ChartTypeSwitcher();
     typeSwitcher.init(chart, candleSeries, volumeSeries);
     typeSwitcher.setRawCandles(live);   // shares the ref, so it always rebuilds from the live window
-    let currentType = 'candlestick';
+    let currentType = 'candle';
     legend.onChartTypeChange = (type: string) => {
         const s = typeSwitcher.switchType(type);
         if (s) { candleSeries = s; menu.setCandleSeries(s); }
         currentType = type;
-        // Renko / P&F re-bin price into bricks / columns — a different bar count
-        // than the candles. Recompute every indicator on those derived bars (via
-        // the engine transforms) so overlays / oscillators line up natively; drop
-        // the volume histogram (Renko / P&F are volume-agnostic). Time-aligned
-        // types feed the raw candles back and restore the volume.
-        if (type === 'renko' || type === 'pf') {
-            engine.setCandles(type === 'renko' ? SSChart.renkoBars(live) : SSChart.pnfBars(live));
-            volumeSeries.setData([]);
-        } else {
-            engine.setCandles(live);
-            volumeSeries.setData(live.map((c: any) => ({ time: c.time, value: c.volume, color: volColor(c) })));
-        }
+        // Renko / P&F own one stable streaming transform. The visible custom
+        // series and indicators therefore consume identical boxes/columns while
+        // live replacements rewind only their provisional tail.
+        const derived = type === 'renko' || type === 'pf';
+        const indicatorCandles = typeSwitcher.getIndicatorCandles();
+        engine.setCandles(indicatorCandles, { rewindableTail: derived });
+        legend.setRawCandles(indicatorCandles);
+        if (derived) volumeSeries.setData([]);
+        else volumeSeries.setData(live.map((c: any) => ({ time: c.time, value: c.volume, color: volColor(c) })));
     };
 
     // Toolbar buttons.
@@ -168,15 +165,10 @@ function boot() {
     engine.add('RelativeStrengthIndex', { length: 14 });
     legend.refresh();
 
-    // ---- realtime feed: mutate the shared array in place, then let the engine
-    //      recompute every indicator (exactly the terminal's live path) ----
+    // ---- realtime feed: mutate the shared array in place; time-aligned studies
+    //      consume append/replace patches through the incremental runtime ----
     const feed = S.makeFeed();
     let timer: any = null;
-    // Cap the live window. The feed seals a new bar every few ticks and every
-    // tick recomputes every indicator over the WHOLE history; left unbounded a
-    // long run (with a few studies) recomputes thousands of bars per tick and
-    // janks hard. A rolling window keeps realtime cost O(window), flat over time.
-    const MAX_LIVE = 800;
     function step() {
         const bar = feed.next(5);
         const lv = S.levelsFor(bar);   // per-bar volume-by-price for the footprint (cluster / box) types
@@ -188,25 +180,11 @@ function boot() {
         } else {
             last.open = bar.open; last.high = bar.high; last.low = bar.low; last.close = bar.close; last.volume = bar.vol; last.levels = lv;
         }
-        // Drop the oldest bars once past the window (only when a new bar sealed).
-        const trimmed = newBar && live.length > MAX_LIVE;
-        if (trimmed) live.splice(0, live.length - MAX_LIVE);
-
-        if (trimmed) {
-            // Reseed the main + volume series to the window so they don't grow
-            // unbounded and stay aligned with the (windowed) indicators.
-            candleSeries.setData(live);
-            if (!derived) volumeSeries.setData(live.map((c: any) => ({ time: c.time, value: c.volume, color: volColor(c) })));
-        } else {
-            typeSwitcher.updatePrice({ time: bar.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close, volume: bar.vol, levels: lv });
-            if (!derived) volumeSeries.update({ time: bar.time, value: bar.vol, color: volColor(bar) });
-        }
+        typeSwitcher.updatePrice({ time: bar.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close, volume: bar.vol, levels: lv });
+        if (!derived) volumeSeries.update({ time: bar.time, value: bar.vol, color: volColor(bar) });
         try { chart.timeScale().scrollToRealTime(); } catch { /* */ }
-        // Renko / P&F: rebuild the derived bars from the window and recompute the
-        // studies on them; time-aligned types take the coalesced live path.
-        if (derived) engine.setCandles(currentType === 'renko' ? SSChart.renkoBars(live) : SSChart.pnfBars(live));
-        else engine.onLiveUpdate();      // RAF-coalesced recompute of every indicator
-        legend.setRawCandles(live);
+        engine.onLiveUpdate();          // RAF-coalesced incremental append/replace/rewind
+        legend.setRawCandles(derived ? typeSwitcher.getIndicatorCandles() : live);
         legend.refresh();
     }
     const rtBtn = document.getElementById('realtimeBtn');

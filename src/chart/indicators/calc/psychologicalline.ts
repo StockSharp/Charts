@@ -21,7 +21,7 @@
  * @returns {Point[]}
  */
 export function calcPsychologicalLine(candles, params) {
-    const length = params && Number.isFinite(params.length) ? (params.length | 0) : 12;
+    const length = params && Number.isFinite(params.length) ? (params.length | 0) : 20;
     if (!Array.isArray(candles) || candles.length === 0) return [];
     const n = candles.length;
     const out = new Array(n);

@@ -1,0 +1,130 @@
+import {
+    ArnaudLegouxMovingAverageIndicator,
+    ArnaudLegouxMovingAverageProcessor,
+    AverageTrueRangeIndicator,
+    AverageTrueRangeProcessor,
+    CoreIncrementalIndicators,
+    EndpointMovingAverageIndicator,
+    EndpointMovingAverageProcessor,
+    ExponentialMovingAverageIndicator,
+    ExponentialMovingAverageProcessor,
+    HighestIndicator,
+    HighestProcessor,
+    IndicatorRuntime,
+    JurikMovingAverageIndicator,
+    JurikMovingAverageProcessor,
+    KalmanFilterIndicator,
+    KalmanFilterProcessor,
+    LinearRegressionForecastIndicator,
+    LinearRegressionForecastProcessor,
+    LinearRegressionIndicator,
+    LinearRegressionProcessor,
+    LinearRegressionRSquaredIndicator,
+    LinearRegressionRSquaredProcessor,
+    LinearRegressionSlopeIndicator,
+    LinearRegressionSlopeProcessor,
+    LowestIndicator,
+    LowestProcessor,
+    MeanDeviationIndicator,
+    MeanDeviationProcessor,
+    MedianIndicator,
+    MedianProcessor,
+    SimpleMovingAverageIndicator,
+    SimpleMovingAverageProcessor,
+    StandardDeviationIndicator,
+    StandardDeviationProcessor,
+    StandardErrorIndicator,
+    StandardErrorProcessor,
+    SumIndicator,
+    SumProcessor,
+    SmoothedMovingAverageIndicator,
+    SmoothedMovingAverageProcessor,
+    WeightedMovingAverageIndicator,
+    WeightedMovingAverageProcessor,
+    WilderMovingAverageIndicator,
+    WilderMovingAverageProcessor,
+    TrueRangeIndicator,
+    TrueRangeProcessor,
+    ZeroLagExponentialMovingAverageIndicator,
+    ZeroLagExponentialMovingAverageProcessor,
+    type IndicatorCandle,
+    type IndicatorDefinition,
+    type ArnaudLegouxMovingAverageParameters,
+    type JurikMovingAverageParameters,
+    type KalmanFilterParameters,
+    type LengthIndicatorParameters,
+} from '../../src/index.js';
+
+const definitions: readonly IndicatorDefinition<IndicatorCandle, any>[] = [
+    SimpleMovingAverageIndicator,
+    ExponentialMovingAverageIndicator,
+    AverageTrueRangeIndicator,
+    WeightedMovingAverageIndicator,
+    ArnaudLegouxMovingAverageIndicator,
+    EndpointMovingAverageIndicator,
+    JurikMovingAverageIndicator,
+    KalmanFilterIndicator,
+    LinearRegressionForecastIndicator,
+    LinearRegressionIndicator,
+    LinearRegressionRSquaredIndicator,
+    LinearRegressionSlopeIndicator,
+    StandardErrorIndicator,
+    StandardDeviationIndicator,
+    MeanDeviationIndicator,
+    MedianIndicator,
+    SumIndicator,
+    HighestIndicator,
+    LowestIndicator,
+    SmoothedMovingAverageIndicator,
+    WilderMovingAverageIndicator,
+    ZeroLagExponentialMovingAverageIndicator,
+    TrueRangeIndicator,
+    ...CoreIncrementalIndicators,
+];
+const alma: IndicatorDefinition<IndicatorCandle, ArnaudLegouxMovingAverageParameters>
+    = ArnaudLegouxMovingAverageIndicator;
+const jma: IndicatorDefinition<IndicatorCandle, JurikMovingAverageParameters>
+    = JurikMovingAverageIndicator;
+const kalman: IndicatorDefinition<IndicatorCandle, KalmanFilterParameters>
+    = KalmanFilterIndicator;
+void definitions;
+void alma;
+void jma;
+void kalman;
+
+const processors = [
+    new SimpleMovingAverageProcessor(20),
+    new ExponentialMovingAverageProcessor(20),
+    new AverageTrueRangeProcessor(14),
+    new WeightedMovingAverageProcessor(20),
+    new ArnaudLegouxMovingAverageProcessor(9, 0.85, 6),
+    new EndpointMovingAverageProcessor(10),
+    new JurikMovingAverageProcessor(20, 0),
+    new KalmanFilterProcessor(10, 0.00001, 0.001),
+    new LinearRegressionForecastProcessor(14),
+    new LinearRegressionProcessor(11),
+    new LinearRegressionRSquaredProcessor(10),
+    new LinearRegressionSlopeProcessor(11),
+    new StandardErrorProcessor(10),
+    new StandardDeviationProcessor(10),
+    new MeanDeviationProcessor(5),
+    new MedianProcessor(5),
+    new SumProcessor(15),
+    new HighestProcessor(5),
+    new LowestProcessor(5),
+    new SmoothedMovingAverageProcessor(32),
+    new WilderMovingAverageProcessor(32),
+    new ZeroLagExponentialMovingAverageProcessor(14),
+    new TrueRangeProcessor(),
+];
+const position: number = processors[0].position;
+void position;
+
+const runtime = new IndicatorRuntime({
+    definition: SimpleMovingAverageIndicator,
+    parameters: { length: 20 },
+});
+runtime.update({
+    time: 1,
+    value: { time: 1, open: 1, high: 2, low: 0, close: 1 },
+}, true);

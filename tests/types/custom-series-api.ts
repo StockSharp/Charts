@@ -2,6 +2,7 @@ import {
     CandlestickSeries,
     type CustomSeriesDefinition,
     type IChartApi,
+    type IIncrementalSeriesDataProcessor,
     type SeriesOptions,
 } from '../../src/index.js';
 
@@ -34,8 +35,24 @@ const rangeDefinition: CustomSeriesDefinition<RangeData, RangeOptions> = {
     },
 };
 
+const rangeProcessor: IIncrementalSeriesDataProcessor<RangeData, RangeOptions> = {
+    reset(data) { return { data }; },
+    update(point, _options, kind) {
+        const appended: boolean = kind === 'append';
+        void appended;
+        return { fromIndex: 0, removed: 0, data: [point] };
+    },
+};
+
+const incrementalRangeDefinition: CustomSeriesDefinition<RangeData, RangeOptions> = {
+    ...rangeDefinition,
+    type: 'IncrementalRangeTypeCheck',
+    incrementalDataProcessorFactory: () => rangeProcessor,
+};
+
 declare const chart: IChartApi;
 const range = chart.addSeries(rangeDefinition, { thickness: 3 });
+chart.addSeries(incrementalRangeDefinition);
 range.setData([{ time: 1, low: 10, high: 12 }]);
 range.update({ time: 2, low: 11, high: 13 });
 range.applyOptions({ color: '#00ffff' });

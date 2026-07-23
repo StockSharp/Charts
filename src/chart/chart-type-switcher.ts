@@ -1,3 +1,8 @@
+import {
+    PointFigureDataRuntime,
+    RenkoDataRuntime,
+} from '../series/derived-data.js';
+
 // Chart Type Switcher — switch between Candle/Bar/Line/Area
 export class ChartTypeSwitcher {
     _chart: any;
@@ -5,6 +10,7 @@ export class ChartTypeSwitcher {
     _currentType: string;
     _volumeSeries: any;
     _rawCandles: any[];
+    _derivedRuntime: RenkoDataRuntime | PointFigureDataRuntime | null;
     _lastHA: { open: number; close: number } | null = null;
 
     constructor() {
@@ -13,6 +19,7 @@ export class ChartTypeSwitcher {
         this._currentType = 'candle';
         this._volumeSeries = null;
         this._rawCandles = [];
+        this._derivedRuntime = null;
     }
 
     init(chart, candleSeries, volumeSeries) {
@@ -54,6 +61,7 @@ export class ChartTypeSwitcher {
         // Create new series. v5: per-shape factories replaced by
         // chart.addSeries(SeriesType, options).
         let newSeries;
+        let derivedRuntime: RenkoDataRuntime | PointFigureDataRuntime | null = null;
         switch (type) {
             case 'candle':
                 newSeries = this._chart.addSeries(SSChart.CandlestickSeries, {
@@ -119,12 +127,22 @@ export class ChartTypeSwitcher {
                 break;
 
             case 'renko':
-                newSeries = this._chart.addSeries(SSChart.RenkoSeries, { upColor: '#00c853', downColor: '#ff3d57', priceFormat });
+                derivedRuntime = new RenkoDataRuntime();
+                derivedRuntime.reset(this._rawCandles);
+                newSeries = this._chart.addSeries(SSChart.RenkoSeries, {
+                    upColor: '#00c853', downColor: '#ff3d57', priceFormat,
+                    boxSize: derivedRuntime.boxSize,
+                });
                 newSeries.setData(this._rawCandles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close })));
                 break;
 
             case 'pf':
-                newSeries = this._chart.addSeries(SSChart.PointFigureSeries, { upColor: '#00c853', downColor: '#ff3d57', reversal: 2, priceFormat });
+                derivedRuntime = new PointFigureDataRuntime(undefined, 2);
+                derivedRuntime.reset(this._rawCandles);
+                newSeries = this._chart.addSeries(SSChart.PointFigureSeries, {
+                    upColor: '#00c853', downColor: '#ff3d57', reversal: 2, priceFormat,
+                    boxSize: derivedRuntime.boxSize,
+                });
                 newSeries.setData(this._rawCandles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close })));
                 break;
 
@@ -144,6 +162,7 @@ export class ChartTypeSwitcher {
 
         this._currentSeries = newSeries;
         this._currentType = type;
+        this._derivedRuntime = derivedRuntime;
         return newSeries;
     }
 
@@ -155,11 +174,16 @@ export class ChartTypeSwitcher {
         return this._currentType;
     }
 
+    getIndicatorCandles() {
+        return this._derivedRuntime?.data ?? this._rawCandles;
+    }
+
     updatePrice(candle) {
         if (!this._currentSeries) return;
         const type = this._currentType;
         if (type === 'candle' || type === 'bar' || type === 'renko' || type === 'pf') {
             this._currentSeries.update(candle);
+            if (type === 'renko' || type === 'pf') this._derivedRuntime?.update(candle);
         } else if (type === 'cluster' || type === 'box') {
             this._currentSeries.update({ time: candle.time, high: candle.high, low: candle.low, levels: candle.levels });
         } else if (type === 'heikin') {

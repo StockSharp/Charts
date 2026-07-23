@@ -34,5 +34,24 @@ describe('SeriesRendererRegistry', () => {
         assert.throws(() => registry.register({ type: ' Range ', defaultOptions: {}, renderer: { draw() {} } }), /whitespace/);
         assert.throws(() => registry.register({ type: 'Broken', defaultOptions: {}, renderer: {} }), /renderer\.draw/);
         assert.throws(() => registry.register({ type: 'NoDefaults', renderer: { draw() {} } }), /defaultOptions/);
+        assert.throws(
+            () => registry.register({
+                type: 'AmbiguousProcessor',
+                defaultOptions: {},
+                renderer: { draw() {} },
+                dataProcessor() {},
+                incrementalDataProcessorFactory() {},
+            }),
+            /both data processor contracts/,
+        );
+        assert.throws(
+            () => registry.register({
+                type: 'InvalidIncrementalProcessor',
+                defaultOptions: {},
+                renderer: { draw() {} },
+                incrementalDataProcessorFactory: {},
+            }),
+            /must be a function/,
+        );
     });
 });

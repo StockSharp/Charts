@@ -90,6 +90,7 @@ import { preparePointFigureData, prepareRenkoData } from '../series/derived-data
 import {
     seriesRendererRegistry,
     type CustomSeriesDefinition,
+    type IIncrementalSeriesDataProcessor,
     type SeriesDefinition,
     type SeriesRendererContext,
     type TimedSeriesData,
@@ -148,10 +149,14 @@ export {
 } from '../series/registry.js';
 export type {
     CustomSeriesDefinition,
+    IIncrementalSeriesDataProcessor,
+    IncrementalSeriesDataProcessorFactory,
     ISeriesRenderer,
     PreparedSeriesData,
     SeriesDefinition,
     SeriesDataProcessor,
+    SeriesDataProcessorPatch,
+    SeriesDataUpdateKind,
     SeriesPriceRange,
     SeriesRendererContext,
     SeriesRendererPane,
@@ -457,36 +462,65 @@ class Series extends SeriesModel<AnyPoint> implements ISeriesApi<AnyPoint, Serie
     readonly definition: CustomSeriesDefinition<AnyPoint, SeriesOptions>;
     opts: SeriesOptions;
     get affectsTimeScale(): boolean { return this.definition.affectsTimeScale !== false; }
-    get points(): readonly AnyPoint[] { return this.values; }
+    get sourcePoints(): readonly AnyPoint[] { return this.values; }
+    get points(): readonly AnyPoint[] {
+        return this.definition.dataProcessor !== undefined
+            || this.incrementalProcessor !== null
+            ? this.renderData().store.values
+            : this.sourcePoints;
+    }
     private prepared: {
         key: string;
         store: SeriesStore<AnyPoint>;
         metadata: Readonly<Record<string, unknown>>;
     } | null = null;
+    private readonly incrementalProcessor: IIncrementalSeriesDataProcessor<
+        AnyPoint,
+        SeriesOptions
+    > | null;
     private optionsVersion = 0;
     constructor(definition: CustomSeriesDefinition<AnyPoint, SeriesOptions>, opts: SeriesOptions) {
         super();
         this.definition = definition;
         this.kind = definition.type;
         this.opts = opts;
+        const factory = definition.incrementalDataProcessorFactory;
+        this.incrementalProcessor = factory === undefined ? null : factory();
+        if (this.incrementalProcessor !== null
+            && (typeof this.incrementalProcessor !== 'object'
+                || typeof this.incrementalProcessor.reset !== 'function'
+                || typeof this.incrementalProcessor.update !== 'function')) {
+            throw new TypeError(
+                `sschart: series type '${this.kind}' returned an invalid incremental data processor`,
+            );
+        }
     }
     setData(points: ReadonlyArray<AnyPoint>): void {
         const change = this.replaceData(points);
+        this.resetPreparedData();
         this.chart?.onDataChanged(change);
     }
     // Streaming-style single-point push:
     // same time as last -> replace; newer time -> append; older -> ignore.
     update(point: AnyPoint): void {
         const change = this.updateTail(point);
-        if (change !== null) this.chart?.onDataChanged(change);
+        if (change === null) return;
+        this.updatePreparedData(this.store.last!, change);
+        this.chart?.onDataChanged(change);
     }
     prependData(points: ReadonlyArray<AnyPoint>): void {
         const change = this.store.prepend(points);
-        if (change !== null) this.chart?.onDataChanged(change);
+        if (change !== null) {
+            this.resetPreparedData();
+            this.chart?.onDataChanged(change);
+        }
     }
     pop(count = 1): AnyPoint[] {
         const result = this.store.pop(count);
-        if (result.change !== null) this.chart?.onDataChanged(result.change);
+        if (result.change !== null) {
+            this.resetPreparedData();
+            this.chart?.onDataChanged(result.change);
+        }
         return result.points;
     }
     data(): readonly AnyPoint[] { return this.store.snapshot(); }
@@ -500,7 +534,10 @@ class Series extends SeriesModel<AnyPoint> implements ISeriesApi<AnyPoint, Serie
     applyOptions(patch: Partial<SeriesOptions>): void {
         this.opts = { ...this.opts, ...patch };
         this.optionsVersion++;
-        this.chart?.scheduleDraw();
+        this.resetPreparedData();
+        if (this.definition.dataProcessor !== undefined || this.incrementalProcessor !== null)
+            this.chart?.onDataChanged();
+        else this.chart?.scheduleDraw();
     }
     renderData(): {
         key: string;
@@ -508,11 +545,17 @@ class Series extends SeriesModel<AnyPoint> implements ISeriesApi<AnyPoint, Serie
         metadata: Readonly<Record<string, unknown>>;
     } {
         const key = `${this.kind}:${this.store.version}:${this.optionsVersion}`;
+        if (this.incrementalProcessor !== null) {
+            if (this.prepared === null) this.resetPreparedData();
+            if (this.prepared === null)
+                throw new Error(`sschart: series type '${this.kind}' did not prepare its data`);
+            return this.prepared;
+        }
         const processor = this.definition.dataProcessor;
         if (processor === undefined) return { key, store: this.store, metadata: {} };
         if (this.prepared?.key === key) return this.prepared;
 
-        const result = processor(this.points, this.opts);
+        const result = processor(this.sourcePoints, this.opts);
         const store = new SeriesStore<AnyPoint>();
         store.replace(result.data as readonly AnyPoint[]);
         this.prepared = {
@@ -521,6 +564,47 @@ class Series extends SeriesModel<AnyPoint> implements ISeriesApi<AnyPoint, Serie
             metadata: Object.freeze({ ...(result.metadata ?? {}) }),
         };
         return this.prepared;
+    }
+    renderStore(): SeriesStore<AnyPoint> { return this.renderData().store; }
+    private resetPreparedData(): void {
+        this.prepared = null;
+        if (this.incrementalProcessor === null) return;
+        const result = this.incrementalProcessor.reset(this.sourcePoints, this.opts);
+        const store = new SeriesStore<AnyPoint>();
+        store.replace(result.data as readonly AnyPoint[]);
+        this.prepared = {
+            key: `${this.kind}:${this.store.version}:${this.optionsVersion}`,
+            store,
+            metadata: Object.freeze({ ...(result.metadata ?? {}) }),
+        };
+    }
+    private updatePreparedData(point: AnyPoint, change: DataChangeSet): void {
+        if (this.incrementalProcessor === null) {
+            this.prepared = null;
+            return;
+        }
+        if (this.prepared === null) this.resetPreparedData();
+        const prepared = this.prepared;
+        if (prepared === null) return;
+        const patch = this.incrementalProcessor.update(
+            point,
+            this.opts,
+            change.kind === 'append' ? 'append' : 'update',
+        );
+        if (patch !== null) {
+            prepared.store.replaceTail(
+                patch.fromIndex,
+                patch.removed,
+                patch.data as readonly AnyPoint[],
+            );
+        }
+        this.prepared = {
+            key: `${this.kind}:${this.store.version}:${this.optionsVersion}`,
+            store: prepared.store,
+            metadata: patch?.metadata === undefined
+                ? prepared.metadata
+                : Object.freeze({ ...patch.metadata }),
+        };
     }
     priceScaleId(): string { return this.opts.priceScaleId ?? 'right'; }
     // Per-series price-scale handle. Lets the host adjust scaleMargins
@@ -1214,7 +1298,7 @@ class ChartImpl implements IChartApi {
         if (existing !== undefined) return existing;
         const primitive = new SeriesMarkersPrimitive({
             series,
-            pointAtTime: (time) => series.store.pointAtTime(time),
+            pointAtTime: (time) => series.renderStore().pointAtTime(time),
             priceValue: (point) => this.seriesPriceValue(series, point as AnyPoint),
         });
         this.markerPrimitives.set(series, primitive);
@@ -1755,28 +1839,30 @@ class ChartImpl implements IChartApi {
     ): AnyPoint | null {
         const time = this.logicalToTime(logicalIndex);
         if (time === null) return null;
-        const exact = series.store.pointAtTime(time);
+        const store = series.renderStore();
+        const exact = store.pointAtTime(time);
         if (exact !== null || mismatchDirection === MismatchDirection.None) return exact;
-        const right = series.store.lowerBound(time);
+        const right = store.lowerBound(time);
         if (mismatchDirection === MismatchDirection.NearestLeft)
-            return series.store.dataByIndex(right - 1, MismatchDirection.None);
-        return series.store.dataByIndex(right, MismatchDirection.None);
+            return store.dataByIndex(right - 1, MismatchDirection.None);
+        return store.dataByIndex(right, MismatchDirection.None);
     }
 
     seriesBarsInLogicalRange(series: Series, range: LogicalRange): BarsInfo | null {
         const fromTime = this.logicalToTime(range.from);
         const toTime = this.logicalToTime(range.to);
-        if (fromTime === null || toTime === null || series.store.length === 0) return null;
-        const fromIndex = series.store.lowerBound(fromTime);
-        const exclusiveTo = series.store.upperBound(toTime);
-        if (fromIndex >= exclusiveTo || fromIndex >= series.store.length) return null;
+        const store = series.renderStore();
+        if (fromTime === null || toTime === null || store.length === 0) return null;
+        const fromIndex = store.lowerBound(fromTime);
+        const exclusiveTo = store.upperBound(toTime);
+        if (fromIndex >= exclusiveTo || fromIndex >= store.length) return null;
         const toIndex = exclusiveTo - 1;
-        const from = series.store.dataByIndex(fromIndex);
-        const to = series.store.dataByIndex(toIndex);
+        const from = store.dataByIndex(fromIndex);
+        const to = store.dataByIndex(toIndex);
         if (from === null || to === null) return null;
         return {
             barsBefore: fromIndex,
-            barsAfter: series.store.length - 1 - toIndex,
+            barsAfter: store.length - 1 - toIndex,
             from: from.time,
             to: to.time,
         };
@@ -2546,8 +2632,9 @@ class ChartImpl implements IChartApi {
             if (src === 'lastBar') {
                 p = s.points[s.points.length - 1];
             } else {
-                const index = s.store.upperBound(this.viewTo) - 1;
-                p = s.store.dataByIndex(index) ?? s.points[s.points.length - 1];
+                const store = s.renderStore();
+                const index = store.upperBound(this.viewTo) - 1;
+                p = store.dataByIndex(index) ?? s.points[s.points.length - 1];
             }
             const val = this.seriesPriceValue(s, p);
             if (val === null || !Number.isFinite(val)) continue;
@@ -2628,7 +2715,8 @@ class ChartImpl implements IChartApi {
             const span = range.to - range.from;
             const reference = this.indexRefSeries();
             if (span > 0 && reference !== null) {
-                const points = reference.store.visibleRange(this.viewFrom, this.viewTo, 1).points;
+                const points = reference.renderStore()
+                    .visibleRange(this.viewFrom, this.viewTo, 1).points;
                 const stride = Math.max(1, Math.floor((points.length - 1) / 512));
                 let domainStep = Infinity;
                 for (let index = stride; index < points.length; index += stride) {
@@ -3002,7 +3090,7 @@ class ChartImpl implements IChartApi {
             ?? this.series.find((s) => s.points.length > 0 && Number.isFinite(s.points[0].time));
         if (primary === undefined) return undefined;
         const t = this.xToTime(x);
-        return primary.store.nearest(t)?.time;
+        return primary.renderStore().nearest(t)?.time;
     }
 
     private crosshairTime(x: number): Time | null {

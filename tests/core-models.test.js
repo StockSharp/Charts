@@ -38,6 +38,33 @@ describe('SeriesModel', () => {
         assert.equal(series.updateTail({ time: 4, value: 40 }).kind, 'append');
         assert.deepEqual(series.values.map((item) => item.value), [1, 30, 40]);
     });
+
+    it('replaces a derived tail without touching its prefix', () => {
+        const series = new SeriesModel();
+        series.replaceData([
+            { time: 1, value: 10 },
+            { time: 2, value: 20 },
+            { time: 3, value: 30 },
+        ]);
+        const prefix = series.values[0];
+
+        const change = series.store.replaceTail(1, 2, [
+            { time: 2.5, value: 25 },
+            { time: 4, value: 40 },
+        ]);
+
+        assert.equal(change.kind, 'replace');
+        assert.equal(series.values[0], prefix);
+        assert.deepEqual(series.values.map(item => item.value), [10, 25, 40]);
+        assert.throws(
+            () => series.store.replaceTail(1, 1, []),
+            /replace the current tail/,
+        );
+        assert.throws(
+            () => series.store.replaceTail(2, 1, [{ time: 1, value: 1 }]),
+            /strictly increasing/,
+        );
+    });
 });
 
 describe('TimeScaleModel', () => {

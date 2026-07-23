@@ -79,8 +79,8 @@ export function calcPPO(candles, params) {
     const ppoRaw = new Array(n);
     for (let i = 0; i < n; i++) {
         const a = sh[i], b = lg[i];
-        if (a === null || b === null || b === 0) ppoRaw[i] = null;
-        else ppoRaw[i] = ((a - b) / b) * 100;
+        if (a === null || b === null) ppoRaw[i] = null;
+        else ppoRaw[i] = b === 0 ? 0 : ((a - b) / b) * 100;
     }
 
     const signalRaw = emaArray(ppoRaw, signalLength);

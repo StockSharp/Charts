@@ -1,12 +1,12 @@
 import {
     type CustomSeriesDefinition,
-    type PreparedSeriesData,
+    type IncrementalSeriesDataProcessorFactory,
     type SeriesPriceRange,
     type SeriesRendererContext,
     type SeriesRendererRegistry,
     type TimedSeriesData,
 } from './registry.js';
-import { preparePointFigureData, prepareRenkoData } from './derived-data.js';
+import { PointFigureDataRuntime, RenkoDataRuntime } from './derived-data.js';
 
 type Point = TimedSeriesData & {
     open?: number;
@@ -20,6 +20,7 @@ type Point = TimedSeriesData & {
     vol?: number;
     levels?: Array<{ price: number; vol: number }>;
 };
+type CompleteOhlcPoint = Required<Pick<Point, 'time' | 'open' | 'high' | 'low' | 'close'>>;
 
 type Options = Record<string, unknown> & {
     upColor?: string;
@@ -407,7 +408,7 @@ function definition(
     dataPadding = 1,
     colorAt: (point: Point, options: Readonly<Options>) => string | null = defaultColor,
     extras: {
-        dataProcessor?: (data: readonly Point[], options: Readonly<Options>) => PreparedSeriesData<Point>;
+        incrementalDataProcessorFactory?: IncrementalSeriesDataProcessorFactory<Point, Options>;
         affectsTimeScale?: boolean;
         magnetValues?: (point: Point, options: Readonly<Options>) => readonly number[];
     } = {},
@@ -424,23 +425,45 @@ function definition(
         type,
         defaultOptions: Object.freeze({}) as Options,
         renderer,
-        dataProcessor: extras.dataProcessor,
+        incrementalDataProcessorFactory: extras.incrementalDataProcessorFactory,
         affectsTimeScale: extras.affectsTimeScale,
     });
 }
 
 const ohlcMagnetValues = (point: Point) => [point.open!, point.high!, point.low!, point.close!];
-const renkoProcessor = (data: readonly Point[], options: Readonly<Options>): PreparedSeriesData<Point> => {
-    const prepared = prepareRenkoData(data as readonly Required<Pick<Point, 'time' | 'open' | 'high' | 'low' | 'close'>>[], options.boxSize);
-    return { data: prepared.data as readonly Point[], metadata: { box: prepared.boxSize } };
+const renkoProcessorFactory: IncrementalSeriesDataProcessorFactory<Point, Options> = () => {
+    let runtime: RenkoDataRuntime | null = null;
+    return {
+        reset(data, options) {
+            runtime = new RenkoDataRuntime(options.boxSize);
+            const prepared = runtime.reset(data as readonly CompleteOhlcPoint[]);
+            return { data: prepared.data as readonly Point[], metadata: { box: prepared.boxSize } };
+        },
+        update(point) {
+            if (runtime === null)
+                throw new Error('sschart: Renko data processor must be reset before update');
+            return runtime.update(point as CompleteOhlcPoint);
+        },
+    };
 };
-const pointFigureProcessor = (data: readonly Point[], options: Readonly<Options>): PreparedSeriesData<Point> => {
-    const prepared = preparePointFigureData(
-        data as readonly Required<Pick<Point, 'time' | 'open' | 'high' | 'low' | 'close'>>[],
-        options.boxSize,
-        options.reversal,
-    );
-    return { data: prepared.data as readonly Point[], metadata: { box: prepared.boxSize } };
+
+const pointFigureProcessorFactory: IncrementalSeriesDataProcessorFactory<Point, Options> = () => {
+    let runtime: PointFigureDataRuntime | null = null;
+    return {
+        reset(data, options) {
+            runtime = new PointFigureDataRuntime(options.boxSize, options.reversal);
+            const prepared = runtime.reset(data as readonly CompleteOhlcPoint[]);
+            return { data: prepared.data as readonly Point[], metadata: { box: prepared.boxSize } };
+        },
+        update(point) {
+            if (runtime === null) {
+                throw new Error(
+                    'sschart: Point & Figure data processor must be reset before update',
+                );
+            }
+            return runtime.update(point as CompleteOhlcPoint);
+        },
+    };
 };
 
 export const builtInSeriesDefinitions = [
@@ -453,9 +476,9 @@ export const builtInSeriesDefinitions = [
     definition('Area', (context) => drawLineLike(context, true), valueRange, singleValue),
     definition('Band', drawBand, bandRange, (point) => Number.isFinite(point.upper) ? point.upper! : null),
     definition('PointFigure', drawPointFigure, ohlcRange, ohlcValue, 1, candleColor,
-        { dataProcessor: pointFigureProcessor }),
+        { incrementalDataProcessorFactory: pointFigureProcessorFactory }),
     definition('Renko', drawRenko, ohlcRange, ohlcValue, 1, candleColor,
-        { dataProcessor: renkoProcessor }),
+        { incrementalDataProcessorFactory: renkoProcessorFactory }),
     definition('VolumeProfile', drawVolumeProfile, () => null, () => null, 0, defaultColor,
         { affectsTimeScale: false }),
     definition('Cluster', drawCluster, ohlcRange, ohlcValue),

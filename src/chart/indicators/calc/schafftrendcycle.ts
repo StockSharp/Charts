@@ -3,15 +3,16 @@
 //
 // Pipeline:
 //   1. macdHist[i] = MACD(short=23, long=50, signal=3)[i].macd - signal
-//   2. Normalize macdHist over a rolling window of `Length` (default 10):
-//        norm[i] = (macdHist[i] - min) / (max - min)
-//      where min/max come from macdHist[i-Length+1..i]. If max == min, reuse
-//      previous stoch-K value (.cs `_prevStochK`).
-//   3. Run a StockSharp-style StochasticK with sub-Length=5 on the `norm`
-//      series (treating each norm value as a flat-priced candle, so high =
-//      low = close = norm). For StochasticK with high == low across the
+//   2. Rescale macdHist with the rolling CLOSE range of `Length` (default 10):
+//        raw[i] = (macdHist[i] - minClose) / (maxClose - minClose)
+//      This unusual cross-domain formula is intentional and matches the C#
+//      implementation. If maxClose == minClose, reuse the previous stoch-K
+//      value and do not advance the stochastic window.
+//   3. Run a StockSharp-style StochasticK with sub-Length=5 on the `raw`
+//      series (treating each raw value as a flat-priced candle, so high =
+//      low = close = raw). For StochasticK with high == low across the
 //      window, .cs returns 0; we keep that.
-//        stochK[i] = 100 * (norm[i] - lowestNorm(5)) / (highestNorm(5) - lowestNorm(5))
+//        stochK[i] = 100 * (raw[i] - lowestRaw(5)) / (highestRaw(5) - lowestRaw(5))
 //   4. Smooth stochK with an EMA of `Length` to get the final STC value
 //      (seeded with SMA of first `Length` finite stochK values; matches the
 //      EMA in macd.js).

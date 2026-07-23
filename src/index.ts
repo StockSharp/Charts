@@ -7,3 +7,4 @@ export * from './primitives/trend-line.js';
 export * from './primitives/session-shading.js';
 export * from './data/index.js';
 export * from './time/index.js';
+export * from './indicators/index.js';

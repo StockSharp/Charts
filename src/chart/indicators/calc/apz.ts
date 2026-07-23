@@ -83,13 +83,13 @@ export function calcAdaptivePriceZone(candles, params) {
         ema[i] = null;
     }
     if (n >= period && seedOk) {
-        ema[period - 1] = seedSum / period;
+        let previous = seedSum / period;
+        ema[period - 1] = previous;
         for (let i = period; i < n; i++) {
             const v = closes[i];
             if (v === null) { ema[i] = null; continue; }
-            const prev = ema[i - 1];
-            if (prev === null) { ema[i] = null; continue; }
-            ema[i] = v * k + prev * (1 - k);
+            previous = v * k + previous * (1 - k);
+            ema[i] = previous;
         }
     } else {
         for (let i = 0; i < n; i++) ema[i] = null;

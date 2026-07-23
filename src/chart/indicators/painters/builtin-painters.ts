@@ -1,5 +1,12 @@
-import type { IndicatorPainter, IndicatorPainterContext, IndicatorPaintResult } from './indicator-painter.js';
+import { IndicatorPatchOperation } from '../../../indicators/indicator-runtime.js';
+import type {
+    IndicatorPainter,
+    IndicatorPainterContext,
+    IndicatorPainterPatchContext,
+    IndicatorPaintResult,
+} from './indicator-painter.js';
 import { registerIndicatorPainter } from './indicator-painter-registry.js';
+import { applyMappedRuntimePatch, valuePoint } from './runtime-patch.js';
 
 function setData(series: any[], index: number, data: any[]): void {
     if (series[index]) series[index].setData(data || []);
@@ -24,7 +31,7 @@ function mergeBand(upper: any[], lower: any[]): any[] {
 class BandPainter implements IndicatorPainter {
     paint(c: IndicatorPainterContext): IndicatorPaintResult {
         const bandColor = c.nextColor();
-        const middleColor = c.nextColor();
+        const centerId = this.centerId(c);
         const band = c.addSeries('band', {
             upperColor: bandColor,
             lowerColor: bandColor,
@@ -34,21 +41,128 @@ class BandPainter implements IndicatorPainter {
             lastValueVisible: false,
             title: 'Band',
         }, mergeBand(c.output('upper'), c.output('lower')));
-        const middle = c.addSeries('line', { color: middleColor, lineWidth: 2, title: 'Middle' }, c.output('middle'));
+        const series = [band];
+        const legendSources: Record<string, { seriesIndex: number; field: string }> = {
+            upper: { seriesIndex: 0, field: 'upper' },
+            lower: { seriesIndex: 0, field: 'lower' },
+        };
+        let centerColor = bandColor;
+        if (centerId !== null) {
+            centerColor = c.nextColor();
+            const center = c.addSeries('line', {
+                color: centerColor,
+                lineWidth: 2,
+                title: centerId === 'ma' ? 'MA' : 'Middle',
+            }, c.output(centerId));
+            series.push(center);
+            legendSources[centerId] = { seriesIndex: 1, field: 'value' };
+        }
+        const outputNames = c.entry.outputNames
+            || (centerId === null ? ['upper', 'lower'] : ['upper', centerId, 'lower']);
         return {
-            series: [band, middle],
-            colors: [bandColor, middleColor, bandColor],
-            legendSources: {
-                upper: { seriesIndex: 0, field: 'upper' },
-                middle: { seriesIndex: 1, field: 'value' },
-                lower: { seriesIndex: 0, field: 'lower' },
-            },
+            series,
+            colors: outputNames.map((id: string) => (
+                id === centerId ? centerColor : bandColor
+            )),
+            legendSources,
         };
     }
 
     update(c: IndicatorPainterContext, series: any[]): void {
         setData(series, 0, mergeBand(c.output('upper'), c.output('lower')));
-        setData(series, 1, c.output('middle'));
+        const centerId = this.centerId(c);
+        if (centerId !== null) setData(series, 1, c.output(centerId));
+    }
+
+    applyPatch(c: IndicatorPainterPatchContext, series: any[]): boolean {
+        const centerId = this.centerId(c);
+        const boundaryIds = new Set(['upper', 'lower']);
+        if (c.patch.operations.some((operation) => (
+            !boundaryIds.has(operation.outputId) && operation.outputId !== centerId
+        ))) return false;
+        const center = centerId === null
+            ? []
+            : c.patch.operations.filter((operation) => operation.outputId === centerId);
+        const operations: any[] = [...center];
+        const histories = c.entry._runtimeTailHistory || (c.entry._runtimeTailHistory = {});
+        if (!histories.band) {
+            const lowerTimes = new Map((histories.lower || []).map((point: any) => [
+                point.targetIndex,
+                point.time,
+            ]));
+            histories.band = (histories.upper || []).filter((point: any) => (
+                lowerTimes.get(point.targetIndex) === point.time
+            ));
+        }
+        const projectedHistory = [...histories.band];
+        const targets = [...new Set(c.patch.operations
+            .filter((operation) => boundaryIds.has(operation.outputId))
+            .map((operation) => operation.targetIndex))];
+        const upperPoints = c.points('upper');
+        const lowerPoints = c.points('lower');
+        for (const targetIndex of targets) {
+            const upperPoint = upperPoints.find((point) => point.targetIndex === targetIndex);
+            const lowerPoint = lowerPoints.find((point) => point.targetIndex === targetIndex);
+            const tail = projectedHistory[projectedHistory.length - 1] || null;
+            if (!upperPoint || !lowerPoint || upperPoint.time === null
+                || upperPoint.time !== lowerPoint.time
+                || upperPoint.sourceIndex !== lowerPoint.sourceIndex) {
+                if (tail?.targetIndex === targetIndex) {
+                    operations.push({
+                        operation: IndicatorPatchOperation.Remove,
+                        outputId: 'band',
+                        targetIndex,
+                    });
+                    projectedHistory.pop();
+                } else if (tail && targetIndex < tail.targetIndex) return false;
+                continue;
+            }
+            if (tail && targetIndex < tail.targetIndex) return false;
+            const operation = tail?.targetIndex === targetIndex
+                ? IndicatorPatchOperation.Replace
+                : IndicatorPatchOperation.Append;
+            operations.push({
+                operation,
+                outputId: 'band',
+                targetIndex,
+                point: {
+                    outputId: 'band',
+                    sourceIndex: upperPoint.sourceIndex,
+                    targetIndex,
+                    time: upperPoint.time,
+                    value: (upperPoint.value + lowerPoint.value) / 2,
+                    upper: upperPoint.value,
+                    lower: lowerPoint.value,
+                },
+            });
+            if (operation === IndicatorPatchOperation.Append) {
+                projectedHistory.push({ targetIndex, time: upperPoint.time });
+            }
+        }
+        const mappings: any[] = [
+            {
+                outputId: 'band',
+                seriesIndex: 0,
+                data: (point: any) => ({
+                    time: point.time,
+                    value: point.value,
+                    upper: point.upper,
+                    lower: point.lower,
+                }),
+            },
+        ];
+        if (centerId !== null) {
+            mappings.push({ outputId: centerId, seriesIndex: 1, data: valuePoint });
+        }
+        return applyMappedRuntimePatch({
+            ...c,
+            patch: { ...c.patch, operations },
+        }, series, mappings);
+    }
+
+    private centerId(c: IndicatorPainterContext | IndicatorPainterPatchContext): string | null {
+        const outputs = c.entry.outputNames || [];
+        return outputs.find((id: string) => id !== 'upper' && id !== 'lower') || null;
     }
 }
 
@@ -85,6 +199,14 @@ class MacdHistogramPainter implements IndicatorPainter {
         setData(series, 0, c.output('histogram'));
         setData(series, 1, c.output(this.primary));
         setData(series, 2, c.output('signal'));
+    }
+
+    applyPatch(c: IndicatorPainterPatchContext, series: any[]): boolean {
+        return applyMappedRuntimePatch(c, series, [
+            { outputId: 'histogram', seriesIndex: 0, data: valuePoint },
+            { outputId: this.primary, seriesIndex: 1, data: valuePoint },
+            { outputId: 'signal', seriesIndex: 2, data: valuePoint },
+        ]);
     }
 }
 
@@ -128,6 +250,16 @@ class LinesPainter implements IndicatorPainter {
     update(c: IndicatorPainterContext, series: any[]): void {
         const specs: LineSpec[] = this.specs || (c.entry.outputNames || ['value']).map((key: string) => ({ key }));
         specs.forEach((spec, i) => setData(series, i, c.output(spec.key)));
+    }
+
+    applyPatch(c: IndicatorPainterPatchContext, series: any[]): boolean {
+        const specs: LineSpec[] = this.specs
+            || (c.entry.outputNames || ['value']).map((key: string) => ({ key }));
+        return applyMappedRuntimePatch(c, series, specs.map((spec, seriesIndex) => ({
+            outputId: spec.key,
+            seriesIndex,
+            data: valuePoint,
+        })));
     }
 }
 
@@ -190,6 +322,90 @@ class IchimokuPainter implements IndicatorPainter {
         setData(series, 2, c.output('chikou'));
         setData(series, 3, mergeBand(c.output('senkouA'), c.output('senkouB')));
     }
+
+    applyPatch(c: IndicatorPainterPatchContext, series: any[]): boolean {
+        const lineIds = new Set(['tenkan', 'kijun', 'chikou']);
+        const cloudIds = new Set(['senkouA', 'senkouB']);
+        if (c.patch.operations.some((operation) => (
+            !lineIds.has(operation.outputId) && !cloudIds.has(operation.outputId)
+        ))) return false;
+
+        const histories = c.entry._runtimeTailHistory
+            || (c.entry._runtimeTailHistory = {});
+        if (!histories.ichimokuBand) {
+            const lower = new Map((histories.senkouB || []).map((point: any) => [
+                point.targetIndex,
+                point.time,
+            ]));
+            histories.ichimokuBand = (histories.senkouA || []).filter((point: any) => (
+                lower.get(point.targetIndex) === point.time
+            ));
+        }
+
+        const operations: any[] = c.patch.operations.filter((operation) => (
+            lineIds.has(operation.outputId)
+        ));
+        const targets = [...new Set(c.patch.operations
+            .filter((operation) => cloudIds.has(operation.outputId))
+            .map((operation) => operation.targetIndex))];
+        const upperPoints = c.points('senkouA');
+        const lowerPoints = c.points('senkouB');
+        for (const targetIndex of targets) {
+            const upper = upperPoints.find((point) => point.targetIndex === targetIndex);
+            const lower = lowerPoints.find((point) => point.targetIndex === targetIndex);
+            const history = histories.ichimokuBand as Array<{
+                targetIndex: number;
+                time: number;
+            }>;
+            const tail = history[history.length - 1] || null;
+            if (!upper || !lower || upper.time === null || upper.time !== lower.time) {
+                if (tail?.targetIndex === targetIndex) {
+                    operations.push({
+                        operation: IndicatorPatchOperation.Remove,
+                        outputId: 'ichimokuBand',
+                        targetIndex,
+                    });
+                } else if (tail && targetIndex < tail.targetIndex) return false;
+                continue;
+            }
+            if (tail && targetIndex < tail.targetIndex) return false;
+            operations.push({
+                operation: tail?.targetIndex === targetIndex
+                    ? IndicatorPatchOperation.Replace
+                    : IndicatorPatchOperation.Append,
+                outputId: 'ichimokuBand',
+                targetIndex,
+                point: {
+                    outputId: 'ichimokuBand',
+                    sourceIndex: Math.max(upper.sourceIndex, lower.sourceIndex),
+                    targetIndex,
+                    time: upper.time,
+                    value: (upper.value + lower.value) / 2,
+                    upper: upper.value,
+                    lower: lower.value,
+                },
+            });
+        }
+
+        return applyMappedRuntimePatch({
+            ...c,
+            patch: { ...c.patch, operations },
+        }, series, [
+            { outputId: 'tenkan', seriesIndex: 0, data: valuePoint },
+            { outputId: 'kijun', seriesIndex: 1, data: valuePoint },
+            { outputId: 'chikou', seriesIndex: 2, data: valuePoint },
+            {
+                outputId: 'ichimokuBand',
+                seriesIndex: 3,
+                data: (point: any) => ({
+                    time: point.time,
+                    value: point.value,
+                    upper: point.upper,
+                    lower: point.lower,
+                }),
+            },
+        ]);
+    }
 }
 
 class DotsPainter implements IndicatorPainter {
@@ -212,6 +428,12 @@ class DotsPainter implements IndicatorPainter {
 
     update(c: IndicatorPainterContext, series: any[]): void {
         setData(series, 0, c.output('value'));
+    }
+
+    applyPatch(c: IndicatorPainterPatchContext, series: any[]): boolean {
+        return applyMappedRuntimePatch(c, series, [
+            { outputId: 'value', seriesIndex: 0, data: valuePoint },
+        ]);
     }
 }
 
@@ -238,6 +460,13 @@ class FractalsPainter implements IndicatorPainter {
         setData(series, 0, c.output('up'));
         setData(series, 1, c.output('down'));
     }
+
+    applyPatch(c: IndicatorPainterPatchContext, series: any[]): boolean {
+        return applyMappedRuntimePatch(c, series, [
+            { outputId: 'up', seriesIndex: 0, data: valuePoint },
+            { outputId: 'down', seriesIndex: 1, data: valuePoint },
+        ]);
+    }
 }
 
 class GatorPainter implements IndicatorPainter {
@@ -259,15 +488,24 @@ class GatorPainter implements IndicatorPainter {
         setData(series, 0, c.output('upper'));
         setData(series, 1, c.output('lower'));
     }
+
+    applyPatch(c: IndicatorPainterPatchContext, series: any[]): boolean {
+        return applyMappedRuntimePatch(c, series, [
+            { outputId: 'upper', seriesIndex: 0, data: valuePoint },
+            { outputId: 'lower', seriesIndex: 1, data: valuePoint },
+        ]);
+    }
 }
 
-class VolumePainter implements IndicatorPainter {
+class DirectionalHistogramPainter implements IndicatorPainter {
+    constructor(private readonly volumeFormat = false) {}
+
     paint(c: IndicatorPainterContext): IndicatorPaintResult {
         const color = '#4a9eff';
         const series = c.addSeries('histogram', {
             color,
-            title: 'Volume',
-            priceFormat: { type: 'volume' },
+            title: c.settings?.name || c.entry.type,
+            ...(this.volumeFormat ? { priceFormat: { type: 'volume' } } : {}),
             priceScaleId: 'right',
         }, this.colored(c.output('value')));
         return {
@@ -280,11 +518,23 @@ class VolumePainter implements IndicatorPainter {
         setData(series, 0, this.colored(c.output('value')));
     }
 
+    applyPatch(c: IndicatorPainterPatchContext, series: any[]): boolean {
+        return applyMappedRuntimePatch(c, series, [{
+            outputId: 'value',
+            seriesIndex: 0,
+            data: point => this.coloredPoint(valuePoint(point)),
+        }]);
+    }
+
     private colored(data: any[]): any[] {
-        return (data || []).map(point => ({
+        return (data || []).map(point => this.coloredPoint(point));
+    }
+
+    private coloredPoint(point: any): any {
+        return {
             ...point,
             color: point.color || (point.up === false ? '#ff3d57' : '#00c853'),
-        }));
+        };
     }
 }
 
@@ -310,5 +560,6 @@ registerIndicatorPainter('ichimoku', () => new IchimokuPainter());
 registerIndicatorPainter('dots', () => new DotsPainter());
 registerIndicatorPainter('fractals', () => new FractalsPainter());
 registerIndicatorPainter('gator', () => new GatorPainter());
-registerIndicatorPainter('volume', () => new VolumePainter());
+registerIndicatorPainter('volume', () => new DirectionalHistogramPainter(true));
+registerIndicatorPainter('directional-histogram', () => new DirectionalHistogramPainter());
 registerIndicatorPainter('dual-line', () => new LinesPainter());

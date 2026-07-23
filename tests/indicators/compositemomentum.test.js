@@ -32,19 +32,15 @@ describe('calcCompositeMomentum', () => {
     });
 
     it('flat series → composite = 0 once all inner indicators are formed', () => {
-        // Flat closes ⇒ ROC=0 (after warm-up), RSI=100/0 boundary, EMA
-        // converges to the constant. But RSI on a flat series: avgGain=0,
-        // avgLoss=0 → safe-guard returns 100. So composite is not 0 here,
-        // it's dominated by (100-50)/50 = 1 part. Sanity-check it's a
-        // constant: composite[i] should be identical for all i once formed.
+        // Flat closes imply zero ROC, RSI's stable zero-movement fallback is
+        // 50, and both EMAs equal the close, so every normalized term is zero.
         const closes = new Array(60).fill(50);
         const r = calcCompositeMomentum(makeCandles(closes), {});
         const formed = r.composite.filter(p => p.value !== null);
         assert.ok(formed.length > 0);
-        const first = formed[0].value;
         for (const p of formed) {
-            assert.ok(Math.abs(p.value - first) < 1e-9,
-                `composite is not constant on a flat series: ${p.value} vs ${first}`);
+            assert.ok(Math.abs(p.value) < 1e-9,
+                `expected zero composite on a flat series, got ${p.value}`);
         }
     });
 

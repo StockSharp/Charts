@@ -21,19 +21,29 @@ export function calcWilliamsAD(candles, _params) {
     const out = new Array(n);
     out[0] = { time: candles[0].time, value: null };
     let ad = 0;
-    let prevClose: number | null = null;
+    // StockSharp uses decimal zero as its uninitialised sentinel. A zero close
+    // therefore keeps the indicator unformed until a non-zero close commits.
+    let prevClose = 0;
     const c0 = candles[0] && candles[0].close;
     if (typeof c0 === 'number' && Number.isFinite(c0)) prevClose = c0;
 
     for (let i = 1; i < n; i++) {
         const c = candles[i];
         const cl = c && c.close, h = c && c.high, l = c && c.low;
-        if (prevClose === null ||
-            typeof cl !== 'number' || !Number.isFinite(cl) ||
+        if (typeof cl !== 'number' || !Number.isFinite(cl)) {
+            out[i] = { time: c.time, value: null };
+            continue;
+        }
+        if (prevClose === 0) {
+            prevClose = cl;
+            out[i] = { time: c.time, value: null };
+            continue;
+        }
+        if (
             typeof h !== 'number' || !Number.isFinite(h) ||
             typeof l !== 'number' || !Number.isFinite(l)) {
             out[i] = { time: c.time, value: null };
-            if (typeof cl === 'number' && Number.isFinite(cl)) prevClose = cl;
+            prevClose = cl;
             continue;
         }
         let delta = 0;

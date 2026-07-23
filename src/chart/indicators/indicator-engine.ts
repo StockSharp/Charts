@@ -1,22 +1,25 @@
 ﻿// Indicator Engine — client-side compute over the live candle stream.
-// Each indicator is a pure function from `(candles, params) → series` exposed
-// through the IndicatorCalc registry under `calc/`. Engine drives the lifecycle
-// (add / remove / live recompute), passes the latest candles into the calc,
-// hands the result to IndicatorRenderer, and stores a per-bar history so the
-// legend can resolve crosshair values without re-running the computation.
+// Every executable study uses IndicatorRuntime and emits tail patches. Batch
+// calculators remain independent numeric oracles and are never a render fallback.
+// Engine drives add/remove/render lifecycle and keeps the legend on the exact
+// same targetIndex model as the rendered series.
 //
 // No server round-trip, no wsClient.subscribeIndicator. Old `subId` field is
 // kept on the entry object purely as a legacy placeholder — nothing reads it
 // anymore. Live updates: terminal-app shares the chart's raw-candle array with
 // the engine via setCandles (same reference), and chart.updatePrice mutates
 // that array in place on every tick, then fires chart.onLiveBarUpdate →
-// engine.onLiveUpdate(), which re-runs every active calc against the updated
-// this._candles tail (coalesced per animation frame). The standalone
+// engine.onLiveUpdate(). One animation-frame pass advances incremental entries.
+// The standalone
 // appendCandle() path below stays available for callers that hand the engine
 // its OWN candle array instead of sharing the chart's.
-import { getCalcFn } from './calc/index.js';
 import { IndicatorSettings } from './indicator-settings.js';
 import { IndicatorRenderer } from './indicator-renderer.js';
+import {
+    IndicatorRuntime,
+    getIndicatorDefinition,
+    type IndicatorRuntimePatch,
+} from '../../indicators/index.js';
 
 export class IndicatorEngine {
     _indicators: any[];
@@ -30,10 +33,12 @@ export class IndicatorEngine {
     _candles: any[];
     onChange: (() => void) | null;
     _renderPending: boolean | undefined;
+    _retainRuntimeHistory: boolean;
     // Open time of the last candle already reflected in the sub-pane spine.
     // Lets onLiveUpdate extend the spine exactly once per new bar without a
     // full spine rebuild on every intra-bar tick.
     _lastSpineTime: any;
+    _lastSpineCount: number;
 
     /// Drop warm-up points where `value` is not a finite number. Operates on
     /// either a flat `[{time,value}]` series (single-output indicators like SMA)
@@ -63,6 +68,8 @@ export class IndicatorEngine {
         this._timeframe = null;
         this._subIdToEntry = new Map();
         this._candles = [];
+        this._retainRuntimeHistory = false;
+        this._lastSpineCount = 0;
         this.onChange = null;
     }
 
@@ -79,37 +86,48 @@ export class IndicatorEngine {
     setSymbol(symbol) { this._symbol = symbol; }
     setTimeframe(timeframe) { this._timeframe = timeframe; }
 
-    // Kept for API compatibility: the renderer uses chart candle data; indicator
-    // math no longer relies on client-side bars, so we just mirror the pane spine.
-    // We also keep the raw candle-times array handy so sparse indicators
-    // (ZigZag/Fractals) can render shift-adjusted timestamps on the main chart.
-    setCandles(candles) {
+    // Keep the raw candle window as the source for incremental runtime reseeds
+    // and shifted sparse timestamps. The same data
+    // also drives the invisible pane spine.
+    setCandles(candles, options: { rewindableTail?: boolean } = {}) {
         this._candles = candles || [];
+        this._retainRuntimeHistory = options.rewindableTail === true;
         if (this._paneManager) this._paneManager.setSpineFromCandles(this._candles);
         this._lastSpineTime = this._candles.length ? this._candles[this._candles.length - 1].time : null;
+        this._lastSpineCount = this._candles.length;
         // Re-render every active indicator against the fresh candle window.
         // This fires on symbol switch / timeframe change after the chart
         // pulled new candles via api.getCandles.
-        for (const entry of this._indicators) this._recomputeAndRender(entry);
+        for (const entry of this._indicators) this._resetIncrementalAndRender(entry);
     }
 
-    /// Live-tick recompute. terminal-app shares the chart's raw-candle array
+    /// Live-tick update. terminal-app shares the chart's raw-candle array
     /// with the engine (setCandles stores that same reference), and
     /// chart.updatePrice mutates it in place — updating the last bar or pushing
     /// a new one — before firing chart.onLiveBarUpdate. So the candle window is
     /// already current here; we must NOT push again (that would duplicate the
     /// bar). We only (a) extend the sub-pane spine once per genuinely new bar so
     /// separate-pane indicators keep an x-slot for it, and (b) schedule a
-    /// coalesced recompute+render so overlays (SMA/EMA/BB) and sub-pane
+    /// coalesced incremental update+render so overlays (SMA/EMA/BB) and sub-pane
     /// indicators track the moving bar and new bars instead of freezing on the
-    /// initial snapshot.
+    /// initial snapshot. Migrated entries produce one tail patch here.
     onLiveUpdate() {
-        if (!this._candles.length) return;
-        const last = this._candles[this._candles.length - 1];
-        if (this._paneManager && last && last.time !== this._lastSpineTime) {
-            try { this._paneManager.appendSpineCandle(last); } catch { /* pane torn down */ }
-            this._lastSpineTime = last.time;
+        const count = this._candles.length;
+        const last = count > 0 ? this._candles[count - 1] : null;
+        if (this._paneManager) {
+            try {
+                if (count < this._lastSpineCount
+                    || (count === this._lastSpineCount
+                        && (last?.time ?? null) !== this._lastSpineTime)) {
+                    this._paneManager.setSpineFromCandles(this._candles);
+                } else if (count > this._lastSpineCount) {
+                    for (let index = this._lastSpineCount; index < count; index++)
+                        this._paneManager.appendSpineCandle(this._candles[index]);
+                }
+            } catch { /* pane torn down */ }
         }
+        this._lastSpineTime = last?.time ?? null;
+        this._lastSpineCount = count;
         this._scheduleRender();
     }
 
@@ -123,7 +141,9 @@ export class IndicatorEngine {
         } else {
             this._candles[this._candles.length - 1] = candle;
         }
-        // Live recompute, coalesced per animation frame. Alpaca crypto bursts
+        this._lastSpineTime = candle.time;
+        this._lastSpineCount = this._candles.length;
+        // Live processing, coalesced per animation frame. Alpaca crypto bursts
         // through 50-200 ticks/sec; calling renderer.setData (which rebuilds
         // every chart series internally) that often makes the
         // chart visibly flicker, the legend rows shimmer, and the edit/×
@@ -133,21 +153,20 @@ export class IndicatorEngine {
         this._scheduleRender();
     }
 
-    /// Coalesce a render burst into a single rAF callback. Indicators are
-    /// stateless pure functions over this._candles, so the only thing the
-    /// repeated calls were buying us was wasted setData passes.
+    /// Coalesce a render burst into a single rAF callback. Repeated forming-bar
+    /// notifications collapse to one preview calculation.
     _scheduleRender() {
         if (this._renderPending) return;
         this._renderPending = true;
         const run = () => {
             this._renderPending = false;
-            for (const entry of this._indicators) this._recomputeAndRender(entry);
+            for (const entry of this._indicators) this._updateIncrementalAndRender(entry);
         };
         if (typeof window !== 'undefined' && window.requestAnimationFrame) {
             window.requestAnimationFrame(run);
         } else {
             // Node / tests path: setTimeout(0). Keeps test semantics — call
-            // returns synchronously, recompute happens on next microtask.
+            // returns synchronously, the update happens on the next task.
             setTimeout(run, 0);
         }
     }
@@ -161,21 +180,35 @@ export class IndicatorEngine {
         const settings = IndicatorSettings.getIndicator(type);
         if (!settings) return null;
 
-        // Resolve the calc-registry key from the catalog entry's serverKind (the canonical kind,
-        // which the registry indexes by), falling back to the id itself.
-        const calcKind = (settings.serverKind || type).toLowerCase();
-        const calcFn = getCalcFn(calcKind);
-        if (!calcFn) {
-            console.warn('[Indicators] no client-side calc for', type, '(kind=' + calcKind + ') — skipping');
+        const definition = getIndicatorDefinition(settings.serverKind || type)
+            || getIndicatorDefinition(type);
+        if (!definition) {
+            console.warn('[Indicators] no incremental runtime for', type, '— skipping');
             return null;
         }
 
         const id = this._nextId++;
         const mergedParams = this._mergeParams(settings, params);
+        let runtime;
+        try {
+            runtime = new IndicatorRuntime({
+                definition,
+                parameters: mergedParams,
+                // The engine already owns the candle window. Final bars are
+                // immutable by convention; only the separate preview tail is mutated.
+                snapshotInput: (value) => value,
+            } as any);
+        } catch (err) {
+            console.error('[Indicators] incremental runtime init failed for', type, err);
+            return null;
+        }
         const entry = {
-            id, type, calcKind, calcFn,
+            id, type,
             params: mergedParams,
             seriesRefs: [], paneId: null, colors: [], outputNames: [], legendSources: {},
+            definition, runtime,
+            _runtimeFirstTime: null,
+            _runtimePreviewTime: null,
             // Per-indicator price scale inside a sub-pane; 'right' (the visible axis) by default,
             // reassigned below for the 2nd+ indicator in a pane. Declared here so the type carries it.
             paneScaleId: 'right',
@@ -208,66 +241,228 @@ export class IndicatorEngine {
         }
 
         this._indicators.push(entry);
-        this._recomputeAndRender(entry);
+        this._resetIncrementalAndRender(entry);
 
         if (this.onChange) this.onChange();
         return entry;
     }
 
-    /// Run the calc against the current candle window and (re)render. Called
-    /// from add() once at insertion time and from appendCandle / setCandles
-    /// on every live update.
-    _recomputeAndRender(entry) {
-        if (!this._candles.length) return;
-        let data;
-        try {
-            // Params already use the calc fn's own keys (from the registry meta), so feed them
-            // straight in — no UI->calc rename (that indirection silently dropped several params).
-            data = entry.calcFn(this._candles, entry.params);
-        } catch (err) {
-            console.error('[Indicators] calc failed for', entry.type, err);
-            return;
-        }
-        if (!data) return;
-        // Sparse indicators return ShiftedIndicatorValue semantics: the value
-        // is confirmed on the current bar but belongs to an earlier bar.
-        // Apply that bar shift before warm-up/null filtering so Fractals and
-        // ZigZag markers land on the actual pivot, like the desktop chart.
-        data = this._applyPointShifts(data);
-        // Calc functions emit `{time, value:null}` for warm-up bars (the first
-        // `length-1` outputs for SMA, length deltas for RSI, etc.). The chart
-        // happily renders null as 0, which produces a visible vertical jump from
-        // the chart baseline up to the first formed value. Strip non-finite
-        // points before they reach setData. Works uniformly for single-output
-        // (array) and multi-output (object of arrays) calcs.
-        data = IndicatorEngine._stripNulls(data);
-
-        // Output shape: single-output indicators return [{time, value}],
-        // multi-output return { key1: [{time, value}], key2: [...] }.
-        // outputNames captures the keys for legend hover.
-        entry.outputNames = Array.isArray(data) ? ['value'] : Object.keys(data);
-
+    _renderData(entry, data) {
         const settings = IndicatorSettings.getIndicator(entry.type);
         const chart = entry.paneId ? this._paneManager.getChart(entry.paneId) : null;
         if (!entry.seriesRefs.length) {
-            // First render — series don't exist yet; renderer builds them
-            // on the right chart (main vs paneId sub-chart).
             entry.seriesRefs = this._renderer.render(entry, data, chart, settings) || [];
             entry.colors = this._renderer.getLastColors();
             this._applyPaneScale(entry, chart);
         } else {
-            // Subsequent recompute is delegated to the painter instance that
-            // created the series. It owns their order and data mapping; the
-            // default painter maps outputNames to ordinary lines.
             try { this._renderer.update(entry, data, chart, settings); }
             catch (err) { console.warn('[Indicators] update failed for', entry.type, err); }
         }
+    }
 
-        // Rebuild the per-bar lookup the legend uses on crosshair hover.
-        entry._points = this._buildLegendPoints(entry, data);
-        if (entry._points.length > 0) {
-            entry._lastValues = entry._points[entry._points.length - 1].values;
+    _resetIncrementalAndRender(entry) {
+        const runtime = entry.runtime;
+        if (!runtime) return;
+        try {
+            const inputs = new Array(this._candles.length > 0 ? this._candles.length - 1 : 0);
+            for (let index = 0; index < inputs.length; index++) {
+                inputs[index] = this._runtimeInput(this._candles[index]);
+            }
+            const preview = this._candles.length > 0
+                ? this._runtimeInput(this._candles[this._candles.length - 1])
+                : undefined;
+            let points;
+            if (this._retainRuntimeHistory) {
+                runtime.reset(inputs);
+                if (preview !== undefined) runtime.update(preview, false);
+                points = runtime.points();
+            } else {
+                points = runtime.resetStreaming(inputs, preview);
+            }
+            entry.outputNames = runtime.outputs.map((output) => output.id);
+            this._renderData(entry, this._runtimeRendererShape(entry, points));
+            this._renderer.prepareRuntime(entry, runtime, points);
+            this._syncRuntimeLegend(entry, points);
+            entry._runtimeFirstTime = this._candles.length
+                ? this._toSec(this._candles[0].time)
+                : null;
+            entry._runtimePreviewTime = this._candles.length
+                ? this._toSec(this._candles[this._candles.length - 1].time)
+                : null;
+        } catch (err) {
+            console.error('[Indicators] incremental reset failed for', entry.type, err);
         }
+    }
+
+    _updateIncrementalAndRender(entry) {
+        const runtime = entry.runtime;
+        if (!runtime) return;
+        let patchFailed = false;
+        const apply = (patch: IndicatorRuntimePatch) => {
+            if (this._applyRuntimePatch(entry, patch)) return;
+            patchFailed = true;
+            throw new Error('indicator painter rejected a runtime tail patch');
+        };
+        try {
+            if (!this._candles.length) {
+                if (!this._retainRuntimeHistory) {
+                    this._resetIncrementalAndRender(entry);
+                    return;
+                }
+                if (runtime.hasPreview) apply(runtime.discardPreview());
+                while (runtime.committedCount > 0) apply(runtime.truncateTail());
+                entry._runtimeFirstTime = null;
+                entry._runtimePreviewTime = null;
+            } else {
+                const firstTime = this._toSec(this._candles[0].time);
+                let logicalCount = runtime.committedCount + (runtime.hasPreview ? 1 : 0);
+                if ((entry._runtimeFirstTime !== null && entry._runtimeFirstTime !== firstTime)
+                    || (!this._retainRuntimeHistory && logicalCount > this._candles.length)) {
+                    this._resetIncrementalAndRender(entry);
+                    return;
+                }
+
+                if (this._retainRuntimeHistory && logicalCount > this._candles.length) {
+                    if (runtime.hasPreview) apply(runtime.discardPreview());
+                    const desiredCommitted = Math.max(0, this._candles.length - 1);
+                    while (runtime.committedCount > desiredCommitted)
+                        apply(runtime.truncateTail());
+                    logicalCount = runtime.committedCount;
+                }
+
+                if (runtime.hasPreview) {
+                    const previewIndex = runtime.committedCount;
+                    const previewCandle = this._candles[previewIndex];
+                    if (!previewCandle
+                        || entry._runtimePreviewTime !== this._toSec(previewCandle.time)) {
+                        this._resetIncrementalAndRender(entry);
+                        return;
+                    }
+                    if (logicalCount < this._candles.length)
+                        apply(runtime.update(this._runtimeInput(previewCandle), true));
+                }
+
+                while (runtime.committedCount < this._candles.length - 1) {
+                    apply(runtime.update(
+                        this._runtimeInput(this._candles[runtime.committedCount]),
+                        true,
+                    ));
+                }
+
+                const last = this._candles[this._candles.length - 1];
+                if (!runtime.hasPreview) {
+                    apply(runtime.update(this._runtimeInput(last), false));
+                } else if (runtime.committedCount + 1 === this._candles.length) {
+                    apply(runtime.update(this._runtimeInput(last), false));
+                }
+                entry._runtimeFirstTime = firstTime;
+                entry._runtimePreviewTime = this._toSec(last.time);
+            }
+        } catch (err) {
+            if (!patchFailed)
+                console.error('[Indicators] incremental update failed for', entry.type, err);
+            this._resetIncrementalAndRender(entry);
+            return;
+        }
+        if (!this._retainRuntimeHistory) runtime.compactHistory();
+    }
+
+    _applyRuntimePatch(entry, patch) {
+        let applied = false;
+        try { applied = this._renderer.updateRuntime(entry, patch, entry.runtime); }
+        catch (err) { console.warn('[Indicators] runtime painter update failed for', entry.type, err); }
+        if (!applied) return false;
+        return this._applyRuntimeLegendPatch(entry, patch);
+    }
+
+    _runtimeInput(candle) {
+        return { time: this._toSec(candle.time), value: candle };
+    }
+
+    _runtimeRendererShape(entry, points = entry.runtime.points()) {
+        const data: Record<string, any[]> = {};
+        for (const output of entry.outputNames) data[output] = [];
+        for (const point of points) {
+            const output = data[point.outputId];
+            if (output && point.time !== null)
+                output.push({ ...point.metadata, time: point.time, value: point.value });
+        }
+        return data;
+    }
+
+    _syncRuntimeLegend(entry, points = entry.runtime.points()) {
+        if (entry.outputNames.length === 1) {
+            const outputId = entry.outputNames[0];
+            entry._points = [];
+            entry._runtimeLegendTailTargets = [];
+            for (const point of points) {
+                if (point.outputId !== outputId || point.time === null) continue;
+                entry._points.push({ time: point.time, values: { [outputId]: point.value } });
+                entry._runtimeLegendTailTargets.push(point.targetIndex);
+            }
+            entry._lastValues = entry._points.length
+                ? entry._points[entry._points.length - 1].values
+                : null;
+            return;
+        }
+
+        const byTarget = new Map<number, { time: number; values: Record<string, number> }>();
+        for (const point of points) {
+            if (point.time === null) continue;
+            let row = byTarget.get(point.targetIndex);
+            if (!row) {
+                row = { time: point.time, values: {} };
+                byTarget.set(point.targetIndex, row);
+            }
+            row.time = point.time;
+            row.values[point.outputId] = point.value;
+        }
+        const ordered = [...byTarget.entries()].sort((left, right) => left[0] - right[0]);
+        entry._points = ordered.map(([, row]) => ({ time: row.time, values: row.values }));
+        entry._runtimeLegendTailTargets = ordered.map(([targetIndex]) => targetIndex);
+        entry._lastValues = entry._points.length
+            ? entry._points[entry._points.length - 1].values
+            : null;
+    }
+
+    _applyRuntimeLegendPatch(entry, patch) {
+        const points = entry._points || (entry._points = []);
+        const targets = entry._runtimeLegendTailTargets
+            || (entry._runtimeLegendTailTargets = []);
+        for (const operation of patch.operations) {
+            const lastIndex = points.length - 1;
+            const lastTarget = targets.length ? targets[targets.length - 1] : -1;
+            if (operation.operation === 'remove') {
+                if (operation.targetIndex !== lastTarget || lastIndex < 0) return false;
+                const current = points[lastIndex];
+                const values = { ...current.values };
+                delete values[operation.outputId];
+                if (Object.keys(values).length > 0) {
+                    points[lastIndex] = { time: current.time, values };
+                } else {
+                    points.pop();
+                    targets.pop();
+                }
+                continue;
+            }
+
+            const point = operation.point;
+            if (!point || point.time === null) return false;
+            if (point.targetIndex === lastTarget && lastIndex >= 0) {
+                const current = points[lastIndex];
+                if (current.time !== point.time) return false;
+                points[lastIndex] = {
+                    time: point.time,
+                    values: { ...current.values, [point.outputId]: point.value },
+                };
+            } else {
+                if (point.targetIndex <= lastTarget) return false;
+                points.push({ time: point.time, values: { [point.outputId]: point.value } });
+                targets.push(point.targetIndex);
+            }
+        }
+        entry._lastValues = points.length ? points[points.length - 1].values : null;
+        return true;
     }
 
     /// Route an indicator's series onto its own sub-pane scale (see add()). The

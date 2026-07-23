@@ -30,6 +30,13 @@ describe('calcPVO', () => {
         for (let i = 4; i < 10; i++) assert.ok(Math.abs(r.pvo[i].value) < 1e-12);
     });
 
+    it('zero long EMA denominator returns zero', () => {
+        const c = Array.from({ length: 6 }, (_, i) => mkV(0, i));
+        const r = calcPVO(c, { shortPeriod: 2, longPeriod: 3 });
+        assert.strictEqual(r.pvo[2].value, 0);
+        assert.strictEqual(r.pvo[5].value, 0);
+    });
+
     it('output length equals input length', () => {
         const c = Array.from({ length: 8 }, (_, i) => mkV(100 + i, i));
         const r = calcPVO(c, { shortPeriod: 2, longPeriod: 4 });

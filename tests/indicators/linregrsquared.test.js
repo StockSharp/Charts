@@ -41,6 +41,13 @@ describe('calcLinearRegRSquared', () => {
         }
     });
 
+    it('remains stable for small variations around a large absolute price', () => {
+        const base = 1_000_000_000_000;
+        const closes = [0, 2, 1, 3, 4].map(offset => base + offset);
+        const r = calcLinearRegRSquared(closes.map(mk), { length: 5 });
+        assert.ok(Math.abs(r[4].value - 0.81) < 1e-12, `got ${r[4].value}`);
+    });
+
     it('output length equals input length', () => {
         const r = calcLinearRegRSquared([1,2,3,4,5,6,7].map(mk), { length: 3 });
         assert.strictEqual(r.length, 7);

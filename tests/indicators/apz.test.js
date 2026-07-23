@@ -84,4 +84,17 @@ describe('calcAdaptivePriceZone', () => {
         assert.notStrictEqual(r.upper[3].value, null);
         assert.notStrictEqual(r.lower[3].value, null);
     });
+
+    it('holds the EMA through a later gap and resumes after deviation has a clean window', () => {
+        const candles = makeCandles([1, 2, 3, 4, Number.NaN, 6, 7, 8]);
+        const r = calcAdaptivePriceZone(candles, { period: 3, bandPercentage: 2 });
+        for (let i = 4; i <= 6; i++) {
+            assert.strictEqual(r.ma[i].value, null);
+            assert.strictEqual(r.upper[i].value, null);
+            assert.strictEqual(r.lower[i].value, null);
+        }
+        approxEq(r.ma[7].value, 6.875);
+        assert.ok(r.upper[7].value > r.ma[7].value);
+        assert.ok(r.lower[7].value < r.ma[7].value);
+    });
 });

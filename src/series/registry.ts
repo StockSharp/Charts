@@ -50,6 +50,37 @@ export type SeriesDataProcessor<TData extends TimedSeriesData, TOptions extends 
     options: Readonly<TOptions>,
 ) => PreparedSeriesData<TData>;
 
+export type SeriesDataUpdateKind = 'append' | 'update';
+
+/** A tail splice emitted by a stateful series data processor. */
+export interface SeriesDataProcessorPatch<TData extends TimedSeriesData = TimedSeriesData> {
+    readonly fromIndex: number;
+    readonly removed: number;
+    readonly data: readonly TData[];
+    readonly metadata?: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * Per-series processor instance for transforms whose live update is cheaper
+ * than rebuilding their complete output (for example Renko and Point & Figure).
+ */
+export interface IIncrementalSeriesDataProcessor<
+    TData extends TimedSeriesData,
+    TOptions extends object,
+> {
+    reset(data: readonly TData[], options: Readonly<TOptions>): PreparedSeriesData<TData>;
+    update(
+        point: TData,
+        options: Readonly<TOptions>,
+        kind: SeriesDataUpdateKind,
+    ): SeriesDataProcessorPatch<TData> | null;
+}
+
+export type IncrementalSeriesDataProcessorFactory<
+    TData extends TimedSeriesData,
+    TOptions extends object,
+> = () => IIncrementalSeriesDataProcessor<TData, TOptions>;
+
 export interface ISeriesRenderer<
     TData extends TimedSeriesData = TimedSeriesData,
     TOptions extends object = object,
@@ -82,6 +113,7 @@ export interface CustomSeriesDefinition<
     readonly defaultOptions: Readonly<TOptions>;
     readonly renderer: ISeriesRenderer<TData, TOptions>;
     readonly dataProcessor?: SeriesDataProcessor<TData, TOptions>;
+    readonly incrementalDataProcessorFactory?: IncrementalSeriesDataProcessorFactory<TData, TOptions>;
     readonly affectsTimeScale?: boolean;
 }
 
@@ -104,6 +136,18 @@ export class SeriesRendererRegistry {
             throw new TypeError(`sschart: series type '${type}' must provide a renderer.draw function`);
         if (definition.defaultOptions === null || typeof definition.defaultOptions !== 'object')
             throw new TypeError(`sschart: series type '${type}' must provide defaultOptions`);
+        if (definition.dataProcessor !== undefined
+            && definition.incrementalDataProcessorFactory !== undefined) {
+            throw new Error(
+                `sschart: series type '${type}' cannot provide both data processor contracts`,
+            );
+        }
+        if (definition.incrementalDataProcessorFactory !== undefined
+            && typeof definition.incrementalDataProcessorFactory !== 'function') {
+            throw new TypeError(
+                `sschart: series type '${type}' incrementalDataProcessorFactory must be a function`,
+            );
+        }
         const existing = this.definitions.get(type);
         if (existing !== undefined && existing !== definition)
             throw new Error(`sschart: series type '${type}' is already registered`);

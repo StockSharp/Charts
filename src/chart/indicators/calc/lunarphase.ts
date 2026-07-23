@@ -1,3 +1,5 @@
+import { lunarPhaseFromMilliseconds } from '../../../indicators/math/lunar-phase.js';
+
 // Lunar Phase indicator (Algo.Indicators/LunarPhase.cs).
 // Emits an integer 0..7 per candle, derived from the candle's timestamp.
 // No parameters.
@@ -44,9 +46,6 @@
  * @typedef {{time: string|number, value: number|null}} IndicatorPoint
  */
 
-const OA_EPOCH_MS = Date.UTC(1899, 11, 30, 0, 0, 0); // 1899-12-30 00:00 UTC
-const MS_PER_DAY = 86400000;
-
 /**
  * Parse a candle.time value to a millisecond UTC timestamp. Accepts
  * numbers (ms or s — heuristic), Date instances, and ISO strings.
@@ -78,15 +77,7 @@ function timeToMs(t) {
 // callers outside the test suite shouldn't rely on it — calcLunarPhase
 // is the supported public surface.
 export function _lunarPhaseFromMs(ms) {
-    if (!Number.isFinite(ms)) return null;
-    const oa = (ms - OA_EPOCH_MS) / MS_PER_DAY;
-    const julian = oa + 2415018.5;
-    const daysSinceNew = julian - 2451549.5;
-    const newMoons = daysSinceNew / 29.53;
-    let phase = newMoons - Math.floor(newMoons);
-    // Guard against negative phase from floating-point edge cases
-    if (phase < 0) phase += 1;
-    return Math.floor(phase * 8);
+    return lunarPhaseFromMilliseconds(ms);
 }
 
 /**

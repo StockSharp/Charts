@@ -31,7 +31,7 @@
 //   * RSI warm-up matches calcRSI: first non-null at index = Length.
 //   * EMA warm-up matches calcEMA: SMA-seed at index = Length-1.
 
-import { simpleMA } from './helpers.js';
+import { simpleMA, smoothedMA } from './helpers.js';
 
 /**
  * @typedef {object} CandlePoint
@@ -133,33 +133,29 @@ function rsiArray(values, length) {
     for (let i = 0; i < n; i++) out[i] = null;
     if (n <= length || length <= 0) return out;
 
-    let gainSum = 0;
-    let lossSum = 0;
-    let seedOk = true;
-    for (let i = 1; i <= length; i++) {
+    const gains = new Array(n - 1);
+    const losses = new Array(n - 1);
+    for (let i = 1; i < n; i++) {
         const a = values[i - 1];
         const b = values[i];
-        if (typeof a !== 'number' || !Number.isFinite(a) ||
-            typeof b !== 'number' || !Number.isFinite(b)) { seedOk = false; break; }
+        if (typeof a !== 'number' || !Number.isFinite(a)
+            || typeof b !== 'number' || !Number.isFinite(b)) {
+            gains[i - 1] = null;
+            losses[i - 1] = null;
+            continue;
+        }
         const d = b - a;
-        if (d > 0) gainSum += d;
-        else lossSum += -d;
+        gains[i - 1] = d > 0 ? d : 0;
+        losses[i - 1] = d < 0 ? -d : 0;
     }
-    if (!seedOk) return out;
-    let avgGain = gainSum / length;
-    let avgLoss = lossSum / length;
-    out[length] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
-    for (let i = length + 1; i < n; i++) {
-        const a = values[i - 1];
-        const b = values[i];
-        if (typeof a !== 'number' || !Number.isFinite(a) ||
-            typeof b !== 'number' || !Number.isFinite(b)) { out[i] = null; continue; }
-        const d = b - a;
-        const g = d > 0 ? d : 0;
-        const l = d < 0 ? -d : 0;
-        avgGain = (avgGain * (length - 1) + g) / length;
-        avgLoss = (avgLoss * (length - 1) + l) / length;
-        out[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+    const averageGain = smoothedMA(gains, length);
+    const averageLoss = smoothedMA(losses, length);
+    for (let index = length - 1; index < n - 1; index++) {
+        const gain = averageGain[index];
+        const loss = averageLoss[index];
+        if (gain === null || loss === null) continue;
+        const total = gain + loss;
+        out[index + 1] = total === 0 ? 50 : 100 * gain / total;
     }
     return out;
 }

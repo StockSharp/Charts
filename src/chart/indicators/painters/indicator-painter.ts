@@ -1,3 +1,8 @@
+import type {
+    IndicatorRuntimePatch,
+    IndicatorRuntimePoint,
+} from '../../../indicators/indicator-runtime.js';
+
 /**
  * Public contract used by built-in and application supplied indicator painters.
  * A painter owns the choice and ordering of chart series for one indicator.
@@ -31,9 +36,19 @@ export interface IndicatorPaintResult {
     legendSources?: Record<string, { seriesIndex: number; field?: string }>;
 }
 
+export interface IndicatorPainterPatchContext {
+    readonly entry: any;
+    readonly patch: IndicatorRuntimePatch;
+    /** Points still retained by the runtime; compact streaming history may be absent. */
+    points(outputId: string): readonly IndicatorRuntimePoint[];
+}
+
 export interface IndicatorPainter {
     paint(context: IndicatorPainterContext): IndicatorPaintResult;
     update(context: IndicatorPainterContext, series: any[]): void;
+
+    /** Applies an incremental runtime patch; false requests one full painter refresh. */
+    applyPatch?(context: IndicatorPainterPatchContext, series: any[]): boolean;
 
     /** Optional cleanup for resources other than the returned chart series. */
     dispose?(context: IndicatorPainterContext): void;

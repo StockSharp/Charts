@@ -38,6 +38,16 @@ describe('calcWilliamsAD', () => {
         assert.strictEqual(out[3].value, 2);
     });
 
+    it('preserves StockSharp zero-close initialization sentinel', () => {
+        const out = calcWilliamsAD(mk([
+            [1, -1, 0],
+            [2, -1, 0],
+            [3, 0, 2],
+            [4, 1, 3],
+        ]), {});
+        assert.deepStrictEqual(out.map(point => point.value), [null, null, null, 2]);
+    });
+
     it('time passed through', () => {
         const c = mk([[1, 1, 1], [2, 2, 2]]);
         const out = calcWilliamsAD(c, {});

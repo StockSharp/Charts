@@ -80,7 +80,9 @@
    }
   ],
   "outputs": [
-   "band"
+   "upper",
+   "middle",
+   "lower"
   ]
  },
  {
@@ -110,7 +112,9 @@
    }
   ],
   "outputs": [
-   "macd-hist"
+   "macd",
+   "signal",
+   "histogram"
   ]
  },
  {
@@ -140,7 +144,8 @@
    }
   ],
   "outputs": [
-   "dual-line"
+   "k",
+   "d"
   ],
   "scaleRange": {
    "min": 0,
@@ -166,13 +171,15 @@
    }
   ],
   "outputs": [
-   "triple-line"
+   "plusDI",
+   "minusDI",
+   "adx"
   ]
  },
  {
   "kind": "AverageTrueRange",
   "name": "Average True Range",
-  "group": "Other",
+  "group": "Volatility",
   "pane": "separate",
   "params": [
    {
@@ -189,7 +196,7 @@
  {
   "kind": "WeightedMovingAverage",
   "name": "Weighted Moving Average",
-  "group": "Other",
+  "group": "Trend",
   "pane": "overlay",
   "params": [
    {
@@ -211,13 +218,13 @@
   "painter": "volume",
   "params": [],
   "outputs": [
-   "histogram"
+   "value"
   ]
  },
  {
   "kind": "WilliamsR",
   "name": "Williams R",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "params": [
    {
@@ -229,12 +236,20 @@
   ],
   "outputs": [
    "line"
+  ],
+  "scaleRange": {
+   "min": -100,
+   "max": 0
+  },
+  "levels": [
+   -80,
+   -20
   ]
  },
  {
   "kind": "CommodityChannelIndex",
   "name": "Commodity Channel Index",
-  "group": "Other",
+  "group": "Statistical",
   "pane": "separate",
   "params": [
    {
@@ -246,6 +261,11 @@
   ],
   "outputs": [
    "line"
+  ],
+  "levels": [
+   -100,
+   0,
+   100
   ]
  },
  {
@@ -270,7 +290,9 @@
    }
   ],
   "outputs": [
-   "band"
+   "upper",
+   "middle",
+   "lower"
   ]
  },
  {
@@ -318,7 +340,9 @@
    }
   ],
   "outputs": [
-   "triple-line"
+   "jaw",
+   "teeth",
+   "lips"
   ]
  },
  {
@@ -351,7 +375,7 @@
    }
   ],
   "outputs": [
-   "dots"
+   "value"
   ]
  },
  {
@@ -381,14 +405,19 @@
    }
   ],
   "outputs": [
-   "ichimoku"
+   "tenkan",
+   "kijun",
+   "senkouA",
+   "senkouB",
+   "chikou"
   ]
  },
  {
   "kind": "AwesomeOscillator",
   "name": "Awesome Oscillator",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
+  "painter": "directional-histogram",
   "params": [
    {
     "key": "shortLength",
@@ -404,13 +433,16 @@
    }
   ],
   "outputs": [
-   "line"
+   "value"
+  ],
+  "levels": [
+   0
   ]
  },
  {
   "kind": "Aroon",
   "name": "Aroon",
-  "group": "Other",
+  "group": "Trend",
   "pane": "separate",
   "params": [
    {
@@ -421,13 +453,22 @@
    }
   ],
   "outputs": [
-   "line"
+   "up",
+   "down"
+  ],
+  "scaleRange": {
+   "min": 0,
+   "max": 100
+  },
+  "levels": [
+   30,
+   70
   ]
  },
  {
   "kind": "AroonOscillator",
   "name": "Aroon Oscillator",
-  "group": "Other",
+  "group": "Trend",
   "pane": "separate",
   "params": [
    {
@@ -439,12 +480,21 @@
   ],
   "outputs": [
    "line"
+  ],
+  "scaleRange": {
+   "min": -100,
+   "max": 100
+  },
+  "levels": [
+   -50,
+   0,
+   50
   ]
  },
  {
   "kind": "AccumulationDistributionLine",
   "name": "Accumulation Distribution Line",
-  "group": "Other",
+  "group": "Volume",
   "pane": "overlay",
   "params": [],
   "outputs": [
@@ -454,17 +504,24 @@
  {
   "kind": "BalanceOfPower",
   "name": "Balance Of Power",
-  "group": "Other",
+  "group": "Market Strength",
   "pane": "separate",
   "params": [],
   "outputs": [
    "line"
+  ],
+  "scaleRange": {
+   "min": -1,
+   "max": 1
+  },
+  "levels": [
+   0
   ]
  },
  {
   "kind": "DoubleExponentialMovingAverage",
   "name": "Double Exponential Moving Average",
-  "group": "Other",
+  "group": "Trend",
   "pane": "overlay",
   "params": [
    {
@@ -481,7 +538,7 @@
  {
   "kind": "TripleExponentialMovingAverage",
   "name": "Triple Exponential Moving Average",
-  "group": "Other",
+  "group": "Trend",
   "pane": "overlay",
   "params": [
    {
@@ -498,13 +555,19 @@
  {
   "kind": "HullMovingAverage",
   "name": "Hull Moving Average",
-  "group": "Other",
+  "group": "Trend",
   "pane": "overlay",
   "params": [
    {
     "key": "length",
     "default": 10,
     "min": 1,
+    "max": 500
+   },
+   {
+    "key": "sqrtPeriod",
+    "default": 0,
+    "min": 0,
     "max": 500
    }
   ],
@@ -515,7 +578,7 @@
  {
   "kind": "SmoothedMovingAverage",
   "name": "Smoothed Moving Average",
-  "group": "Other",
+  "group": "Trend",
   "pane": "overlay",
   "params": [
    {
@@ -532,7 +595,7 @@
  {
   "kind": "KaufmanAdaptiveMovingAverage",
   "name": "Kaufman Adaptive Moving Average",
-  "group": "Other",
+  "group": "Trend",
   "pane": "overlay",
   "params": [
    {
@@ -561,26 +624,25 @@
  {
   "kind": "ZigZag",
   "name": "ZigZag",
-  "group": "Volatility",
+  "group": "Price",
   "pane": "overlay",
-  "painter": "dots",
   "params": [
    {
     "key": "deviation",
-    "default": 5,
-    "min": 0.1,
-    "max": 50,
-    "step": 0.1
+    "default": 0.05,
+    "min": 0.001,
+    "max": 0.5,
+    "step": 0.001
    }
   ],
   "outputs": [
-   "zigzag"
+   "value"
   ]
  },
  {
   "kind": "Fractals",
   "name": "Fractals",
-  "group": "Volatility",
+  "group": "Price",
   "pane": "overlay",
   "painter": "fractals",
   "params": [
@@ -593,13 +655,14 @@
    }
   ],
   "outputs": [
-   "fractals"
+   "up",
+   "down"
   ]
  },
  {
   "kind": "Trix",
   "name": "Trix",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "params": [
    {
@@ -611,12 +674,15 @@
   ],
   "outputs": [
    "line"
+  ],
+  "levels": [
+   0
   ]
  },
  {
   "kind": "Acceleration",
   "name": "Acceleration",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "params": [
    {
@@ -640,12 +706,15 @@
   ],
   "outputs": [
    "line"
+  ],
+  "levels": [
+   0
   ]
  },
  {
   "kind": "ArnaudLegouxMovingAverage",
   "name": "Arnaud Legoux Moving Average",
-  "group": "Other",
+  "group": "Trend",
   "pane": "overlay",
   "params": [
    {
@@ -675,7 +744,7 @@
  {
   "kind": "BalanceVolume",
   "name": "Balance Volume",
-  "group": "Other",
+  "group": "Volume",
   "pane": "overlay",
   "params": [],
   "outputs": [
@@ -685,7 +754,7 @@
  {
   "kind": "BearPower",
   "name": "Bear Power",
-  "group": "Other",
+  "group": "Market Strength",
   "pane": "separate",
   "params": [
    {
@@ -697,12 +766,15 @@
   ],
   "outputs": [
    "line"
+  ],
+  "levels": [
+   0
   ]
  },
  {
   "kind": "BullPower",
   "name": "Bull Power",
-  "group": "Other",
+  "group": "Market Strength",
   "pane": "separate",
   "params": [
    {
@@ -714,12 +786,15 @@
   ],
   "outputs": [
    "line"
+  ],
+  "levels": [
+   0
   ]
  },
  {
   "kind": "ChaikinMoneyFlow",
   "name": "Chaikin Money Flow",
-  "group": "Other",
+  "group": "Volume",
   "pane": "separate",
   "params": [
    {
@@ -731,35 +806,45 @@
   ],
   "outputs": [
    "line"
+  ],
+  "scaleRange": {
+   "min": -1,
+   "max": 1
+  },
+  "levels": [
+   0
   ]
  },
  {
   "kind": "ChaikinVolatility",
   "name": "Chaikin Volatility",
-  "group": "Other",
+  "group": "Volatility",
   "pane": "separate",
   "params": [
    {
     "key": "emaLength",
-    "default": 10,
+    "default": 32,
     "min": 1,
     "max": 500
    },
    {
     "key": "rocLength",
-    "default": 10,
+    "default": 5,
     "min": 1,
     "max": 500
    }
   ],
   "outputs": [
    "line"
+  ],
+  "levels": [
+   0
   ]
  },
  {
   "kind": "CenterOfGravityOscillator",
   "name": "Center Of Gravity Oscillator",
-  "group": "Other",
+  "group": "Cycle",
   "pane": "separate",
   "params": [
    {
@@ -771,12 +856,15 @@
   ],
   "outputs": [
    "line"
+  ],
+  "levels": [
+   0
   ]
  },
  {
   "kind": "ChaikinOscillator",
   "name": "Chaikin Oscillator",
-  "group": "Other",
+  "group": "Volume",
   "pane": "separate",
   "params": [
    {
@@ -794,12 +882,15 @@
   ],
   "outputs": [
    "line"
+  ],
+  "levels": [
+   0
   ]
  },
  {
   "kind": "ChandeMomentumOscillator",
   "name": "Chande Momentum Oscillator",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "params": [
    {
@@ -811,12 +902,21 @@
   ],
   "outputs": [
    "line"
+  ],
+  "scaleRange": {
+   "min": -100,
+   "max": 100
+  },
+  "levels": [
+   -50,
+   0,
+   50
   ]
  },
  {
   "kind": "ConnorsRSI",
   "name": "Connors RSI",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "params": [
    {
@@ -839,13 +939,24 @@
    }
   ],
   "outputs": [
-   "line"
+   "rsi",
+   "updown",
+   "rocrsi",
+   "crsi"
+  ],
+  "scaleRange": {
+   "min": 0,
+   "max": 100
+  },
+  "levels": [
+   10,
+   90
   ]
  },
  {
   "kind": "DetrendedPriceOscillator",
   "name": "Detrended Price Oscillator",
-  "group": "Other",
+  "group": "Cycle",
   "pane": "separate",
   "params": [
    {
@@ -857,12 +968,15 @@
   ],
   "outputs": [
    "line"
+  ],
+  "levels": [
+   0
   ]
  },
  {
   "kind": "DirectionalIndex",
   "name": "Directional Index",
-  "group": "Other",
+  "group": "Trend",
   "pane": "separate",
   "params": [
    {
@@ -873,13 +987,22 @@
    }
   ],
   "outputs": [
-   "line"
+   "plusDI",
+   "minusDI",
+   "dx"
+  ],
+  "scaleRange": {
+   "min": 0,
+   "max": 100
+  },
+  "levels": [
+   25
   ]
  },
  {
   "kind": "EaseOfMovement",
   "name": "Ease Of Movement",
-  "group": "Other",
+  "group": "Volume",
   "pane": "separate",
   "params": [
    {
@@ -891,12 +1014,15 @@
   ],
   "outputs": [
    "line"
+  ],
+  "levels": [
+   0
   ]
  },
  {
   "kind": "EhlersFisherTransform",
   "name": "Ehlers Fisher Transform",
-  "group": "Other",
+  "group": "Cycle",
   "pane": "separate",
   "params": [
    {
@@ -907,14 +1033,19 @@
    }
   ],
   "outputs": [
-   "line"
+   "main",
+   "trigger"
+  ],
+  "levels": [
+   0
   ]
  },
  {
   "kind": "FastStochastic",
   "name": "Fast Stochastic",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
+  "painter": "stochastic",
   "params": [
    {
     "key": "kPeriod",
@@ -930,13 +1061,22 @@
    }
   ],
   "outputs": [
-   "line"
+   "k",
+   "d"
+  ],
+  "scaleRange": {
+   "min": 0,
+   "max": 100
+  },
+  "levels": [
+   20,
+   80
   ]
  },
  {
   "kind": "ApprovalFlowIndex",
   "name": "Approval Flow Index",
-  "group": "Other",
+  "group": "Volume",
   "pane": "separate",
   "params": [
    {
@@ -948,19 +1088,26 @@
   ],
   "outputs": [
    "line"
+  ],
+  "scaleRange": {
+   "min": 0,
+   "max": 100
+  },
+  "levels": [
+   50
   ]
  },
  {
   "kind": "AdaptiveLaguerreFilter",
   "name": "Adaptive Laguerre Filter",
-  "group": "Other",
+  "group": "Trend",
   "pane": "overlay",
   "params": [
    {
     "key": "gamma",
     "default": 0.8,
     "min": 0.001,
-    "max": 1,
+    "max": 0.999999,
     "step": 0.001
    }
   ],
@@ -971,8 +1118,9 @@
  {
   "kind": "AdaptivePriceZone",
   "name": "Adaptive Price Zone",
-  "group": "Other",
+  "group": "Volatility",
   "pane": "overlay",
+  "painter": "band",
   "params": [
    {
     "key": "period",
@@ -988,13 +1136,15 @@
    }
   ],
   "outputs": [
-   "line"
+   "ma",
+   "upper",
+   "lower"
   ]
  },
  {
   "kind": "BollingerPercentB",
   "name": "Bollinger Percent B",
-  "group": "Other",
+  "group": "Volatility",
   "pane": "separate",
   "params": [
    {
@@ -1012,12 +1162,16 @@
   ],
   "outputs": [
    "line"
+  ],
+  "levels": [
+   0,
+   100
   ]
  },
  {
   "kind": "BalanceOfMarketPower",
   "name": "Balance Of Market Power",
-  "group": "Other",
+  "group": "Market Strength",
   "pane": "separate",
   "params": [
    {
@@ -1029,12 +1183,19 @@
   ],
   "outputs": [
    "line"
+  ],
+  "scaleRange": {
+   "min": -1,
+   "max": 1
+  },
+  "levels": [
+   0
   ]
  },
  {
   "kind": "ChoppinessIndex",
   "name": "Choppiness Index",
-  "group": "Other",
+  "group": "Market Strength",
   "pane": "separate",
   "params": [
    {
@@ -1046,13 +1207,22 @@
   ],
   "outputs": [
    "line"
+  ],
+  "scaleRange": {
+   "min": 0,
+   "max": 100
+  },
+  "levels": [
+   38.2,
+   61.8
   ]
  },
  {
   "kind": "ChandeKrollStop",
   "name": "Chande Kroll Stop",
-  "group": "Other",
+  "group": "Price",
   "pane": "overlay",
+  "painter": "dual-line",
   "params": [
    {
     "key": "period",
@@ -1075,13 +1245,14 @@
    }
   ],
   "outputs": [
-   "line"
+   "longStop",
+   "shortStop"
   ]
  },
  {
   "kind": "ConstanceBrownCompositeIndex",
   "name": "Constance Brown Composite Index",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "params": [
    {
@@ -1122,13 +1293,15 @@
    }
   ],
   "outputs": [
-   "line"
+   "composite",
+   "fastSma",
+   "slowSma"
   ]
  },
  {
   "kind": "CompositeMomentum",
   "name": "Composite Momentum",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "params": [
    {
@@ -1169,13 +1342,14 @@
    }
   ],
   "outputs": [
-   "line"
+   "composite",
+   "sma"
   ]
  },
  {
   "kind": "DonchianChannels",
   "name": "Donchian Channels",
-  "group": "Other",
+  "group": "Price",
   "pane": "overlay",
   "params": [
    {
@@ -1186,13 +1360,16 @@
    }
   ],
   "outputs": [
-   "line"
-  ]
+   "upper",
+   "middle",
+   "lower"
+  ],
+  "painter": "band"
  },
  {
   "kind": "DeMarker",
   "name": "De Marker",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "params": [
    {
@@ -1204,12 +1381,20 @@
   ],
   "outputs": [
    "line"
+  ],
+  "scaleRange": {
+   "min": 0,
+   "max": 1
+  },
+  "levels": [
+   0.3,
+   0.7
   ]
  },
  {
   "kind": "DemandIndex",
   "name": "Demand Index",
-  "group": "Other",
+  "group": "Volume",
   "pane": "separate",
   "params": [
    {
@@ -1221,12 +1406,15 @@
   ],
   "outputs": [
    "line"
+  ],
+  "levels": [
+   0
   ]
  },
  {
   "kind": "DisparityIndex",
   "name": "Disparity Index",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "params": [
    {
@@ -1238,12 +1426,15 @@
   ],
   "outputs": [
    "line"
+  ],
+  "levels": [
+   0
   ]
  },
  {
   "kind": "DetrendedSyntheticPrice",
   "name": "Detrended Synthetic Price",
-  "group": "Other",
+  "group": "Price",
   "pane": "overlay",
   "params": [
    {
@@ -1260,7 +1451,7 @@
  {
   "kind": "DynamicZonesRSI",
   "name": "Dynamic Zones RSI",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "params": [
    {
@@ -1272,24 +1463,28 @@
    {
     "key": "oversoldLevel",
     "default": 20,
-    "min": 1,
-    "max": 500
+    "min": 0,
+    "max": 100
    },
    {
     "key": "overboughtLevel",
     "default": 80,
-    "min": 1,
-    "max": 800
+    "min": 0,
+    "max": 100
    }
   ],
   "outputs": [
    "line"
-  ]
+  ],
+  "scaleRange": {
+   "min": 0,
+   "max": 100
+  }
  },
  {
   "kind": "ElderImpulseSystem",
   "name": "Elder Impulse System",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "params": [
    {
@@ -1312,13 +1507,20 @@
    }
   ],
   "outputs": [
-   "line"
+   "impulse"
+  ],
+  "scaleRange": {
+   "min": -1,
+   "max": 1
+  },
+  "levels": [
+   0
   ]
  },
  {
   "kind": "ElderRay",
   "name": "Elder Ray",
-  "group": "Other",
+  "group": "Market Strength",
   "pane": "separate",
   "params": [
    {
@@ -1329,13 +1531,17 @@
    }
   ],
   "outputs": [
-   "line"
+   "bull",
+   "bear"
+  ],
+  "levels": [
+   0
   ]
  },
  {
   "kind": "ForceIndex",
   "name": "Force Index",
-  "group": "Other",
+  "group": "Volume",
   "pane": "overlay",
   "params": [
    {
@@ -1347,12 +1553,15 @@
   ],
   "outputs": [
    "line"
+  ],
+  "levels": [
+   0
   ]
  },
  {
   "kind": "EndpointMovingAverage",
   "name": "Endpoint Moving Average",
-  "group": "Other",
+  "group": "Trend",
   "pane": "overlay",
   "params": [
    {
@@ -1369,7 +1578,7 @@
  {
   "kind": "ElliotWaveOscillator",
   "name": "Elliot Wave Oscillator",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "params": [
    {
@@ -1387,12 +1596,15 @@
   ],
   "outputs": [
    "line"
+  ],
+  "levels": [
+   0
   ]
  },
  {
   "kind": "ForecastOscillator",
   "name": "Forecast Oscillator",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "params": [
    {
@@ -1404,12 +1616,15 @@
   ],
   "outputs": [
    "line"
+  ],
+  "levels": [
+   0
   ]
  },
  {
   "kind": "FibonacciRetracement",
   "name": "Fibonacci Retracement",
-  "group": "Other",
+  "group": "Price",
   "pane": "overlay",
   "params": [
    {
@@ -1420,13 +1635,17 @@
    }
   ],
   "outputs": [
-   "line"
+   "l236",
+   "l382",
+   "l500",
+   "l618",
+   "l786"
   ]
  },
  {
   "kind": "FractalDimension",
   "name": "Fractal Dimension",
-  "group": "Other",
+  "group": "Statistical",
   "pane": "separate",
   "params": [
    {
@@ -1438,6 +1657,13 @@
   ],
   "outputs": [
    "line"
+  ],
+  "scaleRange": {
+   "min": 1,
+   "max": 2
+  },
+  "levels": [
+   1.5
   ]
  },
  {
@@ -1485,13 +1711,14 @@
    }
   ],
   "outputs": [
-   "dual-hist"
+   "upper",
+   "lower"
   ]
  },
  {
   "kind": "FractalAdaptiveMovingAverage",
   "name": "Fractal Adaptive Moving Average",
-  "group": "Other",
+  "group": "Trend",
   "pane": "overlay",
   "params": [
    {
@@ -1508,7 +1735,7 @@
  {
   "kind": "FiniteVolumeElement",
   "name": "Finite Volume Element",
-  "group": "Other",
+  "group": "Volume",
   "pane": "separate",
   "params": [
    {
@@ -1520,12 +1747,15 @@
   ],
   "outputs": [
    "line"
+  ],
+  "levels": [
+   0
   ]
  },
  {
   "kind": "GopalakrishnanRangeIndex",
   "name": "Gopalakrishnan Range Index",
-  "group": "Other",
+  "group": "Volatility",
   "pane": "separate",
   "params": [
    {
@@ -1542,17 +1772,28 @@
  {
   "kind": "GuppyMultipleMovingAverage",
   "name": "Guppy Multiple Moving Average",
-  "group": "Other",
+  "group": "Trend",
   "pane": "overlay",
   "params": [],
   "outputs": [
-   "line"
+   "short3",
+   "short5",
+   "short8",
+   "short10",
+   "short12",
+   "short15",
+   "long30",
+   "long35",
+   "long40",
+   "long45",
+   "long50",
+   "long60"
   ]
  },
  {
   "kind": "Highest",
   "name": "Highest",
-  "group": "Other",
+  "group": "Price",
   "pane": "overlay",
   "params": [
    {
@@ -1569,7 +1810,7 @@
  {
   "kind": "HighLowIndex",
   "name": "High Low Index",
-  "group": "Other",
+  "group": "Market Strength",
   "pane": "separate",
   "params": [
    {
@@ -1581,12 +1822,19 @@
   ],
   "outputs": [
    "line"
+  ],
+  "scaleRange": {
+   "min": 0,
+   "max": 100
+  },
+  "levels": [
+   50
   ]
  },
  {
   "kind": "HarmonicOscillator",
   "name": "Harmonic Oscillator",
-  "group": "Other",
+  "group": "Cycle",
   "pane": "separate",
   "params": [
    {
@@ -1598,12 +1846,15 @@
   ],
   "outputs": [
    "line"
+  ],
+  "levels": [
+   0
   ]
  },
  {
   "kind": "HurstExponent",
   "name": "Hurst Exponent",
-  "group": "Other",
+  "group": "Statistical",
   "pane": "separate",
   "params": [
    {
@@ -1615,12 +1866,19 @@
   ],
   "outputs": [
    "line"
+  ],
+  "scaleRange": {
+   "min": 0,
+   "max": 1
+  },
+  "levels": [
+   0.5
   ]
  },
  {
   "kind": "HistoricalVolatilityRatio",
   "name": "Historical Volatility Ratio",
-  "group": "Other",
+  "group": "Volatility",
   "pane": "separate",
   "params": [
    {
@@ -1638,12 +1896,15 @@
   ],
   "outputs": [
    "line"
+  ],
+  "levels": [
+   1
   ]
  },
  {
   "kind": "IntradayIntensityIndex",
   "name": "Intraday Intensity Index",
-  "group": "Other",
+  "group": "Volume",
   "pane": "separate",
   "params": [
    {
@@ -1655,12 +1916,15 @@
   ],
   "outputs": [
    "line"
+  ],
+  "levels": [
+   0
   ]
  },
  {
   "kind": "IntradayMomentumIndex",
   "name": "Intraday Momentum Index",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "params": [
    {
@@ -1672,12 +1936,20 @@
   ],
   "outputs": [
    "line"
+  ],
+  "scaleRange": {
+   "min": 0,
+   "max": 100
+  },
+  "levels": [
+   30,
+   70
   ]
  },
  {
   "kind": "JurikMovingAverage",
   "name": "Jurik Moving Average",
-  "group": "Other",
+  "group": "Trend",
   "pane": "overlay",
   "params": [
    {
@@ -1689,7 +1961,7 @@
    {
     "key": "phase",
     "default": 0,
-    "min": 0,
+    "min": -100,
     "max": 100
    }
   ],
@@ -1700,20 +1972,28 @@
  {
   "kind": "KalmanFilter",
   "name": "Kalman Filter",
-  "group": "Other",
+  "group": "Trend",
   "pane": "overlay",
   "params": [
    {
-    "key": "processNoise",
-    "default": 1,
+    "key": "length",
+    "default": 10,
     "min": 1,
     "max": 500
    },
    {
+    "key": "processNoise",
+    "default": 0.00001,
+    "min": 1e-12,
+    "max": 1000000000000,
+    "step": 0.00001
+   },
+   {
     "key": "measurementNoise",
-    "default": 1,
-    "min": 1,
-    "max": 500
+    "default": 0.001,
+    "min": 1e-12,
+    "max": 1000000000000,
+    "step": 0.001
    }
   ],
   "outputs": [
@@ -1723,7 +2003,7 @@
  {
   "kind": "KeltnerChannels",
   "name": "Keltner Channels",
-  "group": "Other",
+  "group": "Volatility",
   "pane": "overlay",
   "params": [
    {
@@ -1735,18 +2015,21 @@
    {
     "key": "multiplier",
     "default": 2,
-    "min": 1,
-    "max": 500
+    "min": 0.000001,
+    "max": 500,
+    "step": 0.1
    }
   ],
   "outputs": [
-   "line"
+   "upper",
+   "middle",
+   "lower"
   ]
  },
  {
   "kind": "KaufmanEfficiencyRatio",
   "name": "Kaufman Efficiency Ratio",
-  "group": "Other",
+  "group": "Market Strength",
   "pane": "separate",
   "params": [
    {
@@ -1758,12 +2041,16 @@
   ],
   "outputs": [
    "line"
-  ]
+  ],
+  "scaleRange": {
+   "min": 0,
+   "max": 1
+  }
  },
  {
   "kind": "KasePeakOscillator",
   "name": "Kase Peak Oscillator",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "params": [
    {
@@ -1771,16 +2058,29 @@
     "default": 10,
     "min": 1,
     "max": 500
+   },
+   {
+    "key": "shortPeriod",
+    "default": 9,
+    "min": 1,
+    "max": 500
+   },
+   {
+    "key": "longPeriod",
+    "default": 18,
+    "min": 1,
+    "max": 500
    }
   ],
   "outputs": [
-   "line"
+   "shortTerm",
+   "longTerm"
   ]
  },
  {
   "kind": "KnowSureThing",
   "name": "Know Sure Thing",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "params": [
    {
@@ -1839,14 +2139,15 @@
    }
   ],
   "outputs": [
-   "line"
+   "kst",
+   "signal"
   ]
  },
  {
   "kind": "KlingerVolumeOscillator",
   "name": "Klinger Volume Oscillator",
-  "group": "Other",
-  "pane": "overlay",
+  "group": "Volume",
+  "pane": "separate",
   "params": [
    {
     "key": "shortPeriod",
@@ -1858,23 +2159,25 @@
     "key": "longPeriod",
     "default": 55,
     "min": 1,
-    "max": 550
+    "max": 500
    }
   ],
   "outputs": [
-   "line"
+   "shortEma",
+   "longEma",
+   "oscillator"
   ]
  },
  {
   "kind": "LinearRegressionForecast",
   "name": "Linear Regression Forecast",
-  "group": "Other",
+  "group": "Trend",
   "pane": "overlay",
   "params": [
    {
     "key": "length",
     "default": 14,
-    "min": 1,
+    "min": 2,
     "max": 500
    }
   ],
@@ -1885,7 +2188,7 @@
  {
   "kind": "Lowest",
   "name": "Lowest",
-  "group": "Other",
+  "group": "Price",
   "pane": "overlay",
   "params": [
    {
@@ -1902,17 +2205,21 @@
  {
   "kind": "LunarPhase",
   "name": "Lunar Phase",
-  "group": "Other",
+  "group": "Cycle",
   "pane": "separate",
   "params": [],
   "outputs": [
    "line"
-  ]
+  ],
+  "scaleRange": {
+   "min": 0,
+   "max": 7
+  }
  },
  {
   "kind": "LinearReg",
   "name": "Linear Reg",
-  "group": "Other",
+  "group": "Trend",
   "pane": "overlay",
   "params": [
    {
@@ -1929,13 +2236,13 @@
  {
   "kind": "LinearRegSlope",
   "name": "Linear Reg Slope",
-  "group": "Other",
+  "group": "Trend",
   "pane": "separate",
   "params": [
    {
     "key": "length",
     "default": 11,
-    "min": 1,
+    "min": 2,
     "max": 500
    }
   ],
@@ -1946,25 +2253,33 @@
  {
   "kind": "LaguerreRSI",
   "name": "Laguerre RSI",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "params": [
    {
     "key": "gamma",
     "default": 0.7,
-    "min": 0.001,
-    "max": 1,
+    "min": 0.000001,
+    "max": 0.999999,
     "step": 0.001
    }
   ],
   "outputs": [
    "line"
+  ],
+  "scaleRange": {
+   "min": 0,
+   "max": 100
+  },
+  "levels": [
+   20,
+   80
   ]
  },
  {
   "kind": "MovingAverageCrossover",
   "name": "Moving Average Crossover",
-  "group": "Other",
+  "group": "Trend",
   "pane": "separate",
   "params": [
    {
@@ -1981,13 +2296,20 @@
    }
   ],
   "outputs": [
-   "line"
+   "signal"
+  ],
+  "scaleRange": {
+   "min": -1,
+   "max": 1
+  },
+  "levels": [
+   0
   ]
  },
  {
   "kind": "MovingAverageConvergenceDivergenceSignal",
   "name": "Moving Average Convergence Divergence Signal",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "painter": "dual-line",
   "params": [
@@ -2011,13 +2333,14 @@
    }
   ],
   "outputs": [
-   "line"
+   "macd",
+   "signal"
   ]
  },
  {
   "kind": "MovingAverageRibbon",
   "name": "Moving Average Ribbon",
-  "group": "Other",
+  "group": "Trend",
   "pane": "overlay",
   "params": [
    {
@@ -2035,18 +2358,27 @@
    {
     "key": "ribbonCount",
     "default": 10,
-    "min": 1,
+    "min": 2,
     "max": 500
    }
   ],
   "outputs": [
-   "line"
+   "ribbon0",
+   "ribbon1",
+   "ribbon2",
+   "ribbon3",
+   "ribbon4",
+   "ribbon5",
+   "ribbon6",
+   "ribbon7",
+   "ribbon8",
+   "ribbon9"
   ]
  },
  {
   "kind": "McClellanOscillator",
-  "name": "Mc Clellan Oscillator",
-  "group": "Other",
+  "name": "McClellan Oscillator",
+  "group": "Market Strength",
   "pane": "separate",
   "params": [
    {
@@ -2064,12 +2396,15 @@
   ],
   "outputs": [
    "line"
+  ],
+  "levels": [
+   0
   ]
  },
  {
   "kind": "MeanDeviation",
   "name": "Mean Deviation",
-  "group": "Other",
+  "group": "Volatility",
   "pane": "separate",
   "params": [
    {
@@ -2086,7 +2421,7 @@
  {
   "kind": "Median",
   "name": "Median",
-  "group": "Other",
+  "group": "Trend",
   "pane": "overlay",
   "params": [
    {
@@ -2103,7 +2438,7 @@
  {
   "kind": "MedianPrice",
   "name": "Median Price",
-  "group": "Other",
+  "group": "Price",
   "pane": "overlay",
   "params": [],
   "outputs": [
@@ -2113,7 +2448,7 @@
  {
   "kind": "MarketFacilitationIndex",
   "name": "Market Facilitation Index",
-  "group": "Other",
+  "group": "Volume",
   "pane": "separate",
   "params": [],
   "outputs": [
@@ -2122,8 +2457,8 @@
  },
  {
   "kind": "McGinleyDynamic",
-  "name": "Mc Ginley Dynamic",
-  "group": "Other",
+  "name": "McGinley Dynamic",
+  "group": "Trend",
   "pane": "overlay",
   "params": [
    {
@@ -2140,7 +2475,7 @@
  {
   "kind": "MassIndex",
   "name": "Mass Index",
-  "group": "Other",
+  "group": "Volatility",
   "pane": "separate",
   "params": [
    {
@@ -2158,12 +2493,16 @@
   ],
   "outputs": [
    "line"
+  ],
+  "levels": [
+   26.5,
+   27
   ]
  },
  {
   "kind": "MarketMeannessIndex",
   "name": "Market Meanness Index",
-  "group": "Other",
+  "group": "Market Strength",
   "pane": "separate",
   "params": [
    {
@@ -2175,12 +2514,15 @@
   ],
   "outputs": [
    "line"
+  ],
+  "levels": [
+   50
   ]
  },
  {
   "kind": "MoneyFlowIndex",
   "name": "Money Flow Index",
-  "group": "Other",
+  "group": "Volume",
   "pane": "separate",
   "params": [
    {
@@ -2192,12 +2534,20 @@
   ],
   "outputs": [
    "line"
+  ],
+  "scaleRange": {
+   "min": 0,
+   "max": 100
+  },
+  "levels": [
+   20,
+   80
   ]
  },
  {
   "kind": "MomentumOfMovingAverage",
   "name": "Momentum Of Moving Average",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "params": [
    {
@@ -2205,16 +2555,25 @@
     "default": 14,
     "min": 1,
     "max": 500
+   },
+   {
+    "key": "momentumPeriod",
+    "default": 10,
+    "min": 1,
+    "max": 500
    }
   ],
   "outputs": [
    "line"
+  ],
+  "levels": [
+   0
   ]
  },
  {
   "kind": "Momentum",
   "name": "Momentum",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "params": [
    {
@@ -2226,12 +2585,15 @@
   ],
   "outputs": [
    "line"
+  ],
+  "levels": [
+   0
   ]
  },
  {
   "kind": "MomentumPinball",
   "name": "Momentum Pinball",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "params": [
    {
@@ -2243,12 +2605,19 @@
   ],
   "outputs": [
    "line"
+  ],
+  "scaleRange": {
+   "min": -100,
+   "max": 100
+  },
+  "levels": [
+   0
   ]
  },
  {
   "kind": "NickRypockTrailingReverse",
   "name": "Nick Rypock Trailing Reverse",
-  "group": "Other",
+  "group": "Trend",
   "pane": "overlay",
   "params": [
    {
@@ -2271,7 +2640,7 @@
  {
   "kind": "NegativeVolumeIndex",
   "name": "Negative Volume Index",
-  "group": "Other",
+  "group": "Volume",
   "pane": "separate",
   "params": [],
   "outputs": [
@@ -2281,7 +2650,7 @@
  {
   "kind": "OnBalanceVolume",
   "name": "On Balance Volume",
-  "group": "Other",
+  "group": "Volume",
   "pane": "overlay",
   "params": [],
   "outputs": [
@@ -2290,8 +2659,8 @@
  },
  {
   "kind": "OnBalanceVolumeMean",
-  "name": "On Balance Volume Mean",
-  "group": "Other",
+  "name": "On-Balance Volume Mean",
+  "group": "Volume",
   "pane": "overlay",
   "params": [
    {
@@ -2308,7 +2677,7 @@
  {
   "kind": "OscillatorOfMovingAverage",
   "name": "Oscillator Of Moving Average",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "params": [
    {
@@ -2326,12 +2695,15 @@
   ],
   "outputs": [
    "line"
+  ],
+  "levels": [
+   0
   ]
  },
  {
   "kind": "OptimalTracking",
   "name": "Optimal Tracking",
-  "group": "Other",
+  "group": "Trend",
   "pane": "overlay",
   "params": [],
   "outputs": [
@@ -2341,25 +2713,25 @@
  {
   "kind": "Peak",
   "name": "Peak",
-  "group": "Other",
+  "group": "Price",
   "pane": "overlay",
   "params": [
    {
     "key": "deviation",
     "default": 0.001,
     "min": 0.001,
-    "max": 1,
+    "max": 0.999,
     "step": 0.001
    }
   ],
   "outputs": [
-   "line"
+   "value"
   ]
  },
  {
   "kind": "PrettyGoodOscillator",
   "name": "Pretty Good Oscillator",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "params": [
    {
@@ -2371,22 +2743,29 @@
   ],
   "outputs": [
    "line"
+  ],
+  "levels": [
+   0
   ]
  },
  {
   "kind": "PivotPoints",
   "name": "Pivot Points",
-  "group": "Other",
+  "group": "Price",
   "pane": "overlay",
   "params": [],
   "outputs": [
-   "line"
+   "pp",
+   "r1",
+   "r2",
+   "s1",
+   "s2"
   ]
  },
  {
   "kind": "PassThroughIndicator",
   "name": "Pass Through Indicator",
-  "group": "Other",
+  "group": "Price",
   "pane": "overlay",
   "params": [],
   "outputs": [
@@ -2396,7 +2775,7 @@
  {
   "kind": "RateOfChange",
   "name": "Rate Of Change",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "params": [
    {
@@ -2408,12 +2787,15 @@
   ],
   "outputs": [
    "line"
+  ],
+  "levels": [
+   0
   ]
  },
  {
   "kind": "RelativeMomentumIndex",
   "name": "Relative Momentum Index",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "params": [
    {
@@ -2424,13 +2806,21 @@
    },
    {
     "key": "momentumPeriod",
-    "default": 5,
+    "default": 3,
     "min": 1,
     "max": 500
    }
   ],
   "outputs": [
    "line"
+  ],
+  "scaleRange": {
+   "min": 0,
+   "max": 100
+  },
+  "levels": [
+   30,
+   70
   ]
  },
  {
@@ -2442,25 +2832,33 @@
   "params": [
    {
     "key": "length",
-    "default": 10,
-    "min": 2,
+    "default": 4,
+    "min": 4,
     "max": 200
    },
    {
     "key": "signalLength",
     "default": 4,
-    "min": 1,
+    "min": 4,
     "max": 100
    }
   ],
   "outputs": [
-   "dual-line"
+   "rvi",
+   "signal"
+  ],
+  "scaleRange": {
+   "min": -1,
+   "max": 1
+  },
+  "levels": [
+   0
   ]
  },
  {
   "kind": "RangeActionVerificationIndex",
   "name": "Range Action Verification Index",
-  "group": "Other",
+  "group": "Market Strength",
   "pane": "separate",
   "params": [
    {
@@ -2483,41 +2881,56 @@
  {
   "kind": "RankCorrelationIndex",
   "name": "Rank Correlation Index",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "params": [
    {
     "key": "length",
     "default": 14,
-    "min": 1,
+    "min": 2,
     "max": 500
    }
   ],
   "outputs": [
    "line"
+  ],
+  "scaleRange": {
+   "min": -1,
+   "max": 1
+  },
+  "levels": [
+   0
   ]
  },
  {
   "kind": "RainbowCharts",
   "name": "Rainbow Charts",
-  "group": "Other",
+  "group": "Trend",
   "pane": "overlay",
   "params": [
    {
     "key": "lines",
     "default": 10,
-    "min": 1,
+    "min": 2,
     "max": 500
    }
   ],
   "outputs": [
-   "line"
+   "sma1",
+   "sma2",
+   "sma3",
+   "sma4",
+   "sma5",
+   "sma6",
+   "sma7",
+   "sma8",
+   "sma9"
   ]
  },
  {
   "kind": "SuperTrend",
   "name": "Super Trend",
-  "group": "Other",
+  "group": "Trend",
   "pane": "overlay",
   "params": [
    {
@@ -2529,19 +2942,20 @@
    {
     "key": "multiplier",
     "default": 3,
-    "min": 1,
-    "max": 500
+    "min": 0.000001,
+    "max": 500,
+    "step": 0.1
    }
   ],
   "outputs": [
-   "line"
+   "value"
   ]
  },
  {
   "kind": "Sum",
   "name": "Sum",
-  "group": "Other",
-  "pane": "overlay",
+  "group": "Statistical",
+  "pane": "separate",
   "params": [
    {
     "key": "length",
@@ -2557,7 +2971,7 @@
  {
   "kind": "StandardDeviation",
   "name": "Standard Deviation",
-  "group": "Other",
+  "group": "Volatility",
   "pane": "separate",
   "params": [
    {
@@ -2574,13 +2988,13 @@
  {
   "kind": "StandardError",
   "name": "Standard Error",
-  "group": "Other",
+  "group": "Statistical",
   "pane": "separate",
   "params": [
    {
     "key": "length",
     "default": 10,
-    "min": 1,
+    "min": 2,
     "max": 500
    }
   ],
@@ -2591,7 +3005,7 @@
  {
   "kind": "Shift",
   "name": "Shift",
-  "group": "Other",
+  "group": "Price",
   "pane": "overlay",
   "params": [
    {
@@ -2608,7 +3022,7 @@
  {
   "kind": "SineWave",
   "name": "Sine Wave",
-  "group": "Other",
+  "group": "Cycle",
   "pane": "separate",
   "params": [
    {
@@ -2619,13 +3033,21 @@
    }
   ],
   "outputs": [
-   "line"
+   "sine",
+   "leadsine"
+  ],
+  "scaleRange": {
+   "min": -1,
+   "max": 1
+  },
+  "levels": [
+   0
   ]
  },
  {
   "kind": "SchaffTrendCycle",
   "name": "Schaff Trend Cycle",
-  "group": "Other",
+  "group": "Cycle",
   "pane": "separate",
   "params": [
    {
@@ -2661,12 +3083,20 @@
   ],
   "outputs": [
    "line"
+  ],
+  "scaleRange": {
+   "min": 0,
+   "max": 100
+  },
+  "levels": [
+   25,
+   75
   ]
  },
  {
   "kind": "StochasticK",
   "name": "Stochastic K",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "params": [
    {
@@ -2678,12 +3108,20 @@
   ],
   "outputs": [
    "line"
+  ],
+  "scaleRange": {
+   "min": 0,
+   "max": 100
+  },
+  "levels": [
+   20,
+   80
   ]
  },
  {
   "kind": "T3MovingAverage",
   "name": "T3 Moving Average",
-  "group": "Other",
+  "group": "Trend",
   "pane": "overlay",
   "params": [
    {
@@ -2695,8 +3133,8 @@
    {
     "key": "volumeFactor",
     "default": 0.7,
-    "min": 0.001,
-    "max": 1,
+    "min": 0.000001,
+    "max": 0.999999,
     "step": 0.001
    }
   ],
@@ -2707,7 +3145,7 @@
  {
   "kind": "LinearRegRSquared",
   "name": "Linear Reg R Squared",
-  "group": "Other",
+  "group": "Statistical",
   "pane": "separate",
   "params": [
    {
@@ -2719,7 +3157,11 @@
   ],
   "outputs": [
    "line"
-  ]
+  ],
+  "scaleRange": {
+   "min": 0,
+   "max": 1
+  }
  },
  {
   "kind": "PercentagePriceOscillator",
@@ -2748,14 +3190,19 @@
    }
   ],
   "outputs": [
-   "macd-hist"
+   "ppo",
+   "signal",
+   "histogram"
+  ],
+  "levels": [
+   0
   ]
  },
  {
   "kind": "PercentageVolumeOscillator",
   "name": "Percentage Volume Oscillator",
-  "group": "Other",
-  "pane": "overlay",
+  "group": "Volume",
+  "pane": "separate",
   "params": [
    {
     "key": "shortPeriod",
@@ -2771,13 +3218,15 @@
    }
   ],
   "outputs": [
-   "line"
+   "shortEma",
+   "longEma",
+   "pvo"
   ]
  },
  {
   "kind": "PositiveVolumeIndex",
   "name": "Positive Volume Index",
-  "group": "Other",
+  "group": "Volume",
   "pane": "separate",
   "params": [],
   "outputs": [
@@ -2787,25 +3236,8 @@
  {
   "kind": "PsychologicalLine",
   "name": "Psychological Line",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
-  "params": [
-   {
-    "key": "length",
-    "default": 12,
-    "min": 1,
-    "max": 500
-   }
-  ],
-  "outputs": [
-   "line"
-  ]
- },
- {
-  "kind": "PriceChannels",
-  "name": "Price Channels",
-  "group": "Other",
-  "pane": "overlay",
   "params": [
    {
     "key": "length",
@@ -2816,13 +3248,40 @@
   ],
   "outputs": [
    "line"
+  ],
+  "scaleRange": {
+   "min": 0,
+   "max": 1
+  },
+  "levels": [
+   0.25,
+   0.75
+  ]
+ },
+ {
+  "kind": "PriceChannels",
+  "name": "Price Channels",
+  "group": "Price",
+  "pane": "overlay",
+  "painter": "band",
+  "params": [
+   {
+    "key": "length",
+    "default": 20,
+    "min": 1,
+    "max": 500
+   }
+  ],
+  "outputs": [
+   "upper",
+   "lower"
   ]
  },
  {
   "kind": "PriceVolumeTrend",
   "name": "Price Volume Trend",
-  "group": "Other",
-  "pane": "overlay",
+  "group": "Volume",
+  "pane": "separate",
   "params": [],
   "outputs": [
    "line"
@@ -2831,7 +3290,7 @@
  {
   "kind": "QStick",
   "name": "Q Stick",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "params": [
    {
@@ -2843,30 +3302,33 @@
   ],
   "outputs": [
    "line"
+  ],
+  "levels": [
+   0
   ]
  },
  {
   "kind": "Trough",
   "name": "Trough",
-  "group": "Other",
+  "group": "Price",
   "pane": "overlay",
   "params": [
    {
     "key": "deviation",
     "default": 0.001,
     "min": 0.001,
-    "max": 1,
+    "max": 0.999,
     "step": 0.001
    }
   ],
   "outputs": [
-   "line"
+   "value"
   ]
  },
  {
   "kind": "TimeWeightedAveragePrice",
   "name": "Time Weighted Average Price",
-  "group": "Other",
+  "group": "Price",
   "pane": "overlay",
   "params": [],
   "outputs": [
@@ -2876,7 +3338,7 @@
  {
   "kind": "TwiggsMoneyFlow",
   "name": "Twiggs Money Flow",
-  "group": "Other",
+  "group": "Volume",
   "pane": "separate",
   "params": [
    {
@@ -2888,12 +3350,19 @@
   ],
   "outputs": [
    "line"
+  ],
+  "scaleRange": {
+   "min": -1,
+   "max": 1
+  },
+  "levels": [
+   0
   ]
  },
  {
   "kind": "TrueRange",
   "name": "True Range",
-  "group": "Other",
+  "group": "Volatility",
   "pane": "separate",
   "params": [],
   "outputs": [
@@ -2903,7 +3372,7 @@
  {
   "kind": "TrueStrengthIndex",
   "name": "True Strength Index",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "params": [
    {
@@ -2926,13 +3395,23 @@
    }
   ],
   "outputs": [
-   "line"
+   "tsi",
+   "signal"
+  ],
+  "scaleRange": {
+   "min": -100,
+   "max": 100
+  },
+  "levels": [
+   -25,
+   0,
+   25
   ]
  },
  {
   "kind": "TypicalPrice",
   "name": "Typical Price",
-  "group": "Other",
+  "group": "Price",
   "pane": "overlay",
   "params": [],
   "outputs": [
@@ -2942,17 +3421,25 @@
  {
   "kind": "UltimateOscillator",
   "name": "Ultimate Oscillator",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "params": [],
   "outputs": [
    "line"
+  ],
+  "scaleRange": {
+   "min": 0,
+   "max": 100
+  },
+  "levels": [
+   30,
+   70
   ]
  },
  {
   "kind": "VerticalHorizontalFilter",
   "name": "Vertical Horizontal Filter",
-  "group": "Other",
+  "group": "Market Strength",
   "pane": "separate",
   "params": [
    {
@@ -2969,7 +3456,7 @@
  {
   "kind": "VortexIndicator",
   "name": "Vortex Indicator",
-  "group": "Other",
+  "group": "Market Strength",
   "pane": "separate",
   "params": [
    {
@@ -2980,13 +3467,17 @@
    }
   ],
   "outputs": [
-   "line"
+   "viPlus",
+   "viMinus"
+  ],
+  "levels": [
+   1
   ]
  },
  {
   "kind": "Vidya",
   "name": "Vidya",
-  "group": "Other",
+  "group": "Trend",
   "pane": "overlay",
   "params": [
    {
@@ -3003,7 +3494,7 @@
  {
   "kind": "VariableMovingAverage",
   "name": "Variable Moving Average",
-  "group": "Other",
+  "group": "Trend",
   "pane": "overlay",
   "params": [
    {
@@ -3044,7 +3535,7 @@
  {
   "kind": "VolumeWeightedAveragePrice",
   "name": "Volume Weighted Average Price",
-  "group": "Other",
+  "group": "Volume",
   "pane": "overlay",
   "params": [],
   "outputs": [
@@ -3054,7 +3545,7 @@
  {
   "kind": "VolumeWeightedMovingAverage",
   "name": "Volume Weighted Moving Average",
-  "group": "Other",
+  "group": "Volume",
   "pane": "overlay",
   "params": [
    {
@@ -3071,7 +3562,7 @@
  {
   "kind": "WaveTrendOscillator",
   "name": "Wave Trend Oscillator",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "params": [
    {
@@ -3094,13 +3585,14 @@
    }
   ],
   "outputs": [
-   "line"
+   "wt1",
+   "wt2"
   ]
  },
  {
   "kind": "WeightedClosePrice",
   "name": "Weighted Close Price",
-  "group": "Other",
+  "group": "Price",
   "pane": "overlay",
   "params": [],
   "outputs": [
@@ -3110,7 +3602,7 @@
  {
   "kind": "WilderMovingAverage",
   "name": "Wilder Moving Average",
-  "group": "Other",
+  "group": "Trend",
   "pane": "overlay",
   "params": [
    {
@@ -3127,8 +3619,8 @@
  {
   "kind": "WilliamsAccumulationDistribution",
   "name": "Williams Accumulation Distribution",
-  "group": "Other",
-  "pane": "overlay",
+  "group": "Volume",
+  "pane": "separate",
   "params": [],
   "outputs": [
    "line"
@@ -3137,8 +3629,8 @@
  {
   "kind": "WilliamsVariableAccumulationDistribution",
   "name": "Williams Variable Accumulation Distribution",
-  "group": "Other",
-  "pane": "overlay",
+  "group": "Volume",
+  "pane": "separate",
   "params": [],
   "outputs": [
    "line"
@@ -3147,7 +3639,7 @@
  {
   "kind": "WoodiesCCI",
   "name": "Woodies CCI",
-  "group": "Other",
+  "group": "Momentum",
   "pane": "separate",
   "params": [
    {
@@ -3164,13 +3656,19 @@
    }
   ],
   "outputs": [
-   "line"
+   "cci",
+   "signal"
+  ],
+  "levels": [
+   -100,
+   0,
+   100
   ]
  },
  {
   "kind": "ZeroLagExponentialMovingAverage",
   "name": "Zero Lag Exponential Moving Average",
-  "group": "Other",
+  "group": "Trend",
   "pane": "overlay",
   "params": [
    {

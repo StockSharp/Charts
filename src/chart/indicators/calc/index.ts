@@ -11,6 +11,7 @@
 // Generated indicator catalog (the picker's metadata). Regenerate, don't hand-edit entries; the
 // C# parity test validates it against the StockSharp catalog snapshot.
 import CATALOG from '../catalog.json';
+import { getIndicatorDefinition } from '../../../indicators/index.js';
 
 import { calcSMA } from './sma.js';
 import { calcEMA } from './ema.js';
@@ -385,7 +386,9 @@ export function humanize(key: string): string {
 // (labels are derived via humanize()+T.t at render time). Edit the JSON, not code, to tune meta;
 // the C# parity test (tests/parity.test.js) checks it against the StockSharp catalog snapshot.
 export function getClientCatalog(): any[] {
-    return (CATALOG as any[]).map((e) => ({
+    return (CATALOG as any[])
+        .filter((e) => getIndicatorDefinition(e.kind) !== undefined)
+        .map((e) => ({
         id: e.kind,
         serverKind: e.kind,   // resolves to the calc fn via the registry (kind is an alias)
         name: e.name,
@@ -397,7 +400,7 @@ export function getClientCatalog(): any[] {
         painter: (e as any).painter,
         scaleRange: e.scaleRange,
         levels: e.levels,
-    }));
+        }));
 }
 
 export function apply(kind: string, candles: any, params: any) {

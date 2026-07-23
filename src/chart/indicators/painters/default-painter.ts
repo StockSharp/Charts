@@ -1,4 +1,10 @@
-import type { IndicatorPainter, IndicatorPainterContext, IndicatorPaintResult } from './indicator-painter.js';
+import type {
+    IndicatorPainter,
+    IndicatorPainterContext,
+    IndicatorPainterPatchContext,
+    IndicatorPaintResult,
+} from './indicator-painter.js';
+import { applyMappedRuntimePatch, valuePoint } from './runtime-patch.js';
 
 /** Plain-line fallback. It is deliberately not registered under a catalog name. */
 export class DefaultIndicatorPainter implements IndicatorPainter {
@@ -48,5 +54,16 @@ export class DefaultIndicatorPainter implements IndicatorPainter {
         for (let i = 0; i < outputs.length && i < series.length; i++) {
             series[i].setData(context.output(outputs[i]));
         }
+    }
+
+    applyPatch(context: IndicatorPainterPatchContext, series: any[]): boolean {
+        const outputs = context.entry.outputNames?.length
+            ? context.entry.outputNames
+            : ['value'];
+        return applyMappedRuntimePatch(context, series, outputs.map((output, seriesIndex) => ({
+            outputId: output,
+            seriesIndex,
+            data: valuePoint,
+        })));
     }
 }

@@ -23,6 +23,14 @@ describe('calcPsychologicalLine', () => {
         assert.notStrictEqual(r[3].value, null);
     });
 
+    it('uses the StockSharp default length of 20', () => {
+        const r = calcPsychologicalLine(
+            Array.from({ length: 20 }, (_, index) => index + 1).map(mk),
+        );
+        assert.strictEqual(r[18].value, null);
+        assert.strictEqual(r[19].value, 19 / 20);
+    });
+
     it('monotonic increasing: all up-steps → upCount = length-1', () => {
         // length=4, closes=[1,2,3,4]: when bar4 (i=3) emits,
         // buffer=[1], add 2 → upCount=1, buffer=[1,2]

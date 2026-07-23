@@ -97,6 +97,47 @@ export class SeriesStore<TValue extends TimedValue> {
         return { points, change: this.change('pop', from, from, 0, amount) };
     }
 
+    /** Applies a validated tail splice without copying or sorting the prefix. */
+    replaceTail(
+        fromIndex: number,
+        removed: number,
+        points: ReadonlyArray<TValue>,
+    ): DataChangeSet | null {
+        if (!Number.isInteger(fromIndex) || fromIndex < 0
+            || !Number.isInteger(removed) || removed < 0
+            || fromIndex + removed !== this.items.length) {
+            throw new RangeError('sschart: series tail patch must replace the current tail');
+        }
+        if (removed === 0 && points.length === 0) return null;
+
+        let previousTime = fromIndex > 0 ? this.items[fromIndex - 1].time : -Infinity;
+        for (const point of points) {
+            if (!Number.isFinite(point.time) || point.time <= previousTime) {
+                throw new RangeError(
+                    'sschart: series tail patch times must be finite and strictly increasing',
+                );
+            }
+            previousTime = point.time;
+        }
+
+        this.items.splice(fromIndex, removed, ...points);
+        const added = points.length;
+        const kind: DataChangeKind = added === 0
+            ? (this.items.length === 0 ? 'clear' : 'pop')
+            : removed === 0
+                ? 'append'
+                : removed === 1 && added === 1
+                    ? 'update'
+                    : 'replace';
+        return this.change(
+            kind,
+            fromIndex,
+            Math.max(fromIndex, fromIndex + added - 1),
+            added,
+            removed,
+        );
+    }
+
     snapshot(): readonly TValue[] { return this.items.slice(); }
 
     dataByIndex(index: number, mismatchDirection: MismatchDirectionValue = MismatchDirection.None): TValue | null {

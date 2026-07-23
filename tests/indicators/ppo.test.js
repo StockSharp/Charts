@@ -43,6 +43,15 @@ describe('calcPPO', () => {
         }
     });
 
+    it('returns zero when the formed long EMA denominator is zero', () => {
+        const c = Array.from({ length: 8 }, (_, i) => mk(0, i));
+        const r = calcPPO(c, { shortLength: 2, longLength: 3, signalLength: 2 });
+        assert.strictEqual(r.ppo[2].value, 0);
+        assert.strictEqual(r.signal[2].value, null);
+        assert.strictEqual(r.signal[3].value, 0);
+        assert.strictEqual(r.histogram[3].value, 0);
+    });
+
     it('histogram = ppo - signal where both defined', () => {
         const c = Array.from({ length: 30 }, (_, i) => mk(100 + (i % 5), i));
         const r = calcPPO(c, { shortLength: 3, longLength: 5, signalLength: 3 });

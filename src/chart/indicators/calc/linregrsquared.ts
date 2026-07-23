@@ -40,11 +40,15 @@ export function calcLinearRegRSquared(candles, params) {
         }
         if (bad) continue;
 
+        // Center prices around the newest sample. This is algebraically identical
+        // to the decimal C# formula but remains stable for large absolute prices.
+        const reference = y[length - 1];
         let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
         for (let x = 0; x < length; x++) {
+            const centered = y[x] - reference;
             sumX += x;
-            sumY += y[x];
-            sumXY += x * y[x];
+            sumY += centered;
+            sumXY += x * centered;
             sumX2 += x * x;
         }
 
@@ -56,13 +60,15 @@ export function calcLinearRegRSquared(candles, params) {
         let ssTot = 0, ssErr = 0;
         for (let x = 0; x < length; x++) {
             const yEst = slope * x + b;
-            const dy = y[x] - yAvg;
-            const dr = y[x] - yEst;
+            const centered = y[x] - reference;
+            const dy = centered - yAvg;
+            const dr = centered - yEst;
             ssTot += dy * dy;
             ssErr += dr * dr;
         }
 
-        const r2 = ssTot === 0 ? 0 : 1 - ssErr / ssTot;
+        const raw = ssTot === 0 ? 0 : 1 - ssErr / ssTot;
+        const r2 = Number.isFinite(raw) ? Math.max(0, Math.min(1, raw)) : null;
         out[i] = { time: candles[i].time, value: r2 };
     }
 

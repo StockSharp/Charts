@@ -5,6 +5,12 @@ import type { IndicatorPainter, IndicatorPainterContext, IndicatorSeriesKind } f
 import { createIndicatorPainter } from './painters/indicator-painter-registry.js';
 import { DefaultIndicatorPainter } from './painters/default-painter.js';
 import './painters/builtin-painters.js';
+import type {
+    IndicatorRuntime,
+    IndicatorRuntimePatch,
+    IndicatorRuntimePoint,
+} from '../../indicators/indicator-runtime.js';
+import type { IndicatorParameters } from '../../indicators/indicator-definition.js';
 
 declare const SSChart: any;
 
@@ -72,6 +78,38 @@ export class IndicatorRenderer {
         painter.update(context, entry.seriesRefs);
         entry._painter = painter;
         entry._painterContext = context;
+    }
+
+    prepareRuntime(
+        entry: any,
+        runtime: IndicatorRuntime<any, IndicatorParameters>,
+        runtimePoints: readonly IndicatorRuntimePoint[] = runtime.points(),
+    ): void {
+        const histories: Record<string, Array<{ targetIndex: number; time: number }>> = {};
+        for (const output of entry.outputNames || []) {
+            const points = runtimePoints.filter((point) => (
+                point.outputId === output && point.time !== null
+            ));
+            histories[output] = points.map((point) => ({
+                targetIndex: point.targetIndex,
+                time: point.time as number,
+            }));
+        }
+        entry._runtimeTailHistory = histories;
+    }
+
+    updateRuntime(
+        entry: any,
+        patch: IndicatorRuntimePatch,
+        runtime: IndicatorRuntime<any, IndicatorParameters>,
+    ): boolean {
+        const painter: IndicatorPainter | null = entry._painter || null;
+        if (!painter?.applyPatch || !entry.seriesRefs?.length) return false;
+        return painter.applyPatch({
+            entry,
+            patch,
+            points: (outputId) => runtime.points(outputId),
+        }, entry.seriesRefs);
     }
 
     removeSeries(entry: any): void {
