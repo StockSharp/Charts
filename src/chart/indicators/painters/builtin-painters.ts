@@ -61,6 +61,10 @@ class BandPainter implements IndicatorPainter {
             || (centerId === null ? ['upper', 'lower'] : ['upper', centerId, 'lower']);
         return {
             series,
+            styleSources: {
+                band: 0,
+                ...(centerId === null ? {} : { [centerId]: 1 }),
+            },
             colors: outputNames.map((id: string) => (
                 id === centerId ? centerColor : bandColor
             )),
@@ -186,6 +190,7 @@ class MacdHistogramPainter implements IndicatorPainter {
         const signal = c.addSeries('line', { color: signalColor, lineWidth: 1, title: 'Signal' }, c.output('signal'));
         return {
             series: [histogram, primary, signal],
+            styleSources: { histogram: 0, [this.primary]: 1, signal: 2 },
             colors: [primaryColor, signalColor, histogramColor],
             legendSources: {
                 [this.primary]: { seriesIndex: 1, field: 'value' },
@@ -239,6 +244,7 @@ class LinesPainter implements IndicatorPainter {
             .map((name: string) => colorByKey.get(name) || '#d0d6de');
         return {
             series,
+            styleSources: Object.fromEntries(specs.map((spec, index) => [spec.key, index])),
             colors,
             legendSources: Object.fromEntries(specs.map((spec, index) => [
                 spec.key,
@@ -299,6 +305,7 @@ class IchimokuPainter implements IndicatorPainter {
 
         return {
             series: [tenkan, kijun, chikou, senkou],
+            styleSources: { tenkan: 0, kijun: 1, chikou: 2, cloud: 3 },
             colors: [
                 this.tenkanColor,
                 this.kijunColor,
@@ -422,6 +429,7 @@ class DotsPainter implements IndicatorPainter {
         }, c.output('value'));
         return {
             series: [series], colors: [color],
+            styleSources: { value: 0 },
             legendSources: { value: { seriesIndex: 0, field: 'value' } },
         };
     }
@@ -449,6 +457,7 @@ class FractalsPainter implements IndicatorPainter {
         const down = c.addSeries('line', options(downColor, 'Fractal Down'), c.output('down'));
         return {
             series: [up, down], colors: [upColor, downColor],
+            styleSources: { up: 0, down: 1 },
             legendSources: {
                 up: { seriesIndex: 0, field: 'value' },
                 down: { seriesIndex: 1, field: 'value' },
@@ -477,6 +486,7 @@ class GatorPainter implements IndicatorPainter {
         const lower = c.addSeries('histogram', { color: lowerColor, title: 'Lower', priceScaleId: 'right' }, c.output('lower'));
         return {
             series: [upper, lower], colors: [upperColor, lowerColor],
+            styleSources: { upper: 0, lower: 1 },
             legendSources: {
                 upper: { seriesIndex: 0, field: 'value' },
                 lower: { seriesIndex: 1, field: 'value' },
@@ -510,6 +520,7 @@ class DirectionalHistogramPainter implements IndicatorPainter {
         }, this.colored(c.output('value')));
         return {
             series: [series], colors: [color],
+            styleSources: { value: 0 },
             legendSources: { value: { seriesIndex: 0, field: 'value' } },
         };
     }

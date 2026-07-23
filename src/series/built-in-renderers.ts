@@ -431,6 +431,7 @@ function definition(
 }
 
 const ohlcMagnetValues = (point: Point) => [point.open!, point.high!, point.low!, point.close!];
+const bandMagnetValues = (point: Point) => [point.value!, point.upper!, point.lower!];
 const renkoProcessorFactory: IncrementalSeriesDataProcessorFactory<Point, Options> = () => {
     let runtime: RenkoDataRuntime | null = null;
     return {
@@ -474,15 +475,18 @@ export const builtInSeriesDefinitions = [
     definition('Line', (context) => drawLineLike(context, false), valueRange, singleValue),
     definition('Histogram', drawHistogram, histogramRange, singleValue, 1, histogramColor),
     definition('Area', (context) => drawLineLike(context, true), valueRange, singleValue),
-    definition('Band', drawBand, bandRange, (point) => Number.isFinite(point.upper) ? point.upper! : null),
+    definition('Band', drawBand, bandRange, (point) => Number.isFinite(point.upper) ? point.upper! : null,
+        1, defaultColor, { magnetValues: bandMagnetValues }),
     definition('PointFigure', drawPointFigure, ohlcRange, ohlcValue, 1, candleColor,
-        { incrementalDataProcessorFactory: pointFigureProcessorFactory }),
+        { incrementalDataProcessorFactory: pointFigureProcessorFactory, magnetValues: ohlcMagnetValues }),
     definition('Renko', drawRenko, ohlcRange, ohlcValue, 1, candleColor,
-        { incrementalDataProcessorFactory: renkoProcessorFactory }),
+        { incrementalDataProcessorFactory: renkoProcessorFactory, magnetValues: ohlcMagnetValues }),
     definition('VolumeProfile', drawVolumeProfile, () => null, () => null, 0, defaultColor,
         { affectsTimeScale: false }),
-    definition('Cluster', drawCluster, ohlcRange, ohlcValue),
-    definition('Box', drawBox, ohlcRange, ohlcValue),
+    definition('Cluster', drawCluster, ohlcRange, ohlcValue, 1, defaultColor,
+        { magnetValues: ohlcMagnetValues }),
+    definition('Box', drawBox, ohlcRange, ohlcValue, 1, defaultColor,
+        { magnetValues: ohlcMagnetValues }),
 ] as const;
 
 export function registerBuiltInSeries(registry: SeriesRendererRegistry): void {

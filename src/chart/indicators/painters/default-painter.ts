@@ -41,6 +41,7 @@ export class DefaultIndicatorPainter implements IndicatorPainter {
 
         return {
             series,
+            styleSources: Object.fromEntries(outputs.map((key, index) => [key, index])),
             colors,
             legendSources: Object.fromEntries(outputs.map((key, index) => [
                 key,

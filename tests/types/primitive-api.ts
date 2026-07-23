@@ -15,6 +15,18 @@ import {
 
 declare const chart: IChartApi;
 const candles = chart.addSeries(CandlestickSeries);
+const candleId: string = candles.id();
+const candleType: string = candles.type();
+const candleOptions = candles.options();
+const chartOptions = chart.options();
+const paneScaleIds: readonly string[] = chart.panes()[0].priceScaleIds();
+const scaleMode: number = chart.panes()[0].priceScale('right').options().mode;
+void candleId;
+void candleType;
+void candleOptions;
+void chartOptions;
+void paneScaleIds;
+void scaleMode;
 const horizontal = new HorizontalLine({ id: 'typed-line', price: 100, autoscale: true });
 chart.attachPrimitive(horizontal, { series: candles });
 horizontal.applyOptions({ price: 101, draggable: false });

@@ -16,6 +16,10 @@
 import { IndicatorSettings } from './indicator-settings.js';
 import { IndicatorRenderer } from './indicator-renderer.js';
 import {
+    applyIndicatorStyles,
+    captureIndicatorStyles,
+} from './indicator-styles.js';
+import {
     IndicatorRuntime,
     getIndicatorDefinition,
     type IndicatorRuntimePatch,
@@ -59,7 +63,7 @@ export class IndicatorEngine {
     }
 
     constructor() {
-        this._indicators = []; // { id, subId, type, params, seriesRefs[], paneId, outputNames[] }
+        this._indicators = []; // { id, persistenceId, type, params, seriesRefs[], paneId, outputNames[] }
         this._nextId = 1;
         this._renderer = null;
         this._paneManager = null;
@@ -176,7 +180,25 @@ export class IndicatorEngine {
     // omitted, placement is automatic (overlay on the main chart, or a measure-
     // resolved sub-pane). Absent = auto is a legitimate default, so this stays
     // optional rather than threaded through every existing call site.
-    add(type, params, targetPaneId?) {
+    add(
+        type,
+        params,
+        targetPaneId?,
+        persistence: { persistenceId?: string } = {},
+    ) {
+        if (persistence === null || typeof persistence !== 'object' || Array.isArray(persistence))
+            throw new TypeError('sschart: indicator persistence options must be an object');
+        const requestedPersistenceId = persistence.persistenceId;
+        if (requestedPersistenceId !== undefined
+            && (typeof requestedPersistenceId !== 'string'
+                || requestedPersistenceId.trim().length === 0)) {
+            throw new TypeError('sschart: indicator persistence id must be a non-empty string');
+        }
+        const normalizedPersistenceId = requestedPersistenceId?.trim();
+        if (normalizedPersistenceId !== undefined
+            && this._indicators.some(entry => entry.persistenceId === normalizedPersistenceId)) {
+            throw new Error(`sschart: duplicate indicator persistence id '${normalizedPersistenceId}'`);
+        }
         const settings = IndicatorSettings.getIndicator(type);
         if (!settings) return null;
 
@@ -188,6 +210,7 @@ export class IndicatorEngine {
         }
 
         const id = this._nextId++;
+        const persistenceId = normalizedPersistenceId || `indicator-${id}`;
         const mergedParams = this._mergeParams(settings, params);
         let runtime;
         try {
@@ -203,7 +226,7 @@ export class IndicatorEngine {
             return null;
         }
         const entry = {
-            id, type,
+            id, persistenceId, type,
             params: mergedParams,
             seriesRefs: [], paneId: null, colors: [], outputNames: [], legendSources: {},
             definition, runtime,
@@ -237,7 +260,7 @@ export class IndicatorEngine {
         // scale — the multi-axis-per-area model the C# chart uses.
         if (entry.paneId) {
             const firstInPane = !this._indicators.some(e => e.paneId === entry.paneId);
-            entry.paneScaleId = firstInPane ? 'right' : ('ind' + id);
+            entry.paneScaleId = firstInPane ? 'right' : `indicator:${persistenceId}`;
         }
 
         this._indicators.push(entry);
@@ -548,13 +571,10 @@ export class IndicatorEngine {
         for (const entry of entries) this.remove(entry.id);
     }
 
-    // Re-subscribes every active indicator — used after a timeframe change so
-    // the new tf drives history + streaming. The snapshot is captured before
-    // removeAll() because remove() mutates _indicators in place.
+    // Re-seeds every active local runtime after a timeframe/source change.
+    // Series identity, pane placement, persistence ids and user styles stay intact.
     async resubscribeAll() {
-        const snapshot = this._indicators.map(e => ({ type: e.type, params: { ...e.params } }));
-        this.removeAll();
-        for (const s of snapshot) await this.add(s.type, s.params);
+        for (const entry of this._indicators) this._resetIncrementalAndRender(entry);
     }
 
     // Called by indicator-dialog's edit-save path: keep the row but re-fetch
@@ -569,8 +589,13 @@ export class IndicatorEngine {
         const type = entry.type;
         const settings = IndicatorSettings.getIndicator(type);
         const merged = this._mergeParams(settings, { ...entry.params, ...newParams });
-        await this.remove(id);
-        await this.add(type, merged);
+        const styles = captureIndicatorStyles(entry);
+        const targetPaneId = entry.paneId || '__main__';
+        const persistenceId = entry.persistenceId;
+        this.remove(id);
+        const replacement = this.add(type, merged, targetPaneId, { persistenceId });
+        if (replacement) applyIndicatorStyles(replacement, styles);
+        return replacement;
     }
 
     getIndicators() { return this._indicators.slice(); }

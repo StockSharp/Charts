@@ -6,6 +6,8 @@ export * from './primitives/session-shading.js';
 export * from './data/index.js';
 export * from './time/index.js';
 export * from './indicators/index.js';
+export * from './drawings/index.js';
+export * from './persistence/index.js';
 
 // Public API module: core/chart-api.d.ts
 import { type TimeScaleFormatter } from '../time/time-axis-formatter.js';
@@ -173,6 +175,10 @@ export interface SeriesOptions {
     positiveFillColor?: string;
     negativeFillColor?: string;
     base?: number;
+    /** Stable persistence key. Generated once when omitted and immutable afterwards. */
+    id?: string;
+    /** False for runtime-owned output series (for example indicator painter internals). */
+    persist?: boolean;
     priceScaleId?: string;
     priceLineVisible?: boolean;
     lastValueVisible?: boolean;
@@ -281,6 +287,14 @@ export interface PriceScaleOptions {
     mode?: PriceScaleModeValue;
     autoScale?: boolean;
 }
+export interface ResolvedPriceScaleOptions {
+    readonly scaleMargins: Readonly<{
+        top: number;
+        bottom: number;
+    }>;
+    readonly mode: PriceScaleModeValue;
+    readonly autoScale: boolean;
+}
 export interface SeriesHoveredObject {
     readonly type: 'series';
     readonly series: ISeriesApi<any, any>;
@@ -311,6 +325,7 @@ export interface CrosshairEvent {
         y: number;
     } | null;
     readonly paneId: string | null;
+    readonly price: number | null;
     readonly seriesData: ReadonlyMap<ISeriesApi<any, any>, TimedSeriesData>;
     readonly hoveredObject: HoveredObject | null;
     readonly sourceEvent: PointerEvent | MouseEvent | null;
@@ -332,6 +347,8 @@ export interface ChartClick {
         x: number;
         y: number;
     };
+    paneId: string;
+    seriesData: ReadonlyMap<ISeriesApi<any, any>, TimedSeriesData>;
     button: number;
     ctrlKey: boolean;
     shiftKey: boolean;
@@ -357,11 +374,15 @@ export interface LogicalRange {
 export type LogicalRangeListener = (range: LogicalRange | null) => void;
 export interface IPriceScaleApi {
     applyOptions(patch: PriceScaleOptions): void;
+    options(): ResolvedPriceScaleOptions;
 }
 export interface ISeriesMarkersPlugin {
     setMarkers(markers: SeriesMarker[]): void;
 }
 export interface ISeriesApi<TData extends TimedSeriesData = TimedSeriesData, TOptions extends SeriesOptions = SeriesOptions> {
+    id(): string;
+    type(): string;
+    options(): Readonly<TOptions>;
     setData(points: ReadonlyArray<TData>): void;
     update(point: TData): void;
     prependData(points: ReadonlyArray<TData>): void;
@@ -374,6 +395,8 @@ export interface ISeriesApi<TData extends TimedSeriesData = TimedSeriesData, TOp
     priceScale(): IPriceScaleApi;
     createPriceLine(options: PriceLineOptions): IPriceLine;
     removePriceLine(line: IPriceLine): void;
+    /** Finite renderer-defined prices eligible for cursor and drawing snapping. */
+    magnetValues(data: TData): readonly number[];
     priceToCoordinate(price: number): number | null;
     coordinateToPrice(y: number): number | null;
 }
@@ -403,6 +426,7 @@ export interface IPaneApi {
     addSeries<TData extends TimedSeriesData, TOptions extends SeriesOptions = SeriesOptions>(definition: SeriesDefinition<TData, TOptions>, options?: Partial<TOptions>): ISeriesApi<TData, TOptions>;
     removeSeries(series: ISeriesApi): void;
     series(): readonly ISeriesApi[];
+    priceScaleIds(): readonly string[];
     priceScale(scaleId?: string): IPriceScaleApi;
     timeScale(): ITimeScaleApi;
     applyOptions(options: Omit<PaneOptions, 'id'>): void;
@@ -426,6 +450,8 @@ export interface IChartApi {
     interactionState(): InteractionStateSnapshot;
     subscribeInteractionStateChange(cb: InteractionStateListener): void;
     unsubscribeInteractionStateChange(cb: InteractionStateListener): void;
+    beginDrawing(): void;
+    finishDrawing(): void;
     timeScale(): ITimeScaleApi;
     priceScale(scaleId?: string): IPriceScaleApi;
     subscribeClick(cb: ClickListener): void;
@@ -438,6 +464,7 @@ export interface IChartApi {
     subscribeOrderPlace(cb: OrderPlaceListener): void;
     unsubscribeOrderPlace(cb: OrderPlaceListener): void;
     draggingLine(): IPriceLine | null;
+    options(): Readonly<ChartOptions>;
     applyOptions(patch: ChartOptions): void;
     resize(width: number, height: number): void;
     takeScreenshot(): HTMLCanvasElement;
@@ -642,6 +669,7 @@ export declare class PaneModel<TSeries> {
     addSeries(series: TSeries): void;
     removeSeries(series: TSeries): boolean;
     priceScale(id?: string): PriceScaleModel;
+    priceScaleIds(): readonly string[];
 }
 
 // Public API module: core/model/series-store.d.ts
@@ -1270,6 +1298,415 @@ export declare class RealtimeReconnectBackoff {
     reset(): void;
 }
 export declare function defaultRealtimeScheduler(): RealtimeScheduler;
+
+// Public API module: drawings/built-in-analysis-drawings.d.ts
+import type { LineStyleValue } from '../core/chart-api.js';
+import type { DrawingOptions } from './drawing-model.js';
+import { DrawingDefinitionRegistry, type DrawingDefinition } from './drawing-registry.js';
+export interface FibonacciDrawingOptions extends DrawingOptions {
+    readonly color: string;
+    readonly lineWidth: number;
+    readonly lineStyle: LineStyleValue;
+    readonly fillColor: string;
+    readonly levels: readonly number[];
+    readonly labelsVisible: boolean;
+    readonly fontSize: number;
+    readonly extendRight: boolean;
+}
+export interface MeasureDrawingOptions extends DrawingOptions {
+    readonly color: string;
+    readonly lineWidth: number;
+    readonly fillColor: string;
+    readonly labelColor: string;
+    readonly labelBackgroundColor: string;
+    readonly fontSize: number;
+}
+export declare const builtInAnalysisDrawingDefinitions: readonly [DrawingDefinition<FibonacciDrawingOptions>, DrawingDefinition<MeasureDrawingOptions>];
+export declare function registerBuiltInAnalysisDrawings(registry: DrawingDefinitionRegistry): void;
+
+// Public API module: drawings/built-in-line-drawings.d.ts
+import type { LineStyleValue } from '../core/chart-api.js';
+import type { DrawingOptions } from './drawing-model.js';
+import { DrawingDefinitionRegistry, type DrawingDefinition } from './drawing-registry.js';
+export declare const BuiltInDrawingType: Readonly<{
+    readonly HorizontalLine: 'horizontal-line';
+    readonly VerticalLine: 'vertical-line';
+    readonly TrendLine: 'trend-line';
+    readonly Ray: 'ray';
+    readonly Rectangle: 'rectangle';
+    readonly Text: 'text';
+    readonly Note: 'note';
+    readonly FibonacciRetracement: 'fibonacci-retracement';
+    readonly Measure: 'measure';
+    readonly LongPosition: 'long-position';
+    readonly ShortPosition: 'short-position';
+}>;
+export type BuiltInDrawingType = typeof BuiltInDrawingType[keyof typeof BuiltInDrawingType];
+export interface LineDrawingOptions extends DrawingOptions {
+    readonly color: string;
+    readonly lineWidth: number;
+    readonly lineStyle: LineStyleValue;
+}
+export declare const builtInLineDrawingDefinitions: readonly DrawingDefinition<LineDrawingOptions>[];
+export declare function registerBuiltInLineDrawings(registry: DrawingDefinitionRegistry): void;
+
+// Public API module: drawings/built-in-position-drawings.d.ts
+import type { DrawingOptions } from './drawing-model.js';
+import { DrawingDefinitionRegistry, type DrawingDefinition } from './drawing-registry.js';
+export interface PositionDrawingOptions extends DrawingOptions {
+    readonly entryColor: string;
+    readonly targetColor: string;
+    readonly stopColor: string;
+    readonly targetFillColor: string;
+    readonly stopFillColor: string;
+    readonly textColor: string;
+    readonly lineWidth: number;
+    readonly fontSize: number;
+    readonly quantity: number;
+}
+export declare const builtInPositionDrawingDefinitions: readonly [DrawingDefinition<PositionDrawingOptions>, DrawingDefinition<PositionDrawingOptions>];
+export declare function registerBuiltInPositionDrawings(registry: DrawingDefinitionRegistry): void;
+
+// Public API module: drawings/built-in-shape-drawings.d.ts
+import type { LineStyleValue } from '../core/chart-api.js';
+import type { DrawingOptions } from './drawing-model.js';
+import { DrawingDefinitionRegistry, type DrawingDefinition } from './drawing-registry.js';
+export interface RectangleDrawingOptions extends DrawingOptions {
+    readonly color: string;
+    readonly lineWidth: number;
+    readonly lineStyle: LineStyleValue;
+    readonly fillColor: string;
+}
+export interface TextDrawingOptions extends DrawingOptions {
+    readonly text: string;
+    readonly color: string;
+    readonly backgroundColor: string;
+    readonly borderColor: string;
+    readonly borderWidth: number;
+    readonly fontSize: number;
+    readonly fontFamily: string;
+    readonly padding: number;
+}
+export declare const builtInShapeDrawingDefinitions: readonly [DrawingDefinition<RectangleDrawingOptions>, DrawingDefinition<TextDrawingOptions>, DrawingDefinition<TextDrawingOptions>];
+export declare function registerBuiltInShapeDrawings(registry: DrawingDefinitionRegistry): void;
+
+// Public API module: drawings/drawing-controller.d.ts
+import type { IChartApi, ICommandStack } from '../core/chart-api.js';
+import { type DrawingInstance, type DrawingOptions, type DrawingPoint } from './drawing-model.js';
+import { type DrawingDefinitionRegistry } from './drawing-registry.js';
+import { type DrawingMagnetOptions, type DrawingMagnetSettings } from './drawing-magnet.js';
+export interface DrawingInstancePatch {
+    readonly paneId?: string;
+    readonly points?: readonly DrawingPoint[];
+    readonly options?: DrawingOptions;
+    readonly visible?: boolean;
+    readonly locked?: boolean;
+    readonly zOrder?: number;
+}
+export interface CreateDrawingOptions {
+    readonly id?: string;
+    readonly paneId?: string;
+    readonly options?: DrawingOptions;
+    readonly visible?: boolean;
+    readonly locked?: boolean;
+    readonly zOrder?: number;
+}
+export interface DrawingControllerOptions {
+    readonly chart: IChartApi;
+    readonly registry?: DrawingDefinitionRegistry;
+    readonly commandStack?: ICommandStack;
+    readonly idFactory?: (type: string) => string;
+    readonly magnet?: DrawingMagnetOptions;
+}
+export type DrawingControllerListener = (drawings: readonly DrawingInstance[]) => void;
+export interface DrawingCreationSnapshot {
+    readonly type: string;
+    readonly name: string;
+    readonly paneId: string | null;
+    readonly points: readonly DrawingPoint[];
+    readonly previewPoint: DrawingPoint | null;
+    readonly minimumPoints: number;
+    readonly maximumPoints: number;
+}
+export type DrawingCreationListener = (creation: DrawingCreationSnapshot | null) => void;
+export interface DrawingRestoreOptions {
+    readonly unknownType?: 'skip' | 'error';
+}
+export interface SkippedDrawing {
+    readonly id: string;
+    readonly type: string;
+    readonly reason: 'unknown-type';
+}
+export interface DrawingRestoreResult {
+    readonly restored: readonly DrawingInstance[];
+    readonly skipped: readonly SkippedDrawing[];
+}
+/** Owns serializable drawings, primitive bindings and one undoable mutation path. */
+export declare class DrawingController {
+    private readonly chart;
+    private readonly registry;
+    private readonly commands;
+    private readonly idFactory?;
+    private readonly magnet;
+    private readonly records;
+    private readonly listeners;
+    private readonly creationListeners;
+    private activeCreation;
+    private nextId;
+    private nextDraftId;
+    private disposed;
+    private readonly handleChartClick;
+    private readonly handleCrosshairMove;
+    constructor(options: DrawingControllerOptions);
+    drawings(): readonly DrawingInstance[];
+    get(id: string): DrawingInstance | undefined;
+    has(id: string): boolean;
+    magnetOptions(): DrawingMagnetSettings;
+    applyMagnetOptions(patch: DrawingMagnetOptions): void;
+    creation(): DrawingCreationSnapshot | null;
+    beginCreation(type: string, options?: CreateDrawingOptions): void;
+    finishCreation(): DrawingInstance | null;
+    cancelCreation(): boolean;
+    subscribeCreation(listener: DrawingCreationListener): void;
+    unsubscribeCreation(listener: DrawingCreationListener): void;
+    replaceAll(instances: readonly DrawingInstance[], options?: DrawingRestoreOptions): DrawingRestoreResult;
+    create(type: string, points: readonly DrawingPoint[], options?: CreateDrawingOptions): DrawingInstance;
+    add(instance: DrawingInstance): DrawingInstance;
+    update(id: string, patch: DrawingInstancePatch): DrawingInstance;
+    updateOptions(id: string, patch: DrawingOptions): DrawingInstance;
+    setVisible(id: string, visible: boolean): DrawingInstance;
+    setLocked(id: string, locked: boolean): DrawingInstance;
+    moveToPane(id: string, paneId: string): DrawingInstance;
+    remove(id: string): boolean;
+    duplicate(id: string, duplicateId?: string): DrawingInstance;
+    clear(): boolean;
+    subscribe(listener: DrawingControllerListener): void;
+    unsubscribe(listener: DrawingControllerListener): void;
+    dispose(): void;
+    private acceptCreationPoint;
+    private previewCreationPoint;
+    private magnetInput;
+    private refreshDraft;
+    private clearDraft;
+    private endCreation;
+    private unsubscribeCreationInput;
+    private normalizeCreateOptions;
+    private executeInsert;
+    private executeReplace;
+    private insertInternal;
+    private replaceInternal;
+    private removeInternal;
+    private clearInternal;
+    private previewFromPrimitive;
+    private commitFromPrimitive;
+    private cancelFromPrimitive;
+    private primitiveCandidate;
+    private attach;
+    private detach;
+    private resolvePane;
+    private prepare;
+    private requireDefinition;
+    private requireRecord;
+    private generateId;
+    private nextZOrder;
+    private emit;
+    private emitCreation;
+    private assertAlive;
+}
+
+// Public API module: drawings/drawing-magnet.d.ts
+import type { IPaneApi, ISeriesApi } from '../core/chart-api.js';
+import type { TimedSeriesData } from '../series/registry.js';
+import type { DrawingPoint } from './drawing-model.js';
+export declare const DrawingMagnetMode: Readonly<{
+    readonly None: 'none';
+    readonly Weak: 'weak';
+    readonly Strong: 'strong';
+}>;
+export type DrawingMagnetMode = typeof DrawingMagnetMode[keyof typeof DrawingMagnetMode];
+export interface DrawingMagnetOptions {
+    readonly mode?: DrawingMagnetMode;
+    /** Maximum vertical distance in CSS pixels for weak snapping. */
+    readonly maxDistance?: number;
+}
+export interface DrawingMagnetSettings {
+    readonly mode: DrawingMagnetMode;
+    readonly maxDistance: number;
+}
+export interface DrawingMagnetInput {
+    readonly time: number;
+    readonly price: number;
+    readonly coordinate: Readonly<{
+        x: number;
+        y: number;
+    }>;
+    readonly pane: IPaneApi;
+    readonly seriesData: ReadonlyMap<ISeriesApi<any, any>, TimedSeriesData>;
+}
+export interface DrawingMagnetResult {
+    readonly point: DrawingPoint;
+    readonly snapped: boolean;
+    readonly series: ISeriesApi<any, any> | null;
+    readonly distance: number | null;
+}
+/** Resolves drawing anchors against renderer-defined values in screen space. */
+export declare class DrawingMagnet {
+    private settings;
+    constructor(options?: DrawingMagnetOptions);
+    options(): DrawingMagnetSettings;
+    applyOptions(patch: DrawingMagnetOptions): void;
+    resolve(input: DrawingMagnetInput): DrawingMagnetResult;
+}
+
+// Public API module: drawings/drawing-model.d.ts
+import type { Time } from '../core/chart-api.js';
+export type DrawingJsonValue = string | number | boolean | null | readonly DrawingJsonValue[] | {
+    readonly [key: string]: DrawingJsonValue;
+};
+export type DrawingOptions = Readonly<Record<string, DrawingJsonValue>>;
+export interface DrawingPoint {
+    readonly time: Time;
+    readonly price: number;
+}
+/** Pure persisted drawing state. It deliberately contains no runtime objects. */
+export interface DrawingInstance<TOptions extends DrawingOptions = DrawingOptions> {
+    readonly id: string;
+    readonly type: string;
+    readonly paneId: string;
+    readonly points: readonly DrawingPoint[];
+    readonly options: TOptions;
+    readonly visible: boolean;
+    readonly locked: boolean;
+    readonly zOrder: number;
+}
+export declare function normalizeDrawingInstance<TOptions extends DrawingOptions = DrawingOptions>(value: DrawingInstance<TOptions>): DrawingInstance<TOptions>;
+export declare function normalizeDrawingOptions(value: DrawingOptions): DrawingOptions;
+
+// Public API module: drawings/drawing-registry.d.ts
+import type { IChartPrimitive } from '../core/chart-api.js';
+import { type DrawingInstance, type DrawingOptions } from './drawing-model.js';
+export interface DrawingPointSchema {
+    readonly min: number;
+    readonly max: number;
+}
+export interface DrawingPrimitiveEvents<TOptions extends DrawingOptions = DrawingOptions> {
+    /** Live gesture state; the controller does not add it to command history. */
+    preview(instance: DrawingInstance<TOptions>): void;
+    /** Final gesture state; the controller records one undoable command. */
+    commit(instance: DrawingInstance<TOptions>): void;
+    /** Cancels the current gesture and restores its pre-gesture model. */
+    cancel(instance: DrawingInstance<TOptions>): void;
+}
+export interface DrawingPrimitiveBinding<TOptions extends DrawingOptions = DrawingOptions> {
+    readonly primitive: IChartPrimitive;
+    update(instance: DrawingInstance<TOptions>): void;
+    dispose?(): void;
+}
+export interface DrawingDefinition<TOptions extends DrawingOptions = DrawingOptions> {
+    readonly type: string;
+    readonly name: string;
+    readonly points: DrawingPointSchema;
+    readonly defaultOptions: TOptions;
+    /** Validates and canonicalizes JSON-safe options before they enter the model. */
+    readonly normalizeOptions?: (options: TOptions) => TOptions;
+    create(instance: DrawingInstance<TOptions>, events: DrawingPrimitiveEvents<TOptions>): DrawingPrimitiveBinding<TOptions>;
+}
+/** Extensible drawing type catalog. Unknown persisted types are resolved as undefined. */
+export declare class DrawingDefinitionRegistry {
+    private readonly definitions;
+    register<TOptions extends DrawingOptions>(definition: DrawingDefinition<TOptions>): DrawingDefinition<TOptions>;
+    unregister(type: string): boolean;
+    has(type: string): boolean;
+    get(type: string): DrawingDefinition | undefined;
+    types(): readonly string[];
+}
+export declare const drawingDefinitionRegistry: DrawingDefinitionRegistry;
+export declare function registerDrawing<TOptions extends DrawingOptions>(definition: DrawingDefinition<TOptions>): DrawingDefinition<TOptions>;
+export declare function unregisterDrawing(type: string): boolean;
+export declare function getDrawingDefinition(type: string): DrawingDefinition | undefined;
+export declare function getDrawingTypes(): readonly string[];
+
+// Public API module: drawings/index.d.ts
+export * from './drawing-model.js';
+export * from './drawing-registry.js';
+export * from './drawing-controller.js';
+export * from './drawing-magnet.js';
+export * from './interactive-drawing-primitive.js';
+export * from './built-in-line-drawings.js';
+export * from './built-in-shape-drawings.js';
+export * from './built-in-analysis-drawings.js';
+export * from './built-in-position-drawings.js';
+
+// Public API module: drawings/interactive-drawing-primitive.d.ts
+import type { AutoscaleInfo, HitTestContext, IChartPrimitive, LogicalRange, PrimitiveAttachedContext, PrimitiveHit, PrimitiveInteractionEvent, PrimitivePaneView, PrimitiveRect, PrimitiveTheme } from '../core/chart-api.js';
+import { type DrawingInstance } from './drawing-model.js';
+import type { DrawingPrimitiveBinding, DrawingPrimitiveEvents } from './drawing-registry.js';
+export interface DrawingScreenPoint {
+    readonly x: number;
+    readonly y: number;
+}
+export interface DrawingPrimitiveGeometryContext {
+    readonly instance: DrawingInstance;
+    readonly points: readonly DrawingScreenPoint[];
+    readonly plot: PrimitiveRect;
+    timeToCoordinate(time: number): number | null;
+    priceToCoordinate(price: number): number | null;
+}
+export interface DrawingPrimitiveDrawContext extends DrawingPrimitiveGeometryContext {
+    readonly context: CanvasRenderingContext2D;
+    readonly theme: Readonly<PrimitiveTheme>;
+    readonly pixelRatio: number;
+    readonly selected: boolean;
+}
+export interface DrawingPrimitiveBodyHit {
+    readonly cursor?: string;
+}
+export interface DrawingPrimitiveVisual {
+    draw(context: DrawingPrimitiveDrawContext): void;
+    hitTest(point: Readonly<DrawingScreenPoint>, context: DrawingPrimitiveGeometryContext): DrawingPrimitiveBodyHit | null;
+    autoscaleInfo?(instance: DrawingInstance, range: LogicalRange): AutoscaleInfo | null;
+    handleColor?(instance: DrawingInstance): string;
+}
+export interface DrawingPrimitiveHitData {
+    readonly kind: 'drawing';
+    readonly primitive: InteractiveDrawingPrimitive;
+    readonly part: 'body' | 'point';
+    readonly pointIndex: number | null;
+}
+/** Shared interaction shell for serializable drawing visuals. */
+export declare class InteractiveDrawingPrimitive implements IChartPrimitive {
+    private model;
+    private readonly events;
+    private readonly visual;
+    private context;
+    private plot;
+    private screen;
+    private drag;
+    private selected;
+    private readonly renderer;
+    private readonly paneView;
+    private readonly interactionListener;
+    constructor(instance: DrawingInstance, events: DrawingPrimitiveEvents, visual: DrawingPrimitiveVisual);
+    instance(): DrawingInstance;
+    update(instance: DrawingInstance): void;
+    attached(context: PrimitiveAttachedContext): void;
+    detached(): void;
+    updateAllViews(): void;
+    paneViews(): readonly PrimitivePaneView[];
+    autoscaleInfo(range: LogicalRange): AutoscaleInfo | null;
+    hitTest(point: Readonly<DrawingScreenPoint>, context: HitTestContext): PrimitiveHit | null;
+    onPointerDown(event: PrimitiveInteractionEvent): void;
+    onPointerMove(event: PrimitiveInteractionEvent): void;
+    onPointerUp(): void;
+    onPointerCancel(): void;
+    private cancelDrag;
+    private hit;
+    private pointFromCoordinate;
+    private refreshScreen;
+    private draw;
+    private drawHandles;
+}
+export declare function createInteractiveDrawingBinding(instance: DrawingInstance, events: DrawingPrimitiveEvents, visual: DrawingPrimitiveVisual): DrawingPrimitiveBinding;
 
 // Public API module: indicators/built-ins/adaptive-definitions.d.ts
 import { type IndicatorCandle, type IndicatorDefinition, type IndicatorParameters, type IndicatorProcessInput } from '../indicator-definition.js';
@@ -5018,6 +5455,227 @@ export declare abstract class SequentialIndicatorProcessor<TInput, TState> imple
     private validateInput;
     private normalizeResult;
 }
+
+// Public API module: persistence/chart-state-persistence.d.ts
+import type { DrawingController, DrawingRestoreResult } from '../drawings/drawing-controller.js';
+import { type ChartStateV1, type PersistedChartOptions, type PersistedIndicator, type PersistedPane, type PersistedSeries } from './chart-state.js';
+export type MaybePromise<T> = T | Promise<T>;
+export interface ChartStateLayoutSnapshot {
+    readonly chartOptions: PersistedChartOptions;
+    readonly panes: readonly PersistedPane[];
+    readonly series: readonly PersistedSeries[];
+}
+export interface ChartStateLayoutAdapter {
+    capture(): ChartStateLayoutSnapshot;
+    restore(state: ChartStateLayoutSnapshot): MaybePromise<void>;
+}
+export interface ChartStateIndicatorAdapter {
+    capture(): readonly PersistedIndicator[];
+    /** Releases runtime series before the layout removes or recreates their panes. */
+    clear(): MaybePromise<void>;
+    restore(indicators: readonly PersistedIndicator[]): MaybePromise<void>;
+}
+/** Host-owned storage. Implementations may use files, a backend, IndexedDB, etc. */
+export interface ChartStateStorage {
+    load(key: string): MaybePromise<string | null>;
+    save(key: string, value: string): MaybePromise<void>;
+    remove(key: string): MaybePromise<void>;
+}
+export interface ChartStatePersistenceOptions<TContext = void> {
+    readonly layout: ChartStateLayoutAdapter;
+    readonly indicators: ChartStateIndicatorAdapter;
+    readonly drawings: DrawingController;
+    readonly storage: ChartStateStorage;
+    /** Host selects layout-bound vs per-symbol (or any other) storage scope here. */
+    readonly key: (context: TContext) => string;
+    readonly pretty?: boolean;
+}
+export interface ChartStateRestoreResult {
+    readonly state: ChartStateV1;
+    readonly drawings: DrawingRestoreResult;
+}
+/** Coordinates validated snapshots without owning a storage technology or scope policy. */
+export declare class ChartStatePersistence<TContext = void> {
+    private readonly layout;
+    private readonly indicators;
+    private readonly drawings;
+    private readonly storage;
+    private readonly resolveKey;
+    private readonly pretty;
+    constructor(options: ChartStatePersistenceOptions<TContext>);
+    snapshot(): ChartStateV1;
+    restore(value: ChartStateV1): Promise<ChartStateRestoreResult>;
+    save(context: TContext): Promise<ChartStateV1>;
+    load(context: TContext): Promise<ChartStateRestoreResult | null>;
+    remove(context: TContext): Promise<void>;
+    private key;
+}
+
+// Public API module: persistence/chart-state.d.ts
+import { type DrawingInstance } from '../drawings/drawing-model.js';
+import { type PersistedObject } from './json-value.js';
+export declare const CHART_STATE_SCHEMA_VERSION: 1;
+export type PersistedChartOptions = PersistedObject;
+export type PersistedSeriesOptions = PersistedObject;
+export type PersistedIndicatorParameters = PersistedObject;
+export type PersistedIndicatorStyles = PersistedObject;
+export type PersistedDrawing = DrawingInstance;
+export interface PersistedPriceScale {
+    readonly id: string;
+    readonly mode?: number;
+    readonly autoScale?: boolean;
+    readonly scaleMargins?: Readonly<{
+        top: number;
+        bottom: number;
+    }>;
+}
+export interface PersistedPane {
+    readonly id: string;
+    readonly order: number;
+    readonly height: number;
+    readonly minHeight: number;
+    readonly state: 'normal' | 'minimized' | 'maximized';
+    readonly priceScales: readonly PersistedPriceScale[];
+}
+export interface PersistedSeries {
+    readonly id: string;
+    readonly type: string;
+    readonly paneId: string;
+    readonly priceScaleId: string;
+    readonly options: PersistedSeriesOptions;
+}
+export interface PersistedIndicator {
+    readonly id: string;
+    readonly type: string;
+    readonly paneId: string | null;
+    readonly params: PersistedIndicatorParameters;
+    readonly styles: PersistedIndicatorStyles;
+}
+export interface ChartStateV1 {
+    readonly schemaVersion: typeof CHART_STATE_SCHEMA_VERSION;
+    readonly chartOptions: PersistedChartOptions;
+    readonly panes: readonly PersistedPane[];
+    readonly series: readonly PersistedSeries[];
+    readonly indicators: readonly PersistedIndicator[];
+    readonly drawings: readonly PersistedDrawing[];
+}
+export declare function normalizeChartStateV1(value: unknown): ChartStateV1;
+
+// Public API module: persistence/index.d.ts
+export * from './json-value.js';
+export * from './chart-state.js';
+export * from './migrations.js';
+export * from './serializer.js';
+export * from './chart-state-persistence.js';
+export * from './native-chart-layout-adapter.js';
+export * from './indicator-engine-state-adapter.js';
+
+// Public API module: persistence/indicator-engine-state-adapter.d.ts
+import type { PersistedIndicator } from './chart-state.js';
+import type { ChartStateIndicatorAdapter, MaybePromise } from './chart-state-persistence.js';
+export interface PersistableIndicatorStyleSeries {
+    options?(): object;
+    applyOptions?(options: object): void;
+}
+export interface PersistableIndicatorEntry {
+    readonly id: string | number;
+    persistenceId?: string;
+    readonly type: string;
+    readonly paneId: string | null;
+    readonly params: object;
+    readonly seriesRefs?: readonly PersistableIndicatorStyleSeries[];
+    readonly styleSources?: Readonly<Record<string, PersistableIndicatorStyleSeries>>;
+    readonly outputNames?: readonly string[];
+    readonly legendSources?: Readonly<Record<string, {
+        readonly series?: PersistableIndicatorStyleSeries;
+        readonly field?: string;
+        readonly colorOption?: string;
+    }>>;
+    colors?: string[];
+}
+export interface IndicatorEnginePersistenceApi {
+    getIndicators(): readonly PersistableIndicatorEntry[];
+    removeAll(): MaybePromise<void>;
+    add(type: string, params: object, targetPaneId?: string, persistence?: {
+        readonly persistenceId?: string;
+    }): MaybePromise<PersistableIndicatorEntry | null>;
+}
+export interface IndicatorEngineStateAdapterOptions {
+    readonly engine: IndicatorEnginePersistenceApi;
+    /** Maps a persisted pane to a host pane-controller target when ids differ. */
+    readonly resolveTargetPaneId?: (indicator: PersistedIndicator) => string | undefined;
+    readonly onUnknownIndicator?: (indicator: PersistedIndicator) => void;
+    readonly onUnknownStyle?: (indicator: PersistedIndicator, styleId: string) => void;
+}
+/** Persists indicator configuration and painter styles without computed output data. */
+export declare class IndicatorEngineStateAdapter implements ChartStateIndicatorAdapter {
+    private readonly engine;
+    private readonly resolveTargetPaneId?;
+    private readonly onUnknownIndicator?;
+    private readonly onUnknownStyle?;
+    constructor(options: IndicatorEngineStateAdapterOptions);
+    capture(): readonly PersistedIndicator[];
+    clear(): MaybePromise<void>;
+    restore(indicators: readonly PersistedIndicator[]): Promise<void>;
+    private targetPaneId;
+}
+
+// Public API module: persistence/json-value.d.ts
+export type PersistedJsonValue = string | number | boolean | null | readonly PersistedJsonValue[] | PersistedObject;
+export interface PersistedObject {
+    readonly [key: string]: PersistedJsonValue;
+}
+export interface PersistedObjectNormalizationOptions {
+    /** Omit undefined object properties. Undefined array items remain invalid. */
+    readonly omitUndefined?: boolean;
+}
+/** Deep-clones JSON data into immutable, prototype-safe library state. */
+export declare function normalizePersistedObject(value: unknown, path?: string, options?: PersistedObjectNormalizationOptions): PersistedObject;
+
+// Public API module: persistence/migrations.d.ts
+export type RawChartState = Readonly<Record<string, unknown>>;
+export type ChartStateMigration = (state: RawChartState) => RawChartState;
+export declare class ChartStateMigrationRegistry {
+    private readonly migrations;
+    register(fromVersion: number, migration: ChartStateMigration): void;
+    migrate(value: unknown, targetVersion?: 1): RawChartState;
+}
+export declare const chartStateMigrations: ChartStateMigrationRegistry;
+
+// Public API module: persistence/native-chart-layout-adapter.d.ts
+import { type IChartApi, type IPaneApi, type ISeriesApi } from '../core/chart-api.js';
+import type { PersistedSeries } from './chart-state.js';
+import type { ChartStateLayoutAdapter, ChartStateLayoutSnapshot, MaybePromise } from './chart-state-persistence.js';
+export interface NativeChartLayoutAdapterOptions {
+    readonly chart: IChartApi;
+    /** Overrides registry-based empty-series recreation (for host data-source wiring). */
+    readonly createSeries?: (series: PersistedSeries, pane: IPaneApi) => MaybePromise<ISeriesApi<any, any> | null | void>;
+    readonly includeSeries?: (series: ISeriesApi<any, any>) => boolean;
+    readonly onUnknownSeries?: (series: PersistedSeries) => void;
+}
+/** Captures native pane/series metadata while deliberately excluding raw series data. */
+export declare class NativeChartLayoutAdapter implements ChartStateLayoutAdapter {
+    private readonly chart;
+    private readonly createSeries?;
+    private readonly includeSeries?;
+    private readonly onUnknownSeries?;
+    constructor(options: NativeChartLayoutAdapterOptions);
+    capture(): ChartStateLayoutSnapshot;
+    restore(state: ChartStateLayoutSnapshot): Promise<void>;
+    private capturePane;
+}
+
+// Public API module: persistence/serializer.d.ts
+import { type ChartStateV1 } from './chart-state.js';
+import { type ChartStateMigrationRegistry } from './migrations.js';
+export interface SerializeChartStateOptions {
+    readonly pretty?: boolean;
+}
+export interface DeserializeChartStateOptions {
+    readonly migrations?: ChartStateMigrationRegistry;
+}
+export declare function serializeChartState(state: ChartStateV1, options?: SerializeChartStateOptions): string;
+export declare function deserializeChartState(value: string | unknown, options?: DeserializeChartStateOptions): ChartStateV1;
 
 // Public API module: primitives/horizontal-line.d.ts
 import type { AutoscaleInfo, HitTestContext, IChartPrimitive, LineStyleValue, LogicalRange, PrimitiveAttachedContext, PrimitiveAxisView, PrimitiveHit, PrimitiveInteractionEvent, PrimitivePaneView, PrimitiveZOrder as PrimitiveZOrderValue } from '../core/chart-api.js';

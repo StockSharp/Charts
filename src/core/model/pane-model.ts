@@ -56,4 +56,6 @@ export class PaneModel<TSeries> {
         }
         return scale;
     }
+
+    priceScaleIds(): readonly string[] { return Object.freeze([...this.scales.keys()]); }
 }

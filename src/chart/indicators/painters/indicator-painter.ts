@@ -29,11 +29,18 @@ export interface IndicatorPaintResult {
     /** Every series owned by the painter. They are removed with the indicator. */
     series: any[];
 
+    /** Stable style key -> series index mapping used by workspace persistence. */
+    styleSources?: Readonly<Record<string, number>>;
+
     /** Legend colours in entry.outputNames order. */
     colors?: string[];
 
     /** Maps each legend output to the rendered series field that owns it. */
-    legendSources?: Record<string, { seriesIndex: number; field?: string }>;
+    legendSources?: Record<string, {
+        seriesIndex: number;
+        field?: string;
+        colorOption?: string;
+    }>;
 }
 
 export interface IndicatorPainterPatchContext {

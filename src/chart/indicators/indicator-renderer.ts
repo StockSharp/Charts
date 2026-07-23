@@ -53,14 +53,20 @@ export class IndicatorRenderer {
         entry._painter = entry._painter || painter;
         entry._painterContext = context;
         const series = result?.series || [];
+        entry.styleSources = this._resolveStyleSources(result?.styleSources, series, entry.type);
         entry.legendSources = {};
         for (const [key, source] of Object.entries(result?.legendSources || {})) {
-            const typed = source as { seriesIndex: number; field?: string };
+            const typed = source as {
+                seriesIndex: number;
+                field?: string;
+                colorOption?: string;
+            };
             const sourceSeries = series[typed.seriesIndex];
             if (sourceSeries !== undefined) {
                 entry.legendSources[key] = {
                     series: sourceSeries,
                     field: typed.field || 'value',
+                    colorOption: typed.colorOption,
                 };
             }
         }
@@ -123,9 +129,37 @@ export class IndicatorRenderer {
         }
 
         entry.seriesRefs = [];
+        entry.styleSources = {};
         entry.legendSources = {};
         entry._painter = null;
         entry._painterContext = null;
+    }
+
+    private _resolveStyleSources(
+        declared: Readonly<Record<string, number>> | undefined,
+        series: any[],
+        indicatorType: string,
+    ): Record<string, any> {
+        const result: Record<string, any> = {};
+        const assigned = new Set<number>();
+        for (const [rawKey, index] of Object.entries(declared || {})) {
+            const key = rawKey.trim();
+            if (key.length === 0 || key === '__proto__' || key === 'prototype'
+                || key === 'constructor' || !Number.isSafeInteger(index)
+                || index < 0 || index >= series.length || assigned.has(index)) {
+                console.warn(`[Indicators] invalid style source '${rawKey}' for ${indicatorType}; using a stable fallback.`);
+                continue;
+            }
+            result[key] = series[index];
+            assigned.add(index);
+        }
+        for (let index = 0; index < series.length; index++) {
+            if (assigned.has(index)) continue;
+            let key = `series-${index}`;
+            while (Object.prototype.hasOwnProperty.call(result, key)) key += '-fallback';
+            result[key] = series[index];
+        }
+        return result;
     }
 
     private _createPainter(name: string | undefined, indicatorType: string): IndicatorPainter {
@@ -159,7 +193,7 @@ export class IndicatorRenderer {
             nextColor: () => IndicatorSettings.getNextColor(),
             output,
             addSeries: (kind: IndicatorSeriesKind, options: any, seriesData: any[] = []) => {
-                const series = chart.addSeries(definition(kind), options || {});
+                const series = chart.addSeries(definition(kind), { ...(options || {}), persist: false });
                 series.setData(seriesData || []);
                 return series;
             },
