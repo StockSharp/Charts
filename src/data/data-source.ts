@@ -4,6 +4,7 @@ import type {
     Time,
     TimedSeriesData,
 } from '../core/chart-api.js';
+import type { TradingSchedule } from '../time/trading-calendar.js';
 
 export interface OhlcvBar extends CandlestickData {
     readonly volume?: number;
@@ -13,13 +14,14 @@ export interface ResolveSymbolRequest {
     readonly symbol: string;
 }
 
-/** Datafeed-owned identity and display metadata. Session fields arrive in M5. */
+/** Datafeed-owned identity, display metadata and optional exchange calendar. */
 export interface SymbolInfo {
     readonly id: string;
     readonly ticker?: string;
     readonly name?: string;
     readonly exchange?: string;
     readonly priceFormat?: PriceFormat;
+    readonly tradingSchedule?: TradingSchedule;
     readonly metadata?: Readonly<Record<string, unknown>>;
 }
 

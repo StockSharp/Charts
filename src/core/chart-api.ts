@@ -13,6 +13,15 @@
 // what the app actually consumes.
 
 import { calculateBarStepPx } from '../series-spacing.js';
+import { SessionTimeProjection } from '../time/session-time-projection.js';
+import {
+    TimeAxisFormatter,
+    type TimeScaleFormatter,
+} from '../time/time-axis-formatter.js';
+import type {
+    ITradingCalendar,
+    TradingSessionKind,
+} from '../time/trading-calendar.js';
 import { DisposableStore } from './disposable.js';
 import { PaneLayout, type PaneLayoutRect, type PaneLayoutResult, type PaneSplitter } from './layout/pane-layout.js';
 import { ChartModel } from './model/chart-model.js';
@@ -212,6 +221,13 @@ export const PriceScaleMode = {
 } as const;
 export type PriceScaleModeValue = typeof PriceScaleMode[keyof typeof PriceScaleMode];
 
+export const TimeScaleMode = {
+    Continuous: 'continuous',
+    Ordinal: 'ordinal',
+    SessionAware: 'session-aware',
+} as const;
+export type TimeScaleModeValue = typeof TimeScaleMode[keyof typeof TimeScaleMode];
+
 // Per-series horizontal "price line" — used by the terminal/host to draw
 // resting orders, alerts, breakeven, preview-on-Ctrl, etc. createPriceLine
 // returns an opaque handle with applyOptions/options.
@@ -294,6 +310,27 @@ export interface SeriesOptions {
     reversal?: number;
 }
 
+export interface TimeScaleOptions {
+    borderColor?: string;
+    timeVisible?: boolean;
+    secondsVisible?: boolean;
+    visible?: boolean;
+    /** Explicit time-domain mapping. Defaults to continuous. */
+    mode?: TimeScaleModeValue;
+    /** Required by session-aware mode. */
+    calendar?: ITradingCalendar;
+    /** Sessions retained by session-aware mode. Omit to retain every kind. */
+    sessionKinds?: readonly TradingSessionKind[];
+    /** BCP 47 locale. Defaults to deterministic en-GB. */
+    locale?: string;
+    /** IANA timezone. Defaults to the calendar timezone, then UTC. */
+    timeZone?: string;
+    /** Optional formatter shared by tick and crosshair labels. */
+    formatter?: TimeScaleFormatter;
+    /** @deprecated Use mode: TimeScaleMode.Ordinal. */
+    ordinal?: boolean;
+}
+
 export interface ChartOptions {
     width?: number; height?: number;
     autoSize?: boolean;       // observe the host with ResizeObserver and re-fit
@@ -313,12 +350,7 @@ export interface ChartOptions {
     grid?: { vertLines?: { color?: string; visible?: boolean }; horzLines?: { color?: string; visible?: boolean } };
     rightPriceScale?: { borderColor?: string; scaleMargins?: { top?: number; bottom?: number } };
     leftPriceScale?: { borderColor?: string; scaleMargins?: { top?: number; bottom?: number } };
-    timeScale?: { borderColor?: string; timeVisible?: boolean; secondsVisible?: boolean; visible?: boolean;
-        // Ordinal (gap-collapsing) x-axis: position bars by BAR INDEX instead of
-        // real time, so data gaps (frozen feed / non-trading hours) render with
-        // no blank space and consecutive bars are always equal-spaced. Axis
-        // labels still show the real time of each tick bar. Off = time-proportional.
-        ordinal?: boolean };
+    timeScale?: TimeScaleOptions;
     crosshair?: {
         vertLine?: { color?: string; visible?: boolean };
         horzLine?: { color?: string; visible?: boolean };
@@ -338,6 +370,65 @@ const DEF_FONT = 'Segoe UI, Tahoma, sans-serif';
 
 function num(v: unknown, fallback: number): number {
     return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const TIME_SCALE_MODES = new Set<TimeScaleModeValue>(Object.values(TimeScaleMode));
+const TRADING_SESSION_KINDS = new Set<TradingSessionKind>(['pre-market', 'regular', 'post-market']);
+
+function isTradingCalendar(value: unknown): value is ITradingCalendar {
+    if (value === null || typeof value !== 'object') return false;
+    const calendar = value as Partial<ITradingCalendar>;
+    return typeof calendar.schedule === 'function'
+        && typeof calendar.sessionsInRange === 'function'
+        && typeof calendar.sessionAt === 'function'
+        && typeof calendar.isTradingTime === 'function'
+        && typeof calendar.nextSession === 'function'
+        && typeof calendar.previousSession === 'function';
+}
+
+function normalizeTimeScaleOptions(value: TimeScaleOptions | undefined): TimeScaleOptions | undefined {
+    if (value === undefined) return undefined;
+    if (value === null || typeof value !== 'object')
+        throw new TypeError('sschart: timeScale options must be an object');
+    if (value.mode !== undefined && !TIME_SCALE_MODES.has(value.mode))
+        throw new TypeError(`sschart: invalid timeScale mode ${String(value.mode)}`);
+    if (value.ordinal !== undefined && typeof value.ordinal !== 'boolean')
+        throw new TypeError('sschart: timeScale.ordinal must be boolean');
+    if (value.calendar !== undefined && !isTradingCalendar(value.calendar))
+        throw new TypeError('sschart: timeScale.calendar must implement ITradingCalendar');
+    if (value.formatter !== undefined && typeof value.formatter !== 'function')
+        throw new TypeError('sschart: timeScale.formatter must be a function');
+    let locale: string | undefined;
+    if (value.locale !== undefined) {
+        if (typeof value.locale !== 'string' || value.locale.trim().length === 0)
+            throw new TypeError('sschart: timeScale.locale must be a non-empty string');
+        locale = value.locale.trim();
+        try { new Intl.DateTimeFormat(locale); }
+        catch { throw new RangeError(`sschart: invalid timeScale locale ${locale}`); }
+    }
+    let timeZone: string | undefined;
+    if (value.timeZone !== undefined) {
+        if (typeof value.timeZone !== 'string' || value.timeZone.trim().length === 0)
+            throw new TypeError('sschart: timeScale.timeZone must be a non-empty string');
+        timeZone = value.timeZone.trim();
+        try { new Intl.DateTimeFormat('en-US', { timeZone }); }
+        catch { throw new RangeError(`sschart: invalid timeScale IANA timezone ${timeZone}`); }
+    }
+
+    let sessionKinds: readonly TradingSessionKind[] | undefined;
+    if (value.sessionKinds !== undefined) {
+        if (!Array.isArray(value.sessionKinds) || value.sessionKinds.length === 0)
+            throw new TypeError('sschart: timeScale.sessionKinds must be a non-empty array');
+        const unique = [...new Set(value.sessionKinds)];
+        if (unique.some((kind) => !TRADING_SESSION_KINDS.has(kind)))
+            throw new TypeError('sschart: timeScale.sessionKinds contains an invalid kind');
+        sessionKinds = Object.freeze(unique);
+    }
+
+    const mode = value.mode ?? (value.ordinal === true ? TimeScaleMode.Ordinal : TimeScaleMode.Continuous);
+    if (mode === TimeScaleMode.SessionAware && !isTradingCalendar(value.calendar))
+        throw new TypeError('sschart: session-aware timeScale mode requires a trading calendar');
+    return Object.freeze({ ...value, locale, timeZone, sessionKinds });
 }
 // Contrasting text colour for a coloured axis tag.
 function textOn(bg: string): string {
@@ -836,6 +927,21 @@ class ChartImpl implements IChartApi {
     private interactionListeners: InteractionStateListener[] = [];
     private primitiveAutoscaleCache: readonly PrimitiveAutoscaleEntry[] | null = null;
     private primitiveAutoscaleComputing = false;
+    private sessionProjectionCache: {
+        readonly calendar: ITradingCalendar;
+        readonly kindsKey: string;
+        readonly from: number;
+        readonly to: number;
+        readonly projection: SessionTimeProjection;
+    } | null = null;
+    private timeAxisFormatterCache: {
+        readonly locale: string;
+        readonly timeZone: string;
+        readonly timeVisible: boolean;
+        readonly secondsVisible: boolean;
+        readonly custom: TimeScaleFormatter | undefined;
+        readonly formatter: TimeAxisFormatter;
+    } | null = null;
     private disposed = false;
     // optional ResizeObserver when autoSize is on (default true)
     private autoResizer: ResizeObserver | null = null;
@@ -892,7 +998,7 @@ class ChartImpl implements IChartApi {
 
     constructor(host: HTMLElement, opts: ChartOptions) {
         this.host = host;
-        this.opts = opts;
+        this.opts = { ...opts, timeScale: normalizeTimeScaleOptions(opts.timeScale) };
         this.paneApis.set(this.model.mainPane.id, new PaneApi(this, this.model.mainPane));
         this.root = document.createElement('div');
         this.root.className = 'sschart-root';
@@ -932,22 +1038,22 @@ class ChartImpl implements IChartApi {
         this.ctx = baseCtx;
         this.renderScheduler = this.disposables.add(new RenderScheduler((dirty) => this.draw(dirty)));
         this.primitiveHost = this.disposables.add(new PrimitiveHost(() => this.scheduleDraw(RenderDirty.All)));
-        this.commands = new CommandStack(opts.commandHistoryLimit ?? 100);
+        this.commands = new CommandStack(this.opts.commandHistoryLimit ?? 100);
         this.interactionController = new InteractionController((snapshot) => {
             for (const listener of this.interactionListeners) {
                 try { listener(snapshot); } catch { /* a listener must not break pointer state */ }
             }
         });
 
-        const w = num(opts.width, host.clientWidth || 600);
-        const h = num(opts.height, host.clientHeight || 300);
+        const w = num(this.opts.width, host.clientWidth || 600);
+        const h = num(this.opts.height, host.clientHeight || 300);
         this.applySize(w, h);
         this.bindPointer();
         this.listen(document, 'visibilitychange', this.onVisChange);
         // autoSize defaults ON when the caller doesn't pass explicit
         // width/height — track the host with ResizeObserver and re-fit.
-        const autoOn = opts.autoSize === true
-            || (opts.autoSize !== false && opts.width === undefined && opts.height === undefined);
+        const autoOn = this.opts.autoSize === true
+            || (this.opts.autoSize !== false && this.opts.width === undefined && this.opts.height === undefined);
         if (autoOn && typeof ResizeObserver !== 'undefined') {
             this.autoResizer = new ResizeObserver((entries) => {
                 const e = entries[0];
@@ -965,12 +1071,12 @@ class ChartImpl implements IChartApi {
             });
         }
         // Seed scale margins from constructor options.
-        if (opts.rightPriceScale?.scaleMargins) {
-            const sm = opts.rightPriceScale.scaleMargins;
+        if (this.opts.rightPriceScale?.scaleMargins) {
+            const sm = this.opts.rightPriceScale.scaleMargins;
             this.model.mainPane.priceScale('right').setMargins(sm);
         }
-        if (opts.leftPriceScale?.scaleMargins) {
-            const sm = opts.leftPriceScale.scaleMargins;
+        if (this.opts.leftPriceScale?.scaleMargins) {
+            const sm = this.opts.leftPriceScale.scaleMargins;
             this.model.mainPane.priceScale('left').setMargins(sm);
         }
     }
@@ -1385,7 +1491,14 @@ class ChartImpl implements IChartApi {
         this.scheduleDraw(RenderDirty.Overlay);
     }
     applyOptions(patch: ChartOptions): void {
+        const timeScale = patch.timeScale === undefined
+            ? undefined
+            : normalizeTimeScaleOptions({ ...this.opts.timeScale, ...patch.timeScale });
         Object.assign(this.opts, patch);
+        if (timeScale !== undefined) {
+            this.opts.timeScale = timeScale;
+            this.sessionProjectionCache = null;
+        }
         // Toggling time-axis visibility must re-reserve (or free) its vertical strip so the axis
         // actually appears/disappears — not just flip a flag with no layout room for it.
         if (patch.timeScale) {
@@ -1499,6 +1612,7 @@ class ChartImpl implements IChartApi {
     }
 
     onDataChanged(_change?: DataChangeSet): void {
+        this.sessionProjectionCache = null;
         let lo = Infinity;
         let hi = -Infinity;
         for (const s of this.series) {
@@ -1718,34 +1832,78 @@ class ChartImpl implements IChartApi {
         return this.paneLayoutResult.panes.find((item) => item.paneId === pane.id);
     }
 
-    // Ordinal (bar-index) x-axis: consecutive bars are equal-spaced and time
-    // gaps collapse. Falls back to time-proportional when there is no series.
-    private ordinalMode(): boolean { return this.opts.timeScale?.ordinal === true; }
-    private timeToX(t: Time): number {
-        if (this.ordinalMode()) {
-            const lf = this.timeToLogical(this.viewFrom);
-            const lt = this.timeToLogical(this.viewTo);
-            const lg = this.timeToLogical(t);
-            if (lf !== null && lt !== null && lg !== null) {
-                const span = (lt - lf) || 1;
-                return this.plotL() + ((lg - lf) / span) * this.plotW();
-            }
+    private timeScaleMode(): TimeScaleModeValue {
+        return this.opts.timeScale?.mode
+            ?? (this.opts.timeScale?.ordinal === true ? TimeScaleMode.Ordinal : TimeScaleMode.Continuous);
+    }
+
+    private ordinalMode(): boolean { return this.timeScaleMode() === TimeScaleMode.Ordinal; }
+
+    private sessionProjection(): SessionTimeProjection | null {
+        if (this.timeScaleMode() !== TimeScaleMode.SessionAware) return null;
+        const calendar = this.opts.timeScale?.calendar;
+        if (!isTradingCalendar(calendar)) return null;
+        const kinds = this.opts.timeScale?.sessionKinds;
+        const kindsKey = kinds?.join('\u0000') ?? '*';
+        const week = 7 * 86_400;
+        const padding = 32 * 86_400;
+        const rangeFrom = Math.floor((Math.min(this.viewFrom, this.viewTo) - padding) / week) * week;
+        const rangeTo = Math.ceil((Math.max(this.viewFrom, this.viewTo) + padding) / week) * week;
+        const cached = this.sessionProjectionCache;
+        if (cached !== null
+            && cached.calendar === calendar
+            && cached.kindsKey === kindsKey
+            && cached.from === rangeFrom
+            && cached.to === rangeTo) {
+            return cached.projection;
         }
-        const span = this.viewTo - this.viewFrom || 1;
-        return this.plotL() + ((t - this.viewFrom) / span) * this.plotW();
+        const projection = new SessionTimeProjection(calendar, { from: rangeFrom, to: rangeTo }, kinds);
+        this.sessionProjectionCache = {
+            calendar,
+            kindsKey,
+            from: rangeFrom,
+            to: rangeTo,
+            projection,
+        };
+        return projection;
+    }
+
+    private timeToDomain(time: Time): number {
+        if (this.ordinalMode()) return this.timeToLogical(time) ?? time;
+        const projection = this.sessionProjection();
+        return projection?.timeToTradingTime(time) ?? time;
+    }
+
+    private domainToTime(value: number): Time {
+        if (this.ordinalMode()) return this.logicalToTime(value) ?? value;
+        const projection = this.sessionProjection();
+        return projection?.tradingTimeToTime(value) ?? value;
+    }
+
+    private timeDomainRange(): { from: number; to: number } {
+        return {
+            from: this.timeToDomain(this.viewFrom),
+            to: this.timeToDomain(this.viewTo),
+        };
+    }
+
+    private setTimeDomainRange(from: number, to: number): void {
+        if (!Number.isFinite(from) || !Number.isFinite(to) || !(to > from)) return;
+        const fromTime = this.domainToTime(from);
+        const toTime = this.domainToTime(to);
+        if (!Number.isFinite(fromTime) || !Number.isFinite(toTime) || !(toTime > fromTime)) return;
+        this.clampView(fromTime, toTime);
+    }
+
+    private timeToX(t: Time): number {
+        const range = this.timeDomainRange();
+        const span = range.to - range.from || 1;
+        return this.plotL() + ((this.timeToDomain(t) - range.from) / span) * this.plotW();
     }
     private xToTime(x: number): Time {
-        if (this.ordinalMode()) {
-            const lf = this.timeToLogical(this.viewFrom);
-            const lt = this.timeToLogical(this.viewTo);
-            if (lf !== null && lt !== null) {
-                const lg = lf + ((x - this.plotL()) / this.plotW()) * ((lt - lf) || 1);
-                const t = this.logicalToTime(lg);
-                if (t !== null) return t;
-            }
-        }
-        const span = this.viewTo - this.viewFrom || 1;
-        return this.viewFrom + ((x - this.plotL()) / this.plotW()) * span;
+        const range = this.timeDomainRange();
+        const value = range.from + ((x - this.plotL()) / this.plotW()) * ((range.to - range.from) || 1);
+        return this.domainToTime(value);
     }
 
     // price scale per axis ('right' default, 'left' optional)
@@ -2465,6 +2623,22 @@ class ChartImpl implements IChartApi {
             if (lf !== null && lt !== null && lt > lf)
                 return this.plotW() / (lt - lf);
         }
+        if (this.timeScaleMode() === TimeScaleMode.SessionAware) {
+            const range = this.timeDomainRange();
+            const span = range.to - range.from;
+            const reference = this.indexRefSeries();
+            if (span > 0 && reference !== null) {
+                const points = reference.store.visibleRange(this.viewFrom, this.viewTo, 1).points;
+                const stride = Math.max(1, Math.floor((points.length - 1) / 512));
+                let domainStep = Infinity;
+                for (let index = stride; index < points.length; index += stride) {
+                    const delta = this.timeToDomain(points[index].time)
+                        - this.timeToDomain(points[index - stride].time);
+                    if (delta > 0) domainStep = Math.min(domainStep, delta / stride);
+                }
+                if (Number.isFinite(domainStep)) return this.plotW() * domainStep / span;
+            }
+        }
         // Use the densest time series. Sparse overlays such as Fractals have
         // only a handful of points across the whole range and must not widen
         // every candle/histogram slot underneath them.
@@ -2509,33 +2683,89 @@ class ChartImpl implements IChartApi {
         finally { this.ctx.restore(); }
     }
 
-    // Crosshair tooltip — industry-standard format: "12 Apr '24 00:00:00".
-    private fmtTime(t: Time): string {
-        const d = new Date(t * 1000);
-        const p = (n: number) => String(n).padStart(2, '0');
-        const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        const date = `${d.getUTCDate()} ${MON[d.getUTCMonth()]} '${p(d.getUTCFullYear() % 100)}`;
-        if (this.opts.timeScale?.timeVisible) {
-            return `${date} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`;
+    private axisTimeFormatter(): TimeAxisFormatter {
+        const options = this.opts.timeScale;
+        const locale = options?.locale ?? 'en-GB';
+        const calendar = options?.calendar;
+        const timeZone = options?.timeZone
+            ?? (isTradingCalendar(calendar) ? calendar.schedule().timeZone : 'UTC');
+        const timeVisible = options?.timeVisible === true;
+        const secondsVisible = options?.secondsVisible === true;
+        const custom = options?.formatter;
+        const cached = this.timeAxisFormatterCache;
+        if (cached !== null
+            && cached.locale === locale
+            && cached.timeZone === timeZone
+            && cached.timeVisible === timeVisible
+            && cached.secondsVisible === secondsVisible
+            && cached.custom === custom) {
+            return cached.formatter;
         }
-        return date;
+        const formatter = new TimeAxisFormatter({
+            locale,
+            timeZone,
+            timeVisible,
+            secondsVisible,
+            formatter: custom,
+        });
+        this.timeAxisFormatterCache = {
+            locale,
+            timeZone,
+            timeVisible,
+            secondsVisible,
+            custom,
+            formatter,
+        };
+        return formatter;
+    }
+
+    private fmtTime(t: Time): string {
+        return this.axisTimeFormatter().formatCrosshair(t);
     }
     // Nice, boundary-aligned time ticks + the chosen step, so labels
     // land on round moments (month starts, day starts, …).
     private timeTicks(): { ticks: Time[]; step: number } {
         if (this.ordinalMode()) return this.ordinalTimeTicks();
+        if (this.timeScaleMode() === TimeScaleMode.SessionAware) {
+            const projected = this.sessionTimeTicks();
+            if (projected !== null) return projected;
+        }
         const span = this.viewTo - this.viewFrom || 1;
         const target = Math.max(2, Math.floor(this.plotW() / 80));
+        const step = this.timeTickStep(span, target);
+        const start = Math.ceil(this.viewFrom / step) * step;
+        const ticks: Time[] = [];
+        for (let t = start; t <= this.viewTo; t += step) ticks.push(t);
+        return { ticks, step };
+    }
+
+    private timeTickStep(span: number, target: number): number {
         const S = [60, 300, 900, 1800, 3600, 7200, 14400, 21600, 43200,
                    86400, 172800, 604800, 1209600, 2592000, 5184000,
                    7776000, 15552000, 31536000];
         const raw = span / target;
         let step = S[S.length - 1];
         for (const s of S) { if (s >= raw) { step = s; break; } }
-        const start = Math.ceil(this.viewFrom / step) * step;
+        return step;
+    }
+
+    private sessionTimeTicks(): { ticks: Time[]; step: number } | null {
+        const projection = this.sessionProjection();
+        if (projection === null || !projection.hasSessions) return null;
+        const range = this.timeDomainRange();
+        const span = range.to - range.from;
+        if (!(span > 0)) return null;
+        const target = Math.max(2, Math.floor(this.plotW() / 80));
+        const step = this.timeTickStep(span, target);
+        const start = Math.ceil(range.from / step) * step;
         const ticks: Time[] = [];
-        for (let t = start; t <= this.viewTo; t += step) ticks.push(t);
+        for (let value = start; value <= range.to; value += step) {
+            const time = projection.tradingTimeToTime(value);
+            if (time !== null && time >= this.viewFrom && time <= this.viewTo
+                && ticks[ticks.length - 1] !== time) {
+                ticks.push(time);
+            }
+        }
         return { ticks, step };
     }
     // Ordinal ticks land on real bars at a fixed BAR-index stride, so they are
@@ -2571,17 +2801,7 @@ class ChartImpl implements IChartApi {
     // year / month name / day number / time, with month names landing
     // on the first tick of each month at day scale.
     private fmtTick(t: Time, step: number): string {
-        const d = new Date(t * 1000);
-        const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        const p = (n: number) => String(n).padStart(2, '0');
-        if (step >= 15552000) return String(d.getUTCFullYear());
-        if (step >= 2592000) return d.getUTCMonth() === 0 ? String(d.getUTCFullYear()) : MON[d.getUTCMonth()];
-        if (step >= 86400) {
-            return d.getUTCDate() <= step / 86400 ? MON[d.getUTCMonth()] : String(d.getUTCDate());
-        }
-        if (step >= 3600) return `${p(d.getUTCHours())}:00`;
-        return `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+        return this.axisTimeFormatter().formatTick(t, step);
     }
 
     private drawAxes(
@@ -3055,9 +3275,10 @@ class ChartImpl implements IChartApi {
                 } else if (movement !== null) {
                     // drag left → expand time (zoom in), right → compress;
                     // anchored at the right edge (industry-standard behaviour).
-                    const span = this.viewTo - this.viewFrom;
+                    const range = this.timeDomainRange();
+                    const span = range.to - range.from;
                     const nextSpan = Math.max(1, span * Math.exp(movement.delta.x * 0.004));
-                    this.viewFrom = this.viewTo - nextSpan;
+                    this.setTimeDomainRange(range.to - nextSpan, range.to);
                     this.emitRange();
                 }
                 this.scheduleDraw();
@@ -3095,12 +3316,9 @@ class ChartImpl implements IChartApi {
             let viewChanged = false;
             if (movement?.state === InteractionState.Panning && this.dragPanEnabled) {
                 const dx = movement.delta.x;
-                // Shift by the time a dx-pixel move spans at the current left
-                // edge. In time mode this equals -(dx/plotW)*span; in ordinal
-                // mode xToTime routes through the bar index, so panning tracks
-                // bars evenly across collapsed gaps.
-                const shift = this.xToTime(this.plotL()) - this.xToTime(this.plotL() + dx);
-                this.clampView(this.viewFrom + shift, this.viewTo + shift);
+                const range = this.timeDomainRange();
+                const shift = -(dx / this.plotW()) * (range.to - range.from);
+                this.setTimeDomainRange(range.from + shift, range.to + shift);
                 this.emitRange();
                 viewChanged = true;
             }
@@ -3289,13 +3507,14 @@ class ChartImpl implements IChartApi {
                 e.preventDefault();
                 const r = this.canvas.getBoundingClientRect();
                 const px = e.clientX - r.left;
-                const pivot = this.xToTime(px);
+                const pivot = this.timeToDomain(this.xToTime(px));
+                const range = this.timeDomainRange();
                 // Smooth, delta-proportional zoom (no fixed 1.15 jumps) —
                 // same fix as the diagram. deltaY>0 widens (zoom out).
                 const factor = Math.exp(e.deltaY * 0.0015);
-                const nf = pivot - (pivot - this.viewFrom) * factor;
-                const nt = pivot + (this.viewTo - pivot) * factor;
-                this.clampView(nf, nt);
+                const nf = pivot - (pivot - range.from) * factor;
+                const nt = pivot + (range.to - pivot) * factor;
+                this.setTimeDomainRange(nf, nt);
                 this.emitRange();
                 this.scheduleDraw();
             }, { passive: false });
@@ -3314,9 +3533,10 @@ class ChartImpl implements IChartApi {
                 const x0 = e.touches[0].clientX - r.left;
                 const x1 = e.touches[1].clientX - r.left;
                 pinchDist = Math.max(1, Math.abs(x0 - x1));
-                pinchSpan = this.viewTo - this.viewFrom;
+                const range = this.timeDomainRange();
+                pinchSpan = range.to - range.from;
                 const midX = (x0 + x1) / 2;
-                pinchPivot = this.xToTime(midX);
+                pinchPivot = this.timeToDomain(this.xToTime(midX));
                 pinchRatio = (midX - this.plotL()) / this.plotW();
                 pinching = true;
                 this.scaleDrag = null;
@@ -3333,7 +3553,7 @@ class ChartImpl implements IChartApi {
                 const newSpan = pinchSpan * (pinchDist / d);
                 const nf = pinchPivot - pinchRatio * newSpan;
                 const nt = pinchPivot + (1 - pinchRatio) * newSpan;
-                this.clampView(nf, nt);
+                this.setTimeDomainRange(nf, nt);
                 this.emitRange();
                 this.scheduleDraw();
             }

@@ -128,12 +128,18 @@ function sourceDouble(overrides = {}) {
 
 function controller(source = sourceDouble(), series = seriesDouble(), options = {}) {
     const timeScale = timeScaleDouble();
+    const chart = {
+        optionWrites: [],
+        timeScale: () => timeScale.api,
+        applyOptions(patch) { this.optionWrites.push(patch); },
+    };
     return {
+        chart,
         source,
         series,
         timeScale,
         value: new ChartDataController({
-            chart: { timeScale: () => timeScale.api },
+            chart,
             series,
             dataSource: source,
             initialCount: 200,
@@ -192,6 +198,108 @@ describe('ChartDataController', () => {
         assert.equal(source.resolveCalls.length, 2);
     });
 
+    it('normalizes and applies the resolved symbol trading schedule', async () => {
+        const schedule = {
+            id: 'XNYS',
+            timeZone: 'America/New_York',
+            sessions: [{
+                id: 'regular',
+                kind: 'regular',
+                weekdays: [1, 2, 3, 4, 5],
+                open: { hour: 9, minute: 30 },
+                close: { hour: 16, minute: 0 },
+            }],
+            holidays: ['2026-07-03'],
+        };
+        const source = sourceDouble({
+            async resolveSymbol(request, signal) {
+                this.resolveCalls.push({ request, signal });
+                return { id: request.symbol, tradingSchedule: schedule };
+            },
+        });
+        const { value, chart } = controller(source);
+
+        const info = await value.setSelection({ symbol: 'AAPL', resolution: '1m' });
+        assert.equal(chart.optionWrites.length, 1);
+        const calendar = chart.optionWrites[0].timeScale.calendar;
+        assert.equal(calendar.schedule(), info.tradingSchedule);
+        assert.equal(info.tradingSchedule.timeZone, 'America/New_York');
+        assert.equal(Object.isFrozen(info.tradingSchedule), true);
+        assert.equal(Object.isFrozen(info.tradingSchedule.sessions), true);
+        assert.equal(Object.isFrozen(info.tradingSchedule.sessions[0]), true);
+        assert.equal(Object.isFrozen(info.tradingSchedule.sessions[0].open), true);
+        assert.equal(Object.isFrozen(info.tradingSchedule.holidays), true);
+
+        schedule.timeZone = 'Europe/Moscow';
+        schedule.sessions[0].open.hour = 12;
+        schedule.holidays.push('2026-12-25');
+        assert.equal(info.tradingSchedule.timeZone, 'America/New_York');
+        assert.equal(info.tradingSchedule.sessions[0].open.hour, 9);
+        assert.deepEqual(info.tradingSchedule.holidays, ['2026-07-03']);
+        assert.equal(value.snapshot().symbolInfo.tradingSchedule, info.tradingSchedule);
+    });
+
+    it('clears its symbol calendar when the next symbol has no schedule', async () => {
+        const source = sourceDouble({
+            async resolveSymbol(request, signal) {
+                this.resolveCalls.push({ request, signal });
+                return request.symbol === 'AAPL'
+                    ? {
+                        id: request.symbol,
+                        tradingSchedule: {
+                            timeZone: 'UTC',
+                            sessions: [{
+                                id: 'always',
+                                kind: 'regular',
+                                weekdays: [1, 2, 3, 4, 5, 6, 7],
+                                open: { hour: 0, minute: 0 },
+                                close: { hour: 0, minute: 0 },
+                                closeDayOffset: 1,
+                            }],
+                        },
+                    }
+                    : { id: request.symbol };
+            },
+        });
+        const { value, chart } = controller(source);
+
+        await value.setSelection({ symbol: 'AAPL', resolution: '1m' });
+        await value.setSelection({ symbol: 'BTCUSD', resolution: '1m' });
+
+        assert.equal(chart.optionWrites.length, 2);
+        assert.equal(typeof chart.optionWrites[0].timeScale.calendar.sessionAt, 'function');
+        assert.deepEqual(chart.optionWrites[1], { timeScale: { calendar: undefined } });
+    });
+
+    it('can leave chart calendar ownership to the caller', async () => {
+        const source = sourceDouble({
+            async resolveSymbol(request, signal) {
+                this.resolveCalls.push({ request, signal });
+                return {
+                    id: request.symbol,
+                    tradingSchedule: {
+                        timeZone: 'UTC',
+                        sessions: [{
+                            id: 'always',
+                            kind: 'regular',
+                            weekdays: [1, 2, 3, 4, 5, 6, 7],
+                            open: { hour: 0, minute: 0 },
+                            close: { hour: 0, minute: 0 },
+                            closeDayOffset: 1,
+                        }],
+                    },
+                };
+            },
+        });
+        const { value, chart } = controller(source, seriesDouble(), {
+            applySymbolTradingSchedule: false,
+        });
+
+        const info = await value.setSelection({ symbol: 'BTCUSD', resolution: '1m' });
+        assert.deepEqual(chart.optionWrites, []);
+        assert.equal(Object.isFrozen(info.tradingSchedule), true);
+    });
+
     it('deduplicates an identical in-flight selection', async () => {
         const pending = deferred();
         const source = sourceDouble({
@@ -225,7 +333,7 @@ describe('ChartDataController', () => {
                 };
             },
         });
-        const { value, series } = controller(source);
+        const { value, series, chart } = controller(source);
         const oldLoad = value.setSelection({ symbol: 'OLD', resolution: '1m' });
         const oldSignal = source.resolveCalls[0].signal;
         const newLoad = value.setSelection({ symbol: 'NEW', resolution: '5m' });
@@ -233,7 +341,17 @@ describe('ChartDataController', () => {
 
         symbols.NEW.resolve({ id: 'NEW' });
         assert.equal((await newLoad).id, 'NEW');
-        symbols.OLD.resolve({ id: 'OLD' });
+        symbols.OLD.resolve({
+            id: 'OLD',
+            tradingSchedule: {
+                timeZone: 'UTC',
+                sessions: [{
+                    id: 'always', kind: 'regular', weekdays: [1, 2, 3, 4, 5, 6, 7],
+                    open: { hour: 0, minute: 0 }, close: { hour: 0, minute: 0 },
+                    closeDayOffset: 1,
+                }],
+            },
+        });
         assert.equal(await oldLoad, null);
 
         assert.deepEqual(series.values, [bar(20)]);
@@ -241,6 +359,7 @@ describe('ChartDataController', () => {
         assert.deepEqual(source.barsCalls.map((call) => call.request.symbol), ['NEW']);
         assert.equal(value.snapshot().selection.symbol, 'NEW');
         assert.equal(value.snapshot().generation, 2);
+        assert.deepEqual(chart.optionWrites, []);
     });
 
     it('reports current failures but suppresses aborted late failures', async () => {

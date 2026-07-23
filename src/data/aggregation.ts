@@ -10,8 +10,24 @@ export interface OhlcvAggregationOptions {
     readonly originTime?: number;
 }
 
-/** Converts common trading resolutions to a fixed duration. Calendar months are intentionally excluded. */
-export function resolutionToSeconds(resolution: string): number {
+export const FixedResolutionUnit = Object.freeze({
+    Second: 'second',
+    Minute: 'minute',
+    Hour: 'hour',
+    Day: 'day',
+    Week: 'week',
+} as const);
+
+export type FixedResolutionUnit = typeof FixedResolutionUnit[keyof typeof FixedResolutionUnit];
+
+export interface FixedResolution {
+    readonly amount: number;
+    readonly unit: FixedResolutionUnit;
+    readonly seconds: number;
+}
+
+/** Parses common fixed resolutions while intentionally excluding calendar months. */
+export function parseFixedResolution(resolution: string): FixedResolution {
     if (typeof resolution !== 'string' || resolution.trim().length === 0)
         throw new TypeError('sschart: resolution must be a non-empty string');
     const match = /^(\d+)([smhdwSMHDW]?)$/.exec(resolution.trim());
@@ -20,16 +36,26 @@ export function resolutionToSeconds(resolution: string): number {
     const amount = Number(match[1]);
     if (!Number.isSafeInteger(amount) || amount < 1)
         throw new RangeError('sschart: resolution amount must be a positive safe integer');
-    const unit = match[2].toLowerCase();
-    const multiplier = unit === 's' ? 1
-        : unit === 'h' ? 60 * 60
-            : unit === 'd' ? 24 * 60 * 60
-                : unit === 'w' ? 7 * 24 * 60 * 60
-                    : 60;
+    const symbol = match[2].toLowerCase();
+    const unit: FixedResolutionUnit = symbol === 's' ? FixedResolutionUnit.Second
+        : symbol === 'h' ? FixedResolutionUnit.Hour
+            : symbol === 'd' ? FixedResolutionUnit.Day
+                : symbol === 'w' ? FixedResolutionUnit.Week
+                    : FixedResolutionUnit.Minute;
+    const multiplier = unit === FixedResolutionUnit.Second ? 1
+        : unit === FixedResolutionUnit.Minute ? 60
+            : unit === FixedResolutionUnit.Hour ? 60 * 60
+                : unit === FixedResolutionUnit.Day ? 24 * 60 * 60
+                    : 7 * 24 * 60 * 60;
     const seconds = amount * multiplier;
     if (!Number.isSafeInteger(seconds))
         throw new RangeError('sschart: resolution is too large');
-    return seconds;
+    return Object.freeze({ amount, unit, seconds });
+}
+
+/** Converts common trading resolutions to a fixed duration. Calendar months are intentionally excluded. */
+export function resolutionToSeconds(resolution: string): number {
+    return parseFixedResolution(resolution).seconds;
 }
 
 /** Stable time-bucket OHLCV reduction. Empty market gaps do not create synthetic bars. */

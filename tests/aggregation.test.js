@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const {
     aggregateOhlcvBars,
     ohlcvDataViewBuilder,
+    parseFixedResolution,
     resolutionToSeconds,
 } = require('../src/data/aggregation.js');
 
@@ -52,6 +53,12 @@ describe('OHLCV aggregation', () => {
         assert.equal(resolutionToSeconds('1D'), 86400);
         assert.equal(resolutionToSeconds('1W'), 604800);
         assert.throws(() => resolutionToSeconds('1M'), /unsupported/);
+        assert.deepEqual(parseFixedResolution('15m'), {
+            amount: 15,
+            unit: 'minute',
+            seconds: 900,
+        });
+        assert.equal(Object.isFrozen(parseFixedResolution('2D')), true);
 
         const view = ohlcvDataViewBuilder([
             candle(0, 1, 2, 0, 1),

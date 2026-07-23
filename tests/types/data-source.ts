@@ -58,6 +58,7 @@ const data = new ChartDataController({
     initialGroupingLevel: 2,
     lodCacheSize: 6,
     autoScrollRealtime: true,
+    applySymbolTradingSchedule: true,
     reconnectPolicy: { initialDelayMs: 250, maxDelayMs: 5_000, maxAttempts: 5 },
     realtimeScheduler: scheduler,
 });

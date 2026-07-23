@@ -30,6 +30,7 @@ import {
     DataRequestCoordinator,
     type DataRequestTicket,
 } from './data-request-coordinator.js';
+import { TradingCalendar } from '../time/trading-calendar-engine.js';
 
 export const ChartDataStatus = Object.freeze({
     Idle: 'idle',
@@ -93,6 +94,8 @@ export interface ChartDataControllerOptions<
     readonly initialGroupingLevel?: number;
     readonly lodCacheSize?: number;
     readonly autoScrollRealtime?: boolean;
+    /** Applies SymbolInfo.tradingSchedule to the chart without changing the time-scale mode. */
+    readonly applySymbolTradingSchedule?: boolean;
     readonly reconnectPolicy?: RealtimeReconnectPolicy;
     readonly realtimeScheduler?: RealtimeScheduler;
 }
@@ -120,6 +123,8 @@ export class ChartDataController<
     private readonly renderedStore = new SeriesStore<TBar>();
     private groupingLevelValue: number;
     private readonly autoScrollRealtime: boolean;
+    private readonly applySymbolTradingSchedule: boolean;
+    private symbolTradingCalendarApplied = false;
     private readonly reconnectBackoff: RealtimeReconnectBackoff;
     private readonly realtimeScheduler: RealtimeScheduler;
     private realtimeUnsubscribe: Unsubscribe | null = null;
@@ -182,6 +187,12 @@ export class ChartDataController<
         this.autoScrollRealtime = options.autoScrollRealtime ?? false;
         if (typeof this.autoScrollRealtime !== 'boolean')
             throw new TypeError('sschart: chart data autoScrollRealtime must be boolean');
+        this.applySymbolTradingSchedule = options.applySymbolTradingSchedule ?? true;
+        if (typeof this.applySymbolTradingSchedule !== 'boolean') {
+            throw new TypeError(
+                'sschart: chart data applySymbolTradingSchedule must be boolean',
+            );
+        }
         this.realtimeScheduler = normalizeScheduler(
             options.realtimeScheduler ?? defaultRealtimeScheduler(),
         );
@@ -360,10 +371,11 @@ export class ChartDataController<
         selection: ChartDataSelection,
     ): Promise<SymbolInfo | null> {
         try {
-            const symbolInfo = validateSymbolInfo(await this.options.dataSource.resolveSymbol(
+            const resolvedSymbol = normalizeSymbolInfo(await this.options.dataSource.resolveSymbol(
                 { symbol: selection.symbol },
                 ticket.signal,
             ));
+            const symbolInfo = resolvedSymbol.info;
             if (!this.coordinator.isCurrent(ticket)) return null;
             this.setState({ status: ChartDataStatus.Loading, symbolInfo });
 
@@ -374,6 +386,7 @@ export class ChartDataController<
             }, ticket.signal));
             if (!this.coordinator.isCurrent(ticket)) return null;
 
+            this.applyTradingCalendar(resolvedSymbol.calendar);
             if (symbolInfo.priceFormat !== undefined) {
                 this.options.series.applyOptions({
                     priceFormat: symbolInfo.priceFormat,
@@ -407,6 +420,17 @@ export class ChartDataController<
             if (!this.coordinator.isCurrent(ticket) || ticket.signal.aborted) return null;
             this.setState({ status: ChartDataStatus.Error, error });
             throw error;
+        }
+    }
+
+    private applyTradingCalendar(calendar: TradingCalendar | null): void {
+        if (!this.applySymbolTradingSchedule) return;
+        if (calendar !== null) {
+            this.options.chart.applyOptions({ timeScale: { calendar } });
+            this.symbolTradingCalendarApplied = true;
+        } else if (this.symbolTradingCalendarApplied) {
+            this.options.chart.applyOptions({ timeScale: { calendar: undefined } });
+            this.symbolTradingCalendarApplied = false;
         }
     }
 
@@ -689,11 +713,24 @@ function selectionKey(value: ChartDataSelection | null): string {
     return value === null ? '' : `${value.symbol}\u0000${value.resolution}`;
 }
 
-function validateSymbolInfo(value: SymbolInfo): SymbolInfo {
+interface NormalizedSymbolInfo {
+    readonly info: SymbolInfo;
+    readonly calendar: TradingCalendar | null;
+}
+
+function normalizeSymbolInfo(value: SymbolInfo): NormalizedSymbolInfo {
     if (value === null || typeof value !== 'object')
         throw new TypeError('sschart: data source returned invalid symbol info');
     const id = nonEmpty(value.id, 'resolved symbol id');
-    return Object.freeze({ ...value, id });
+    const calendar = value.tradingSchedule === undefined
+        ? null
+        : new TradingCalendar(value.tradingSchedule);
+    const info = Object.freeze({
+        ...value,
+        id,
+        ...(calendar === null ? {} : { tradingSchedule: calendar.schedule() }),
+    });
+    return Object.freeze({ info, calendar });
 }
 
 function nonEmpty(value: string, name: string): string {

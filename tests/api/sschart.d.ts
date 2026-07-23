@@ -2,9 +2,13 @@
 export * from './core/chart-api.js';
 export * from './primitives/horizontal-line.js';
 export * from './primitives/trend-line.js';
+export * from './primitives/session-shading.js';
 export * from './data/index.js';
+export * from './time/index.js';
 
 // Public API module: core/chart-api.d.ts
+import { type TimeScaleFormatter } from '../time/time-axis-formatter.js';
+import type { ITradingCalendar, TradingSessionKind } from '../time/trading-calendar.js';
 import { type PaneOptions } from './model/pane-model.js';
 import { type BarsInfo, type MismatchDirectionValue } from './model/series-store.js';
 import { type ICommandStack } from './interaction/command-stack.js';
@@ -106,6 +110,12 @@ export declare const PriceScaleMode: {
     readonly IndexedTo100: 3;
 };
 export type PriceScaleModeValue = typeof PriceScaleMode[keyof typeof PriceScaleMode];
+export declare const TimeScaleMode: {
+    readonly Continuous: 'continuous';
+    readonly Ordinal: 'ordinal';
+    readonly SessionAware: 'session-aware';
+};
+export type TimeScaleModeValue = typeof TimeScaleMode[keyof typeof TimeScaleMode];
 export interface PriceLineOptions {
     price: number;
     color?: string;
@@ -170,6 +180,26 @@ export interface SeriesOptions {
     boxSize?: number;
     reversal?: number;
 }
+export interface TimeScaleOptions {
+    borderColor?: string;
+    timeVisible?: boolean;
+    secondsVisible?: boolean;
+    visible?: boolean;
+    /** Explicit time-domain mapping. Defaults to continuous. */
+    mode?: TimeScaleModeValue;
+    /** Required by session-aware mode. */
+    calendar?: ITradingCalendar;
+    /** Sessions retained by session-aware mode. Omit to retain every kind. */
+    sessionKinds?: readonly TradingSessionKind[];
+    /** BCP 47 locale. Defaults to deterministic en-GB. */
+    locale?: string;
+    /** IANA timezone. Defaults to the calendar timezone, then UTC. */
+    timeZone?: string;
+    /** Optional formatter shared by tick and crosshair labels. */
+    formatter?: TimeScaleFormatter;
+    /** @deprecated Use mode: TimeScaleMode.Ordinal. */
+    ordinal?: boolean;
+}
 export interface ChartOptions {
     width?: number;
     height?: number;
@@ -219,13 +249,7 @@ export interface ChartOptions {
             bottom?: number;
         };
     };
-    timeScale?: {
-        borderColor?: string;
-        timeVisible?: boolean;
-        secondsVisible?: boolean;
-        visible?: boolean;
-        ordinal?: boolean;
-    };
+    timeScale?: TimeScaleOptions;
     crosshair?: {
         vertLine?: {
             color?: string;
@@ -911,6 +935,21 @@ export interface OhlcvAggregationOptions {
     readonly intervalSeconds: number;
     readonly originTime?: number;
 }
+export declare const FixedResolutionUnit: Readonly<{
+    readonly Second: 'second';
+    readonly Minute: 'minute';
+    readonly Hour: 'hour';
+    readonly Day: 'day';
+    readonly Week: 'week';
+}>;
+export type FixedResolutionUnit = typeof FixedResolutionUnit[keyof typeof FixedResolutionUnit];
+export interface FixedResolution {
+    readonly amount: number;
+    readonly unit: FixedResolutionUnit;
+    readonly seconds: number;
+}
+/** Parses common fixed resolutions while intentionally excluding calendar months. */
+export declare function parseFixedResolution(resolution: string): FixedResolution;
 /** Converts common trading resolutions to a fixed duration. Calendar months are intentionally excluded. */
 export declare function resolutionToSeconds(resolution: string): number;
 /** Stable time-bucket OHLCV reduction. Empty market gaps do not create synthetic bars. */
@@ -987,6 +1026,8 @@ export interface ChartDataControllerOptions<TBar extends TimedSeriesData, TSerie
     readonly initialGroupingLevel?: number;
     readonly lodCacheSize?: number;
     readonly autoScrollRealtime?: boolean;
+    /** Applies SymbolInfo.tradingSchedule to the chart without changing the time-scale mode. */
+    readonly applySymbolTradingSchedule?: boolean;
     readonly reconnectPolicy?: RealtimeReconnectPolicy;
     readonly realtimeScheduler?: RealtimeScheduler;
 }
@@ -1006,6 +1047,8 @@ export declare class ChartDataController<TBar extends TimedSeriesData, TSeriesOp
     private readonly renderedStore;
     private groupingLevelValue;
     private readonly autoScrollRealtime;
+    private readonly applySymbolTradingSchedule;
+    private symbolTradingCalendarApplied;
     private readonly reconnectBackoff;
     private readonly realtimeScheduler;
     private realtimeUnsubscribe;
@@ -1035,6 +1078,7 @@ export declare class ChartDataController<TBar extends TimedSeriesData, TSeriesOp
     dispose(): void;
     private startLoad;
     private load;
+    private applyTradingCalendar;
     private prefetchForRange;
     private loadHistory;
     private viewContext;
@@ -1111,19 +1155,21 @@ export declare class DataRequestCoordinator {
 
 // Public API module: data/data-source.d.ts
 import type { CandlestickData, PriceFormat, Time, TimedSeriesData } from '../core/chart-api.js';
+import type { TradingSchedule } from '../time/trading-calendar.js';
 export interface OhlcvBar extends CandlestickData {
     readonly volume?: number;
 }
 export interface ResolveSymbolRequest {
     readonly symbol: string;
 }
-/** Datafeed-owned identity and display metadata. Session fields arrive in M5. */
+/** Datafeed-owned identity, display metadata and optional exchange calendar. */
 export interface SymbolInfo {
     readonly id: string;
     readonly ticker?: string;
     readonly name?: string;
     readonly exchange?: string;
     readonly priceFormat?: PriceFormat;
+    readonly tradingSchedule?: TradingSchedule;
     readonly metadata?: Readonly<Record<string, unknown>>;
 }
 export interface BarsRequest {
@@ -1289,6 +1335,54 @@ export declare class HorizontalLine implements IChartPrimitive {
     private draw;
 }
 
+// Public API module: primitives/session-shading.d.ts
+import { type IChartPrimitive, type PrimitiveAttachedContext, type PrimitivePaneView, type PrimitiveZOrder as PrimitiveZOrderValue } from '../core/chart-api.js';
+import { type ITradingCalendar, type TradingSession, type TradingSessionKind as TradingSessionKindValue } from '../time/trading-calendar.js';
+export interface SessionShadingStyle {
+    readonly color?: string;
+    readonly visible?: boolean;
+}
+export interface SessionShadingOptions {
+    readonly id?: string;
+    readonly calendar: ITradingCalendar;
+    readonly styles?: Partial<Record<TradingSessionKindValue, SessionShadingStyle>>;
+    readonly zOrder?: PrimitiveZOrderValue;
+}
+export type SessionShadingOptionsPatch = Partial<Omit<SessionShadingOptions, 'id'>>;
+export interface ResolvedSessionShadingStyle {
+    readonly color: string;
+    readonly visible: boolean;
+}
+export interface ResolvedSessionShadingOptions {
+    readonly id: string;
+    readonly calendar: ITradingCalendar;
+    readonly styles: Readonly<Record<TradingSessionKindValue, ResolvedSessionShadingStyle>>;
+    readonly zOrder: PrimitiveZOrderValue;
+}
+/** Calendar-backed pane background implemented only through the public primitive API. */
+export declare class SessionShading implements IChartPrimitive {
+    private readonly stableId;
+    private readonly model;
+    private context;
+    private range;
+    private sessions;
+    private cache;
+    private readonly renderer;
+    private readonly paneView;
+    constructor(options: SessionShadingOptions);
+    id(): string;
+    options(): ResolvedSessionShadingOptions;
+    visibleSessions(): readonly TradingSession[];
+    applyOptions(patch: SessionShadingOptionsPatch): void;
+    attached(context: PrimitiveAttachedContext): void;
+    detached(): void;
+    updateAllViews(): void;
+    paneViews(): readonly PrimitivePaneView[];
+    private refresh;
+    private invalidateCache;
+    private draw;
+}
+
 // Public API module: primitives/trend-line.d.ts
 import type { AutoscaleInfo, HitTestContext, IChartPrimitive, LineStyleValue, LogicalRange, PrimitiveAttachedContext, PrimitiveHit, PrimitiveInteractionEvent, PrimitivePaneView, PrimitiveZOrder as PrimitiveZOrderValue, Time } from '../core/chart-api.js';
 export interface TrendLinePoint {
@@ -1446,3 +1540,183 @@ export declare function unregisterSeries(type: string): boolean;
 export declare function getSeriesDefinition(type: string): CustomSeriesDefinition<any, any> | undefined;
 export declare function getSeriesTypes(): readonly string[];
 export {};
+
+// Public API module: time/bar-clock.d.ts
+import type { Time } from '../core/chart-api.js';
+import { type ITradingCalendar, type TradingSession, type TradingSessionKind as TradingSessionKindValue } from './trading-calendar.js';
+export declare const BarClockState: Readonly<{
+    readonly Pending: 'pending';
+    readonly Open: 'open';
+    readonly Closed: 'closed';
+}>;
+export type BarClockState = typeof BarClockState[keyof typeof BarClockState];
+export interface BarClockOptions {
+    readonly calendar?: ITradingCalendar;
+    /** Defaults to regular sessions when a calendar is present. */
+    readonly sessionKinds?: readonly TradingSessionKindValue[];
+}
+export interface TradingBarBounds {
+    readonly resolution: string;
+    readonly intervalSeconds: number;
+    readonly openTime: Time;
+    readonly closeTime: Time;
+    readonly durationSeconds: number;
+    readonly session: TradingSession | null;
+}
+export interface BarCountdown {
+    readonly state: BarClockState;
+    readonly now: Time;
+    readonly bounds: TradingBarBounds;
+    readonly untilOpenSeconds: number;
+    readonly elapsedSeconds: number;
+    readonly remainingSeconds: number;
+    readonly progress: number;
+}
+/**
+ * Resolves the close of a feed bar from its open timestamp. Intraday bars are
+ * truncated at their owning session close; D/W bars advance by local trading
+ * dates rather than by browser-local midnights.
+ */
+export declare function resolveTradingBarBounds(barOpenTime: Time, resolution: string, options?: BarClockOptions): TradingBarBounds | null;
+/** Deterministic countdown snapshot. The caller owns the clock and supplies now. */
+export declare function calculateBarCountdown(barOpenTime: Time, resolution: string, now: Time, options?: BarClockOptions): BarCountdown | null;
+
+// Public API module: time/index.d.ts
+export * from './trading-calendar.js';
+export * from './trading-calendar-engine.js';
+export * from './time-axis-formatter.js';
+export * from './bar-clock.js';
+
+// Public API module: time/time-axis-formatter.d.ts
+import type { Time } from '../core/chart-api.js';
+export declare const TimeScaleLabelKind: Readonly<{
+    readonly Tick: 'tick';
+    readonly Crosshair: 'crosshair';
+}>;
+export type TimeScaleLabelKind = typeof TimeScaleLabelKind[keyof typeof TimeScaleLabelKind];
+export interface TimeScaleFormatContext {
+    readonly kind: TimeScaleLabelKind;
+    readonly locale: string;
+    readonly timeZone: string;
+    readonly timeVisible: boolean;
+    readonly secondsVisible: boolean;
+    readonly tickStep: number | null;
+}
+export type TimeScaleFormatter = (time: Time, context: TimeScaleFormatContext) => string;
+export interface TimeAxisFormatterOptions {
+    readonly locale?: string;
+    readonly timeZone?: string;
+    readonly timeVisible?: boolean;
+    readonly secondsVisible?: boolean;
+    readonly formatter?: TimeScaleFormatter;
+}
+/** Cached Intl formatter shared by time-axis ticks and crosshair labels. */
+export declare class TimeAxisFormatter {
+    readonly locale: string;
+    readonly timeZone: string;
+    private readonly timeVisible;
+    private readonly secondsVisible;
+    private readonly custom;
+    private readonly formatters;
+    private readonly partsFormatter;
+    constructor(options?: TimeAxisFormatterOptions);
+    formatCrosshair(time: Time): string;
+    formatTick(time: Time, step: number): string;
+    private tryCustom;
+    private format;
+    private localDateParts;
+}
+
+// Public API module: time/trading-calendar-engine.d.ts
+import type { Time, TimeRange } from '../core/chart-api.js';
+import { type ITradingCalendar, type TradingSchedule, type TradingSession, type TradingSessionKind as TradingSessionKindValue } from './trading-calendar.js';
+/** IANA/DST-aware materializer for recurring exchange sessions. */
+export declare class TradingCalendar implements ITradingCalendar {
+    private readonly scheduleValue;
+    private readonly formatter;
+    private readonly holidays;
+    private readonly overrides;
+    private readonly sessionCache;
+    private readonly offsetCache;
+    constructor(schedule: TradingSchedule);
+    schedule(): TradingSchedule;
+    sessionsInRange(range: TimeRange, kinds?: readonly TradingSessionKindValue[]): readonly TradingSession[];
+    sessionAt(time: Time, kinds?: readonly TradingSessionKindValue[]): TradingSession | null;
+    isTradingTime(time: Time, kinds?: readonly TradingSessionKindValue[]): boolean;
+    nextSession(time: Time, kinds?: readonly TradingSessionKindValue[]): TradingSession | null;
+    previousSession(time: Time, kinds?: readonly TradingSessionKindValue[]): TradingSession | null;
+    private sessionsForDate;
+    private materialize;
+    private localDateAt;
+    private parseDate;
+    private isoWeekday;
+    private localParts;
+    private toUtc;
+    private offsetsForDate;
+}
+
+// Public API module: time/trading-calendar.d.ts
+import type { Time, TimeRange } from '../core/chart-api.js';
+/** ISO-8601 weekday: Monday is 1 and Sunday is 7. */
+export type IsoWeekday = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+/** Calendar-local date in the strict YYYY-MM-DD form. */
+export type LocalDate = string;
+export interface LocalTimeOfDay {
+    readonly hour: number;
+    readonly minute: number;
+    readonly second?: number;
+}
+export declare const TradingSessionKind: Readonly<{
+    readonly PreMarket: 'pre-market';
+    readonly Regular: 'regular';
+    readonly PostMarket: 'post-market';
+}>;
+export type TradingSessionKind = typeof TradingSessionKind[keyof typeof TradingSessionKind];
+/** One local-time session shape, reusable by weekly rules and date overrides. */
+export interface TradingSessionTemplate {
+    readonly id: string;
+    readonly kind: TradingSessionKind;
+    readonly open: LocalTimeOfDay;
+    readonly close: LocalTimeOfDay;
+    /** Explicitly places close on the opening day (0) or the following local day (1). */
+    readonly closeDayOffset?: 0 | 1;
+}
+/** A recurring session whose weekday is the local date on which it opens. */
+export interface TradingSessionRule extends TradingSessionTemplate {
+    readonly weekdays: readonly IsoWeekday[];
+}
+/** Replaces every recurring session for one local trading date, e.g. an early close. */
+export interface TradingDayOverride {
+    readonly date: LocalDate;
+    readonly sessions: readonly TradingSessionTemplate[];
+}
+export interface TradingSchedule {
+    readonly id?: string;
+    /** IANA timezone, for example America/New_York or Europe/Moscow. */
+    readonly timeZone: string;
+    readonly sessions: readonly TradingSessionRule[];
+    /** Fully closed local trading dates. */
+    readonly holidays?: readonly LocalDate[];
+    /** Date-specific replacement sessions. */
+    readonly overrides?: readonly TradingDayOverride[];
+}
+/** One concrete half-open UTC interval [openTime, closeTime). */
+export interface TradingSession {
+    readonly id: string;
+    readonly ruleId: string;
+    readonly kind: TradingSessionKind;
+    readonly tradingDate: LocalDate;
+    readonly openTime: Time;
+    readonly closeTime: Time;
+    readonly isOverride: boolean;
+}
+/** Immutable calendar boundary used by scale, shading and bar-clock features. */
+export interface ITradingCalendar {
+    schedule(): TradingSchedule;
+    /** Returns sessions intersecting the half-open UTC range [from, to). */
+    sessionsInRange(range: TimeRange, kinds?: readonly TradingSessionKind[]): readonly TradingSession[];
+    sessionAt(time: Time, kinds?: readonly TradingSessionKind[]): TradingSession | null;
+    isTradingTime(time: Time, kinds?: readonly TradingSessionKind[]): boolean;
+    nextSession(time: Time, kinds?: readonly TradingSessionKind[]): TradingSession | null;
+    previousSession(time: Time, kinds?: readonly TradingSessionKind[]): TradingSession | null;
+}

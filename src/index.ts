@@ -4,4 +4,6 @@
 export * from './core/chart-api.js';
 export * from './primitives/horizontal-line.js';
 export * from './primitives/trend-line.js';
+export * from './primitives/session-shading.js';
 export * from './data/index.js';
+export * from './time/index.js';
