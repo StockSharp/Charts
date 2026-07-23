@@ -12,3 +12,4 @@ export * from './drawings/index.js';
 export * from './persistence/index.js';
 export * from './workspace/index.js';
 export * from './orderflow/index.js';
+export * from './trading/index.js';

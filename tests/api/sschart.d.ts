@@ -10,6 +10,7 @@ export * from './drawings/index.js';
 export * from './persistence/index.js';
 export * from './workspace/index.js';
 export * from './orderflow/index.js';
+export * from './trading/index.js';
 
 // Public API module: core/chart-api.d.ts
 import { type TimeScaleFormatter } from '../time/time-axis-formatter.js';
@@ -6788,6 +6789,612 @@ export interface ITradingCalendar {
     isTradingTime(time: Time, kinds?: readonly TradingSessionKind[]): boolean;
     nextSession(time: Time, kinds?: readonly TradingSessionKind[]): TradingSession | null;
     previousSession(time: Time, kinds?: readonly TradingSessionKind[]): TradingSession | null;
+}
+
+// Public API module: trading/index.d.ts
+export * from './model.js';
+export * from './trading-layer.js';
+export * from './trading-layer-primitive.js';
+export * from './trading-order-placement-adapter.js';
+
+// Public API module: trading/model.d.ts
+import type { Time } from '../core/chart-api.js';
+export declare const TradingSide: Readonly<{
+    readonly Buy: 'buy';
+    readonly Sell: 'sell';
+}>;
+export type TradingSide = typeof TradingSide[keyof typeof TradingSide];
+export declare const ChartOrderType: Readonly<{
+    readonly Market: 'market';
+    readonly Limit: 'limit';
+    readonly Stop: 'stop';
+    readonly StopLimit: 'stop-limit';
+}>;
+export type ChartOrderType = typeof ChartOrderType[keyof typeof ChartOrderType];
+export declare const ChartOrderStatus: Readonly<{
+    readonly Pending: 'pending';
+    readonly Working: 'working';
+    readonly PartiallyFilled: 'partially-filled';
+    readonly Filled: 'filled';
+    readonly Cancelled: 'cancelled';
+    readonly Rejected: 'rejected';
+    readonly Expired: 'expired';
+}>;
+export type ChartOrderStatus = typeof ChartOrderStatus[keyof typeof ChartOrderStatus];
+export declare const ChartOrderTimeInForce: Readonly<{
+    readonly Day: 'day';
+    readonly GoodTillCancelled: 'good-till-cancelled';
+    readonly ImmediateOrCancel: 'immediate-or-cancel';
+    readonly FillOrKill: 'fill-or-kill';
+}>;
+export type ChartOrderTimeInForce = typeof ChartOrderTimeInForce[keyof typeof ChartOrderTimeInForce];
+export declare const ChartPositionSide: Readonly<{
+    readonly Long: 'long';
+    readonly Short: 'short';
+}>;
+export type ChartPositionSide = typeof ChartPositionSide[keyof typeof ChartPositionSide];
+export declare const ChartBracketRole: Readonly<{
+    readonly Entry: 'entry';
+    readonly StopLoss: 'stop-loss';
+    readonly TakeProfit: 'take-profit';
+}>;
+export type ChartBracketRole = typeof ChartBracketRole[keyof typeof ChartBracketRole];
+export declare const ChartExecutionLiquidity: Readonly<{
+    readonly Maker: 'maker';
+    readonly Taker: 'taker';
+    readonly Unknown: 'unknown';
+}>;
+export type ChartExecutionLiquidity = typeof ChartExecutionLiquidity[keyof typeof ChartExecutionLiquidity];
+export declare const TradingIntentKind: Readonly<{
+    readonly PlaceOrder: 'place-order';
+    readonly ModifyOrder: 'modify-order';
+    readonly CancelOrder: 'cancel-order';
+    readonly ClosePosition: 'close-position';
+    readonly ReversePosition: 'reverse-position';
+    readonly CreateStopLoss: 'create-stop-loss';
+    readonly EditStopLoss: 'edit-stop-loss';
+    readonly RemoveStopLoss: 'remove-stop-loss';
+    readonly CreateTakeProfit: 'create-take-profit';
+    readonly EditTakeProfit: 'edit-take-profit';
+    readonly RemoveTakeProfit: 'remove-take-profit';
+}>;
+export type TradingIntentKind = typeof TradingIntentKind[keyof typeof TradingIntentKind];
+export interface TradingModelNormalizationOptions {
+    readonly tickSize: number;
+    /** Tick-grid origin. Defaults to zero. */
+    readonly priceOrigin?: number;
+    /** Optional quantity grid. Quantities remain positive finite numbers when omitted. */
+    readonly quantityStep?: number;
+}
+export interface ChartBracketRelationship {
+    readonly groupId: string;
+    readonly role: ChartBracketRole;
+    /** Protection orders point either at their entry order or at an open position. */
+    readonly parentOrderId?: string;
+    readonly positionId?: string;
+}
+export interface ChartOrderPermissions {
+    readonly canModify: boolean;
+    readonly canCancel: boolean;
+}
+/** Canonical broker-owned order snapshot. The chart never mutates this object optimistically. */
+export interface ChartOrder {
+    readonly id: string;
+    readonly revision?: number;
+    readonly side: TradingSide;
+    readonly type: ChartOrderType;
+    readonly status: ChartOrderStatus;
+    readonly timeInForce: ChartOrderTimeInForce;
+    readonly quantity: number;
+    readonly filledQuantity: number;
+    readonly price?: number;
+    readonly stopPrice?: number;
+    readonly averageFillPrice?: number;
+    readonly createdAt?: Time;
+    readonly updatedAt?: Time;
+    readonly bracket?: ChartBracketRelationship;
+    /** Missing permissions make the entity read-only. */
+    readonly permissions?: ChartOrderPermissions;
+    readonly label?: string;
+    readonly statusReason?: string;
+}
+export interface ChartPnlSnapshot {
+    readonly realized: number;
+    readonly unrealized: number;
+    readonly currency?: string;
+    readonly markPrice?: number;
+    readonly time?: Time;
+}
+export interface ChartPositionPermissions {
+    readonly canClose: boolean;
+    readonly canReverse: boolean;
+    readonly canProtect: boolean;
+}
+/** Canonical broker-owned position. Quantity is positive; direction lives only in side. */
+export interface ChartPosition {
+    readonly id: string;
+    readonly revision?: number;
+    readonly side: ChartPositionSide;
+    readonly quantity: number;
+    readonly averagePrice: number;
+    readonly openedAt?: Time;
+    readonly pnl?: ChartPnlSnapshot;
+    readonly permissions?: ChartPositionPermissions;
+    readonly label?: string;
+}
+export interface ChartExecution {
+    readonly id: string;
+    readonly orderId?: string;
+    readonly positionId?: string;
+    readonly time: Time;
+    readonly side: TradingSide;
+    readonly price: number;
+    readonly quantity: number;
+    readonly liquidity?: ChartExecutionLiquidity;
+    /** Signed fee: a negative value represents a rebate. */
+    readonly fee?: number;
+    readonly feeCurrency?: string;
+}
+/** One-sided quotes are valid; at least one of bid, ask or last must be present. */
+export interface ChartQuote {
+    readonly time: Time;
+    readonly bidPrice?: number;
+    readonly bidSize?: number;
+    readonly askPrice?: number;
+    readonly askSize?: number;
+    readonly lastPrice?: number;
+    readonly lastSize?: number;
+}
+export interface ChartOrderRequest {
+    readonly clientOrderId?: string;
+    readonly side: TradingSide;
+    readonly type: ChartOrderType;
+    readonly timeInForce: ChartOrderTimeInForce;
+    readonly quantity: number;
+    readonly price?: number;
+    readonly stopPrice?: number;
+    readonly bracketGroupId?: string;
+}
+export interface ChartOrderModification {
+    readonly quantity?: number;
+    readonly price?: number;
+    readonly stopPrice?: number;
+    readonly timeInForce?: ChartOrderTimeInForce;
+}
+export interface TradingIntentBase<TKind extends TradingIntentKind = TradingIntentKind> {
+    readonly intentId: string;
+    readonly kind: TKind;
+    /** Unix seconds at which the chart emitted the intent. */
+    readonly createdAt: Time;
+}
+export interface PlaceOrderIntent extends TradingIntentBase<typeof TradingIntentKind.PlaceOrder> {
+    readonly order: ChartOrderRequest;
+}
+export interface ModifyOrderIntent extends TradingIntentBase<typeof TradingIntentKind.ModifyOrder> {
+    readonly orderId: string;
+    readonly expectedRevision?: number;
+    readonly changes: ChartOrderModification;
+}
+export interface CancelOrderIntent extends TradingIntentBase<typeof TradingIntentKind.CancelOrder> {
+    readonly orderId: string;
+    readonly expectedRevision?: number;
+}
+export interface ClosePositionIntent extends TradingIntentBase<typeof TradingIntentKind.ClosePosition> {
+    readonly positionId: string;
+    readonly expectedRevision?: number;
+    /** Omitted quantity means close the complete canonical position. */
+    readonly quantity?: number;
+}
+export interface ReversePositionIntent extends TradingIntentBase<typeof TradingIntentKind.ReversePosition> {
+    readonly positionId: string;
+    readonly expectedRevision?: number;
+    /** Omitted quantity means open the same quantity on the opposite side. */
+    readonly quantity?: number;
+}
+export interface CreateStopLossIntent extends TradingIntentBase<typeof TradingIntentKind.CreateStopLoss> {
+    readonly positionId: string;
+    readonly price: number;
+    readonly quantity?: number;
+    readonly clientOrderId?: string;
+    readonly bracketGroupId?: string;
+}
+export interface EditStopLossIntent extends TradingIntentBase<typeof TradingIntentKind.EditStopLoss> {
+    readonly orderId: string;
+    readonly expectedRevision?: number;
+    readonly price: number;
+    readonly quantity?: number;
+}
+export interface RemoveStopLossIntent extends TradingIntentBase<typeof TradingIntentKind.RemoveStopLoss> {
+    readonly orderId: string;
+    readonly expectedRevision?: number;
+}
+export interface CreateTakeProfitIntent extends TradingIntentBase<typeof TradingIntentKind.CreateTakeProfit> {
+    readonly positionId: string;
+    readonly price: number;
+    readonly quantity?: number;
+    readonly clientOrderId?: string;
+    readonly bracketGroupId?: string;
+}
+export interface EditTakeProfitIntent extends TradingIntentBase<typeof TradingIntentKind.EditTakeProfit> {
+    readonly orderId: string;
+    readonly expectedRevision?: number;
+    readonly price: number;
+    readonly quantity?: number;
+}
+export interface RemoveTakeProfitIntent extends TradingIntentBase<typeof TradingIntentKind.RemoveTakeProfit> {
+    readonly orderId: string;
+    readonly expectedRevision?: number;
+}
+export type TradingIntent = PlaceOrderIntent | ModifyOrderIntent | CancelOrderIntent | ClosePositionIntent | ReversePositionIntent | CreateStopLossIntent | EditStopLossIntent | RemoveStopLossIntent | CreateTakeProfitIntent | EditTakeProfitIntent | RemoveTakeProfitIntent;
+export declare function normalizeChartOrder(value: ChartOrder, options: TradingModelNormalizationOptions): ChartOrder;
+export declare function normalizeChartOrders(values: readonly ChartOrder[], options: TradingModelNormalizationOptions): readonly ChartOrder[];
+export declare function normalizeChartPosition(value: ChartPosition, options: TradingModelNormalizationOptions): ChartPosition;
+export declare function normalizeChartPositions(values: readonly ChartPosition[], options: TradingModelNormalizationOptions): readonly ChartPosition[];
+export declare function normalizeChartExecution(value: ChartExecution, options: TradingModelNormalizationOptions): ChartExecution;
+export declare function normalizeChartExecutions(values: readonly ChartExecution[], options: TradingModelNormalizationOptions): readonly ChartExecution[];
+export declare function normalizeChartQuote(value: ChartQuote, options: TradingModelNormalizationOptions): ChartQuote;
+export declare function normalizeChartOrderRequest(value: ChartOrderRequest, options: TradingModelNormalizationOptions): ChartOrderRequest;
+export declare function normalizeTradingIntent(value: TradingIntent, options: TradingModelNormalizationOptions): TradingIntent;
+export declare function chartOrderRemainingQuantity(order: ChartOrder): number;
+export declare function chartPnlTotal(pnl: ChartPnlSnapshot): number;
+export declare function normalizeTradingModelOptions(options: TradingModelNormalizationOptions): TradingModelNormalizationOptions;
+/** Quantizes an interactive preview onto the same grid used by canonical validation. */
+export declare function quantizeTradingPrice(value: number, options: TradingModelNormalizationOptions): number;
+
+// Public API module: trading/trading-layer-primitive.d.ts
+import type { AutoscaleInfo, HitTestContext, IChartPrimitive, LogicalRange, PrimitiveAttachedContext, PrimitiveAxisView, PrimitiveHit, PrimitiveInteractionEvent, PrimitivePaneView, PrimitiveZOrder as PrimitiveZOrderValue } from '../core/chart-api.js';
+import { type ChartExecution, type ChartOrder, type ChartPosition, type ChartQuote } from './model.js';
+import type { ITradingLayer } from './trading-layer.js';
+export declare const TradingPrimitiveEntityKind: Readonly<{
+    readonly Order: 'order';
+    readonly Position: 'position';
+    readonly Execution: 'execution';
+    readonly Quote: 'quote';
+}>;
+export type TradingPrimitiveEntityKind = typeof TradingPrimitiveEntityKind[keyof typeof TradingPrimitiveEntityKind];
+export declare const TradingQuoteKind: Readonly<{
+    readonly Bid: 'bid';
+    readonly Ask: 'ask';
+    readonly Last: 'last';
+}>;
+export type TradingQuoteKind = typeof TradingQuoteKind[keyof typeof TradingQuoteKind];
+export interface TradingLayerPrimitiveOptions {
+    readonly id?: string;
+    readonly showOrders?: boolean;
+    readonly showInactiveOrders?: boolean;
+    readonly showPositions?: boolean;
+    readonly showExecutions?: boolean;
+    readonly showExecutionLabels?: boolean;
+    readonly showQuote?: boolean;
+    readonly showPnl?: boolean;
+    readonly showBrackets?: boolean;
+    readonly autoscale?: boolean;
+    readonly orderBuyColor?: string;
+    readonly orderSellColor?: string;
+    readonly inactiveOrderColor?: string;
+    readonly longPositionColor?: string;
+    readonly shortPositionColor?: string;
+    readonly executionBuyColor?: string;
+    readonly executionSellColor?: string;
+    readonly bidColor?: string;
+    readonly askColor?: string;
+    readonly lastColor?: string;
+    readonly bracketColor?: string;
+    readonly lineWidth?: number;
+    readonly fontSize?: number;
+    /** Vertical media-coordinate distance between adjacent order labels. */
+    readonly orderLabelSpacing?: number;
+    readonly zOrder?: PrimitiveZOrderValue;
+    readonly priceFormatter?: (price: number) => string;
+    readonly quantityFormatter?: (quantity: number) => string;
+    readonly pnlFormatter?: (pnl: number, currency?: string) => string;
+}
+export type TradingLayerPrimitiveOptionsPatch = Partial<Omit<TradingLayerPrimitiveOptions, 'id'>>;
+export interface ResolvedTradingLayerPrimitiveOptions {
+    readonly id: string;
+    readonly showOrders: boolean;
+    readonly showInactiveOrders: boolean;
+    readonly showPositions: boolean;
+    readonly showExecutions: boolean;
+    readonly showExecutionLabels: boolean;
+    readonly showQuote: boolean;
+    readonly showPnl: boolean;
+    readonly showBrackets: boolean;
+    readonly autoscale: boolean;
+    readonly orderBuyColor: string;
+    readonly orderSellColor: string;
+    readonly inactiveOrderColor: string;
+    readonly longPositionColor: string;
+    readonly shortPositionColor: string;
+    readonly executionBuyColor: string;
+    readonly executionSellColor: string;
+    readonly bidColor: string;
+    readonly askColor: string;
+    readonly lastColor: string;
+    readonly bracketColor: string;
+    readonly lineWidth: number;
+    readonly fontSize: number;
+    readonly orderLabelSpacing: number;
+    readonly zOrder: PrimitiveZOrderValue;
+    readonly priceFormatter: (price: number) => string;
+    readonly quantityFormatter: (quantity: number) => string;
+    readonly pnlFormatter: (pnl: number, currency?: string) => string;
+}
+export interface TradingOrderHitData {
+    readonly kind: 'trading';
+    readonly entityKind: typeof TradingPrimitiveEntityKind.Order;
+    readonly part: 'line' | 'label';
+    readonly id: string;
+    readonly order: ChartOrder;
+}
+export interface TradingPositionHitData {
+    readonly kind: 'trading';
+    readonly entityKind: typeof TradingPrimitiveEntityKind.Position;
+    readonly part: 'line' | 'label';
+    readonly id: string;
+    readonly position: ChartPosition;
+}
+export interface TradingExecutionHitData {
+    readonly kind: 'trading';
+    readonly entityKind: typeof TradingPrimitiveEntityKind.Execution;
+    readonly part: 'marker' | 'label';
+    readonly id: string;
+    readonly execution: ChartExecution;
+}
+export interface TradingQuoteHitData {
+    readonly kind: 'trading';
+    readonly entityKind: typeof TradingPrimitiveEntityKind.Quote;
+    readonly part: 'line';
+    readonly id: TradingQuoteKind;
+    readonly quoteKind: TradingQuoteKind;
+    readonly quote: ChartQuote;
+    readonly price: number;
+}
+export type TradingPrimitiveHitData = TradingOrderHitData | TradingPositionHitData | TradingExecutionHitData | TradingQuoteHitData;
+/** Read-only renderer for canonical TradingLayer state. Interaction emits intents in a separate layer. */
+export declare class TradingLayerPrimitive implements IChartPrimitive {
+    private readonly layer;
+    private readonly stableId;
+    private readonly model;
+    private context;
+    private snapshot;
+    private plot;
+    private rendered;
+    private axisViews;
+    private readonly orderLabelOffsets;
+    private readonly orderPreviews;
+    private drag;
+    private readonly renderer;
+    private readonly paneView;
+    private readonly stateListener;
+    private readonly outcomeListener;
+    constructor(layer: ITradingLayer, options?: TradingLayerPrimitiveOptions);
+    id(): string;
+    options(): ResolvedTradingLayerPrimitiveOptions;
+    applyOptions(patch: TradingLayerPrimitiveOptionsPatch): void;
+    attached(context: PrimitiveAttachedContext): void;
+    detached(): void;
+    updateAllViews(): void;
+    paneViews(): readonly PrimitivePaneView[];
+    priceAxisViews(): readonly PrimitiveAxisView[];
+    autoscaleInfo(_range: LogicalRange): AutoscaleInfo | null;
+    hitTest(point: Readonly<{
+        x: number;
+        y: number;
+    }>, context: HitTestContext): PrimitiveHit | null;
+    onPointerDown(event: PrimitiveInteractionEvent): void;
+    onPointerMove(event: PrimitiveInteractionEvent): void;
+    onPointerUp(): void;
+    onPointerCancel(): void;
+    private hitRendered;
+    private draw;
+    private drawMedia;
+    private drawQuote;
+    private drawPositions;
+    private drawOrders;
+    private drawBracketGroups;
+    private drawExecutions;
+    private orderLabel;
+    private positionLabel;
+    private visibleOrders;
+    private orderDraggable;
+    private canonicalOrderDraggable;
+    private coordinate;
+    private rebuildAxisViews;
+    private pruneOrderLayout;
+}
+export declare function isTradingPrimitiveHitData(value: unknown): value is TradingPrimitiveHitData;
+
+// Public API module: trading/trading-layer.d.ts
+import type { Time } from '../core/chart-api.js';
+import type { Unsubscribe } from '../data/data-source.js';
+import { type CancelOrderIntent, type ChartExecution, type ChartOrder, type ChartOrderModification, type ChartOrderRequest, type ChartPosition, type ChartQuote, type ClosePositionIntent, type CreateStopLossIntent, type CreateTakeProfitIntent, type EditStopLossIntent, type EditTakeProfitIntent, type ModifyOrderIntent, type PlaceOrderIntent, type RemoveStopLossIntent, type RemoveTakeProfitIntent, type ReversePositionIntent, type TradingIntent, type TradingModelNormalizationOptions } from './model.js';
+export declare const TradingLayerChangeKind: Readonly<{
+    readonly Orders: 'orders';
+    readonly Positions: 'positions';
+    readonly Executions: 'executions';
+    readonly Quote: 'quote';
+}>;
+export type TradingLayerChangeKind = typeof TradingLayerChangeKind[keyof typeof TradingLayerChangeKind];
+export declare const TradingIntentOutcomeStatus: Readonly<{
+    readonly Accepted: 'accepted';
+    readonly Rejected: 'rejected';
+}>;
+export type TradingIntentOutcomeStatus = typeof TradingIntentOutcomeStatus[keyof typeof TradingIntentOutcomeStatus];
+export interface TradingLayerOptions extends TradingModelNormalizationOptions {
+    /** Injectable Unix-seconds clock for deterministic hosts/tests. */
+    readonly clock?: () => Time;
+    /** Injectable stable request id factory. Sequence starts at one per layer. */
+    readonly intentIdFactory?: (sequence: number) => string;
+}
+export interface TradingEntityUpdate<TEntity> {
+    readonly previous: TEntity;
+    readonly current: TEntity;
+}
+export interface TradingCollectionChange<TEntity, TKind extends TradingLayerChangeKind> {
+    readonly kind: TKind;
+    readonly version: number;
+    readonly added: readonly TEntity[];
+    readonly updated: readonly TradingEntityUpdate<TEntity>[];
+    readonly removed: readonly TEntity[];
+    /** True when stable ids are identical but their host-defined display order changed. */
+    readonly orderChanged: boolean;
+}
+export type TradingOrdersChange = TradingCollectionChange<ChartOrder, typeof TradingLayerChangeKind.Orders>;
+export type TradingPositionsChange = TradingCollectionChange<ChartPosition, typeof TradingLayerChangeKind.Positions>;
+export type TradingExecutionsChange = TradingCollectionChange<ChartExecution, typeof TradingLayerChangeKind.Executions>;
+export interface TradingQuoteChange {
+    readonly kind: typeof TradingLayerChangeKind.Quote;
+    readonly version: number;
+    readonly previous: ChartQuote | null;
+    readonly current: ChartQuote | null;
+}
+export type TradingLayerChange = TradingOrdersChange | TradingPositionsChange | TradingExecutionsChange | TradingQuoteChange;
+export interface TradingLayerSnapshot {
+    readonly version: number;
+    readonly orders: readonly ChartOrder[];
+    readonly positions: readonly ChartPosition[];
+    readonly executions: readonly ChartExecution[];
+    readonly quote: ChartQuote | null;
+}
+export interface TradingIntentResolution {
+    readonly intentId: string;
+    readonly status: TradingIntentOutcomeStatus;
+    readonly reason?: string;
+}
+export interface TradingIntentOutcome extends TradingIntentResolution {
+    readonly intent: TradingIntent;
+}
+export interface ITradingLayer {
+    setOrders(orders: readonly ChartOrder[]): void;
+    setPositions(positions: readonly ChartPosition[]): void;
+    setExecutions(executions: readonly ChartExecution[]): void;
+    setQuote(quote: ChartQuote | null): void;
+    state(): TradingLayerSnapshot;
+    normalizationOptions(): TradingModelNormalizationOptions;
+    subscribeChanges(handler: (change: TradingLayerChange) => void): Unsubscribe;
+    subscribeIntents(handler: (intent: TradingIntent) => void): Unsubscribe;
+    subscribeIntentOutcomes(handler: (outcome: TradingIntentOutcome) => void): Unsubscribe;
+    pendingIntents(): readonly TradingIntent[];
+    resolveIntent(resolution: TradingIntentResolution): void;
+    requestPlaceOrder(order: ChartOrderRequest): PlaceOrderIntent;
+    requestModifyOrder(orderId: string, changes: ChartOrderModification): ModifyOrderIntent;
+    requestCancelOrder(orderId: string): CancelOrderIntent;
+    requestClosePosition(positionId: string, quantity?: number): ClosePositionIntent;
+    requestReversePosition(positionId: string, quantity?: number): ReversePositionIntent;
+    requestCreateStopLoss(positionId: string, price: number, quantity?: number): CreateStopLossIntent;
+    requestEditStopLoss(orderId: string, price: number, quantity?: number): EditStopLossIntent;
+    requestRemoveStopLoss(orderId: string): RemoveStopLossIntent;
+    requestCreateTakeProfit(positionId: string, price: number, quantity?: number): CreateTakeProfitIntent;
+    requestEditTakeProfit(orderId: string, price: number, quantity?: number): EditTakeProfitIntent;
+    requestRemoveTakeProfit(orderId: string): RemoveTakeProfitIntent;
+    dispose(): void;
+}
+/**
+ * Owns only normalized presentation state and user intents. It has no transport, account,
+ * connector or retry dependency; the host remains the sole owner of broker communication.
+ */
+export declare class TradingLayer implements ITradingLayer {
+    private readonly modelOptions;
+    private readonly clock;
+    private readonly intentIdFactory;
+    private readonly changeHandlers;
+    private readonly intentHandlers;
+    private readonly outcomeHandlers;
+    private readonly pendingIntentMap;
+    private ordersValue;
+    private positionsValue;
+    private executionsValue;
+    private quoteValue;
+    private snapshotValue;
+    private versionValue;
+    private intentSequence;
+    private disposed;
+    constructor(options: TradingLayerOptions);
+    setOrders(values: readonly ChartOrder[]): void;
+    setPositions(values: readonly ChartPosition[]): void;
+    setExecutions(values: readonly ChartExecution[]): void;
+    setQuote(value: ChartQuote | null): void;
+    state(): TradingLayerSnapshot;
+    normalizationOptions(): TradingModelNormalizationOptions;
+    subscribeChanges(handler: (change: TradingLayerChange) => void): Unsubscribe;
+    subscribeIntents(handler: (intent: TradingIntent) => void): Unsubscribe;
+    subscribeIntentOutcomes(handler: (outcome: TradingIntentOutcome) => void): Unsubscribe;
+    pendingIntents(): readonly TradingIntent[];
+    resolveIntent(resolution: TradingIntentResolution): void;
+    requestPlaceOrder(order: ChartOrderRequest): PlaceOrderIntent;
+    requestModifyOrder(orderId: string, changes: ChartOrderModification): ModifyOrderIntent;
+    requestCancelOrder(orderId: string): CancelOrderIntent;
+    requestClosePosition(positionId: string, quantity?: number): ClosePositionIntent;
+    requestReversePosition(positionId: string, quantity?: number): ReversePositionIntent;
+    requestCreateStopLoss(positionId: string, price: number, quantity?: number): CreateStopLossIntent;
+    requestEditStopLoss(orderId: string, price: number, quantity?: number): EditStopLossIntent;
+    requestRemoveStopLoss(orderId: string): RemoveStopLossIntent;
+    requestCreateTakeProfit(positionId: string, price: number, quantity?: number): CreateTakeProfitIntent;
+    requestEditTakeProfit(orderId: string, price: number, quantity?: number): EditTakeProfitIntent;
+    requestRemoveTakeProfit(orderId: string): RemoveTakeProfitIntent;
+    dispose(): void;
+    private requestCreateProtection;
+    private requestEditProtection;
+    private requestRemoveProtection;
+    private assertProtectionRole;
+    private editableOrder;
+    private cancelableOrder;
+    private requireOrder;
+    private positionWithPermission;
+    private intentBase;
+    private publish;
+    private advanceVersion;
+    private makeSnapshot;
+    private emitChange;
+    private assertActive;
+}
+
+// Public API module: trading/trading-order-placement-adapter.d.ts
+import type { IChartApi, OrderPlace, OrderPlacementOptions } from '../core/chart-api.js';
+import { ChartOrderTimeInForce, ChartOrderType, type TradingSide as TradingSideValue } from './model.js';
+import type { ITradingLayer } from './trading-layer.js';
+export type TradingPlacementOrderType = typeof ChartOrderType.Limit | typeof ChartOrderType.Stop;
+export type TradingPlacementSideResolver = (event: Readonly<OrderPlace>) => TradingSideValue | null;
+export interface TradingOrderPlacementAdapterOptions {
+    readonly quantity: number;
+    readonly orderType?: TradingPlacementOrderType;
+    readonly timeInForce?: ChartOrderTimeInForce;
+    readonly modifier?: OrderPlacementOptions['modifier'];
+    readonly color?: string;
+    readonly title?: string;
+    readonly sideResolver?: TradingPlacementSideResolver;
+    readonly enabled?: boolean;
+}
+export type TradingOrderPlacementAdapterOptionsPatch = Partial<TradingOrderPlacementAdapterOptions>;
+export interface ResolvedTradingOrderPlacementAdapterOptions {
+    readonly quantity: number;
+    readonly orderType: TradingPlacementOrderType;
+    readonly timeInForce: ChartOrderTimeInForce;
+    readonly modifier: NonNullable<OrderPlacementOptions['modifier']>;
+    readonly color: string;
+    readonly title: string;
+    readonly sideResolver: TradingPlacementSideResolver;
+    readonly enabled: boolean;
+}
+/**
+ * Compatibility bridge: consumes the existing chart placement signal and emits a TradingLayer
+ * intent. It never creates a price line or communicates with a broker by itself.
+ */
+export declare class TradingOrderPlacementAdapter {
+    private readonly chart;
+    private readonly layer;
+    private readonly model;
+    private disposed;
+    private readonly listener;
+    constructor(chart: IChartApi, layer: ITradingLayer, options: TradingOrderPlacementAdapterOptions);
+    options(): ResolvedTradingOrderPlacementAdapterOptions;
+    applyOptions(patch: TradingOrderPlacementAdapterOptionsPatch): void;
+    setEnabled(enabled: boolean): void;
+    dispose(): void;
+    private handlePlacement;
+    private applyPlacementMode;
+    private assertActive;
 }
 
 // Public API module: workspace/chart-navigator.d.ts
