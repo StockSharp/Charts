@@ -9,6 +9,7 @@ export * from './indicators/index.js';
 export * from './drawings/index.js';
 export * from './persistence/index.js';
 export * from './workspace/index.js';
+export * from './orderflow/index.js';
 
 // Public API module: core/chart-api.d.ts
 import { type TimeScaleFormatter } from '../time/time-axis-formatter.js';
@@ -63,13 +64,16 @@ export interface BandData {
     upper: number;
     lower: number;
 }
+/** @deprecated Approximate candle-volume profile input. Use exact orderflow FootprintBar levels. */
 export interface VolumeProfileData extends CandlestickData {
     vol?: number;
 }
+/** @deprecated Unclassified total volume. It is not exact bid/ask footprint data. */
 export interface PriceLevelData {
     price: number;
     vol: number;
 }
+/** @deprecated Legacy approximate cluster input. Use FootprintBar and FootprintSeries. */
 export interface ClusterData {
     time: Time;
     high: number;
@@ -87,6 +91,7 @@ export declare const AreaSeries: SeriesDefinition<AreaData, SeriesOptions>;
 export declare const BandSeries: SeriesDefinition<BandData, SeriesOptions>;
 export declare const PointFigureSeries: SeriesDefinition<CandlestickData, SeriesOptions>;
 export declare const RenkoSeries: SeriesDefinition<CandlestickData, SeriesOptions>;
+/** @deprecated Candle-only input is unsupported. Use ExactVolumeProfileSeries with FootprintBar. */
 export declare const VolumeProfileSeries: SeriesDefinition<VolumeProfileData, SeriesOptions>;
 export declare const ClusterSeries: SeriesDefinition<ClusterData, SeriesOptions>;
 export declare const BoxSeries2: SeriesDefinition<ClusterData, SeriesOptions>;
@@ -5565,6 +5570,509 @@ export declare abstract class SequentialIndicatorProcessor<TInput, TState> imple
     private normalizeResult;
 }
 
+// Public API module: orderflow/aggregation.d.ts
+import type { Time } from '../core/chart-api.js';
+import { type FootprintBar, type FootprintNormalizationOptions, type OrderFlowTrade } from './model.js';
+export interface FootprintAggregationOptions extends FootprintNormalizationOptions {
+    /** Fixed bar duration in seconds. */
+    readonly barDuration: number;
+    /** Origin used to align bar boundaries. Defaults to the UNIX epoch. */
+    readonly timeOrigin?: Time;
+}
+export type FootprintAggregationUpdateKind = 'append' | 'update';
+/** One tail-only change produced from a chronologically appended trade. */
+export interface FootprintAggregationPatch {
+    readonly kind: FootprintAggregationUpdateKind;
+    readonly fromIndex: number;
+    readonly removed: 0 | 1;
+    readonly data: readonly FootprintBar[];
+}
+/**
+ * Stateful trade-to-footprint aggregation. New trades touch only the current
+ * level and replace only the current immutable bar, or append one new bar.
+ */
+export declare class FootprintAggregator {
+    private readonly config;
+    private readonly normalization;
+    private readonly dataValue;
+    private readonly ids;
+    private tail;
+    private previousTime;
+    private previousSequence;
+    constructor(options: FootprintAggregationOptions);
+    get size(): number;
+    get latest(): FootprintBar | null;
+    /** Returns a stable immutable point-in-time copy. It is never mutated by later pushes. */
+    snapshot(): readonly FootprintBar[];
+    /** Atomically replaces all state from an ordered trade snapshot. */
+    reset(values: readonly OrderFlowTrade[]): readonly FootprintBar[];
+    /** Appends one chronological trade and emits a one-bar tail patch. */
+    push(value: OrderFlowTrade): FootprintAggregationPatch;
+    clear(): void;
+    private validateNext;
+    private remember;
+    private ingest;
+}
+export declare function aggregateFootprintBars(trades: readonly OrderFlowTrade[], options: FootprintAggregationOptions): readonly FootprintBar[];
+
+// Public API module: orderflow/footprint-series.d.ts
+import type { SeriesOptions } from '../core/chart-api.js';
+import type { CustomSeriesDefinition } from '../series/registry.js';
+import { type FootprintBar } from './model.js';
+import { type FootprintMetricsOptions } from './metrics.js';
+export declare const FootprintDisplayMode: Readonly<{
+    readonly BidAsk: 'bid-ask';
+    readonly Delta: 'delta';
+    readonly Total: 'total';
+    readonly Ladder: 'ladder';
+}>;
+export type FootprintDisplayMode = typeof FootprintDisplayMode[keyof typeof FootprintDisplayMode];
+export declare const FootprintDetailLevel: Readonly<{
+    readonly Auto: 'auto';
+    readonly Numbers: 'numbers';
+    readonly Heatmap: 'heatmap';
+    readonly Summary: 'summary';
+}>;
+export type FootprintDetailLevel = typeof FootprintDetailLevel[keyof typeof FootprintDetailLevel];
+export type ResolvedFootprintDetailLevel = Exclude<FootprintDetailLevel, typeof FootprintDetailLevel.Auto>;
+export interface FootprintDetailGeometry {
+    readonly barSpacing: number;
+    readonly cellHeight: number;
+}
+export interface FootprintSeriesOptions extends SeriesOptions, FootprintMetricsOptions {
+    readonly mode: FootprintDisplayMode;
+    readonly detailLevel: FootprintDetailLevel;
+    readonly bidColor: string;
+    readonly askColor: string;
+    readonly positiveDeltaColor: string;
+    readonly negativeDeltaColor: string;
+    readonly totalColor: string;
+    readonly pocColor: string;
+    readonly valueAreaColor: string;
+    readonly imbalanceColor: string;
+    readonly unfinishedAuctionColor: string;
+    readonly cellOpacity: number;
+    readonly fontSize: number;
+    readonly minimumNumbersBarSpacing: number;
+    readonly minimumNumbersCellHeight: number;
+    readonly minimumHeatmapBarSpacing: number;
+    readonly minimumHeatmapCellHeight: number;
+    readonly showPoc: boolean;
+    readonly showValueArea: boolean;
+    readonly showImbalances: boolean;
+    readonly showUnfinishedAuctions: boolean;
+}
+export declare const defaultFootprintSeriesOptions: Readonly<FootprintSeriesOptions>;
+export declare function resolveFootprintDetailLevel(geometry: FootprintDetailGeometry, options?: Readonly<FootprintSeriesOptions>): ResolvedFootprintDetailLevel;
+export declare const FootprintSeries: CustomSeriesDefinition<FootprintBar, FootprintSeriesOptions>;
+
+// Public API module: orderflow/index.d.ts
+export * from './model.js';
+export * from './aggregation.js';
+export * from './metrics.js';
+export * from './footprint-series.js';
+export * from './volume-profile.js';
+export * from './volume-profile-series.js';
+export * from './tpo-series.js';
+
+// Public API module: orderflow/metrics.d.ts
+import { type FootprintBar, type FootprintNormalizationOptions } from './model.js';
+export declare const FootprintPocTieBreak: Readonly<{
+    readonly ClosestToClose: 'closest-to-close';
+    readonly LowerPrice: 'lower-price';
+    readonly HigherPrice: 'higher-price';
+}>;
+export type FootprintPocTieBreak = typeof FootprintPocTieBreak[keyof typeof FootprintPocTieBreak];
+export declare const FootprintAuctionCompletion: Readonly<{
+    readonly Finished: 'finished';
+    readonly Unfinished: 'unfinished';
+    readonly Unavailable: 'unavailable';
+}>;
+export type FootprintAuctionCompletion = typeof FootprintAuctionCompletion[keyof typeof FootprintAuctionCompletion];
+export type FootprintImbalanceSide = 'buy' | 'sell';
+export interface FootprintMetricsOptions extends FootprintNormalizationOptions {
+    /** Fraction of total volume included in value area. Defaults to 0.7. */
+    readonly valueAreaPercentage?: number;
+    /** Required dominant/opposing diagonal ratio. Defaults to 3. */
+    readonly imbalanceRatio?: number;
+    /** Required dominant-side volume. Defaults to zero. */
+    readonly imbalanceMinimumVolume?: number;
+    /** Consecutive same-side imbalances required for a stack. Defaults to 3. */
+    readonly stackedImbalanceCount?: number;
+    /** Deterministic policy for equal-volume POC candidates. */
+    readonly pocTieBreak?: FootprintPocTieBreak;
+}
+export interface FootprintLevelMetrics {
+    readonly price: number;
+    readonly bidVolume: number;
+    readonly askVolume: number;
+    readonly totalVolume: number;
+    readonly delta: number;
+    readonly tradeCount?: number;
+    readonly buyImbalance: boolean;
+    readonly sellImbalance: boolean;
+}
+export interface FootprintValueArea {
+    readonly low: number;
+    readonly high: number;
+    readonly volume: number;
+    readonly targetVolume: number;
+    readonly percentage: number;
+}
+export interface FootprintImbalance {
+    readonly side: FootprintImbalanceSide;
+    readonly price: number;
+    readonly volume: number;
+    readonly comparedPrice: number;
+    readonly comparedVolume: number;
+    /** Infinity when the valid opposing cell is zero. */
+    readonly ratio: number;
+}
+export interface FootprintStackedImbalance {
+    readonly side: FootprintImbalanceSide;
+    readonly low: number;
+    readonly high: number;
+    readonly levelCount: number;
+}
+export interface FootprintAuctionMetrics {
+    readonly low: FootprintAuctionCompletion;
+    readonly high: FootprintAuctionCompletion;
+}
+export interface FootprintBarMetrics {
+    readonly time: number;
+    readonly totalBidVolume: number;
+    readonly totalAskVolume: number;
+    readonly totalVolume: number;
+    readonly delta: number;
+    /** Sum only when every level supplied tradeCount; otherwise null. */
+    readonly tradeCount: number | null;
+    readonly pocPrice: number;
+    readonly pocVolume: number;
+    readonly valueArea: FootprintValueArea;
+    readonly imbalances: readonly FootprintImbalance[];
+    readonly stackedImbalances: readonly FootprintStackedImbalance[];
+    readonly auction: FootprintAuctionMetrics;
+    readonly levels: readonly FootprintLevelMetrics[];
+}
+/**
+ * Computes exact per-bar order-flow metrics. The result depends only on the bar
+ * and calculation options; viewport and renderer state never enter this path.
+ *
+ * Buy imbalance compares ask(P) with bid(P - tick). Sell imbalance compares
+ * bid(P) with ask(P + tick). A comparison outside the bar range is unavailable.
+ */
+export declare function calculateFootprintMetrics(value: FootprintBar, options: FootprintMetricsOptions): FootprintBarMetrics;
+
+// Public API module: orderflow/model.d.ts
+import type { CandlestickData, Time } from '../core/chart-api.js';
+export declare const OrderFlowDataMode: Readonly<{
+    readonly Exact: 'exact';
+    readonly Approximate: 'approximate';
+}>;
+export type OrderFlowDataMode = typeof OrderFlowDataMode[keyof typeof OrderFlowDataMode];
+export declare const TradeAggressorSide: Readonly<{
+    /** Aggressive buyer: the trade executed against resting liquidity at the ask. */
+    readonly Buy: 'buy';
+    /** Aggressive seller: the trade executed against resting liquidity at the bid. */
+    readonly Sell: 'sell';
+}>;
+export type TradeAggressorSide = typeof TradeAggressorSide[keyof typeof TradeAggressorSide];
+export declare const FootprintApproximation: Readonly<{
+    /** Candle volume distributed over its low/high range. Never treated as exact order flow. */
+    readonly UniformCandleRange: 'uniform-candle-range';
+    /** Venue/vendor supplied estimates without aggressor-side executions. */
+    readonly VendorEstimated: 'vendor-estimated';
+    /** Real trades whose aggressor side could not be classified. */
+    readonly UnclassifiedTrades: 'unclassified-trades';
+}>;
+export type FootprintApproximation = typeof FootprintApproximation[keyof typeof FootprintApproximation];
+/** One classified market execution used to construct exact footprint data. */
+export interface OrderFlowTrade {
+    readonly time: Time;
+    readonly price: number;
+    readonly volume: number;
+    readonly aggressorSide: TradeAggressorSide;
+    readonly id?: string;
+    /** Optional venue ordering key for trades sharing one timestamp. */
+    readonly sequence?: number;
+}
+export interface FootprintLevel {
+    /** Tick-aligned execution price. */
+    readonly price: number;
+    /** Volume of aggressive sells executed against resting bids. */
+    readonly bidVolume: number;
+    /** Volume of aggressive buys executed against resting asks. */
+    readonly askVolume: number;
+    readonly tradeCount?: number;
+}
+/** Exact aggressor-classified volume-at-price for one OHLC bar. */
+export interface FootprintBar extends CandlestickData {
+    readonly dataMode: typeof OrderFlowDataMode.Exact;
+    /** Strictly ascending, unique and tick-aligned levels. */
+    readonly levels: readonly FootprintLevel[];
+}
+export type ExactFootprintBar = FootprintBar;
+export interface ApproximateFootprintLevel {
+    readonly price: number;
+    readonly totalVolume: number;
+    readonly tradeCount?: number;
+}
+/**
+ * Explicitly non-exact volume-at-price. It cannot be passed to APIs requiring FootprintBar,
+ * because total volume has no fabricated bid/ask split.
+ */
+export interface ApproximateFootprintBar extends CandlestickData {
+    readonly dataMode: typeof OrderFlowDataMode.Approximate;
+    readonly approximation: FootprintApproximation;
+    readonly levels: readonly ApproximateFootprintLevel[];
+}
+export type OrderFlowBar = FootprintBar | ApproximateFootprintBar;
+export interface FootprintNormalizationOptions {
+    readonly tickSize: number;
+    /** Tick-grid origin. Defaults to zero. */
+    readonly priceOrigin?: number;
+}
+/** Validates and snapshots an OHLC point on the same price grid as order-flow data. */
+export declare function normalizeTickAlignedCandle(value: CandlestickData, options: FootprintNormalizationOptions): CandlestickData;
+export declare function normalizeOrderFlowTrade(value: OrderFlowTrade, options: FootprintNormalizationOptions): OrderFlowTrade;
+export declare function normalizeOrderFlowTrades(values: readonly OrderFlowTrade[], options: FootprintNormalizationOptions): readonly OrderFlowTrade[];
+export declare function normalizeFootprintLevel(value: FootprintLevel, options: FootprintNormalizationOptions): FootprintLevel;
+export declare function normalizeFootprintBar(value: FootprintBar, options: FootprintNormalizationOptions): FootprintBar;
+export declare function normalizeFootprintBars(values: readonly FootprintBar[], options: FootprintNormalizationOptions): readonly FootprintBar[];
+export declare function normalizeApproximateFootprintBar(value: ApproximateFootprintBar, options: FootprintNormalizationOptions): ApproximateFootprintBar;
+export declare function normalizeApproximateFootprintBars(values: readonly ApproximateFootprintBar[], options: FootprintNormalizationOptions): readonly ApproximateFootprintBar[];
+export declare function isExactFootprintBar(value: OrderFlowBar): value is FootprintBar;
+export declare function isApproximateFootprintBar(value: OrderFlowBar): value is ApproximateFootprintBar;
+export declare function footprintLevelVolume(level: FootprintLevel): number;
+export declare function footprintBarVolume(bar: FootprintBar): number;
+
+// Public API module: orderflow/tpo-series.d.ts
+import type { CandlestickData, SeriesOptions } from '../core/chart-api.js';
+import type { CustomSeriesDefinition } from '../series/registry.js';
+import { type FootprintNormalizationOptions } from './model.js';
+export interface TpoBar extends CandlestickData {
+    /** Stable, serializable trading-session identity. */
+    readonly sessionId: string;
+}
+export interface TpoCalculationOptions extends FootprintNormalizationOptions {
+    readonly valueAreaPercentage?: number;
+    readonly initialBalancePeriods?: number;
+    readonly symbolSequence?: string;
+    /** Safety bound for one candle's inclusive low/high tick span. */
+    readonly maxLevelsPerBar?: number;
+}
+export interface TpoLevel {
+    readonly price: number;
+    readonly count: number;
+    readonly periodIndexes: readonly number[];
+    readonly symbols: readonly string[];
+    readonly singlePrint: boolean;
+}
+export interface TpoValueArea {
+    readonly low: number;
+    readonly high: number;
+    readonly count: number;
+    readonly targetCount: number;
+    readonly percentage: number;
+}
+export interface TpoSessionProfile {
+    readonly sessionId: string;
+    readonly from: number;
+    readonly to: number;
+    readonly periodCount: number;
+    readonly totalTpos: number;
+    readonly levels: readonly TpoLevel[];
+    readonly pocPrice: number;
+    readonly pocCount: number;
+    readonly valueArea: TpoValueArea;
+    readonly initialBalanceLow: number;
+    readonly initialBalanceHigh: number;
+}
+export declare function normalizeTpoBar(value: TpoBar, options: FootprintNormalizationOptions): TpoBar;
+export declare function normalizeTpoBars(values: readonly TpoBar[], options: FootprintNormalizationOptions): readonly TpoBar[];
+export declare function tpoSymbolForPeriod(periodIndex: number, symbolSequence?: string): string;
+export declare function calculateTpoProfiles(values: readonly TpoBar[], options: TpoCalculationOptions): readonly TpoSessionProfile[];
+export declare const TpoDisplayMode: Readonly<{
+    readonly Auto: 'auto';
+    readonly Letters: 'letters';
+    readonly Blocks: 'blocks';
+}>;
+export type TpoDisplayMode = typeof TpoDisplayMode[keyof typeof TpoDisplayMode];
+export interface TpoSeriesOptions extends SeriesOptions, TpoCalculationOptions {
+    readonly displayMode: TpoDisplayMode;
+    readonly letterColor: string;
+    readonly blockColor: string;
+    readonly singlePrintColor: string;
+    readonly pocColor: string;
+    readonly valueAreaColor: string;
+    readonly initialBalanceColor: string;
+    readonly cellOpacity: number;
+    readonly fontSize: number;
+    readonly showPoc: boolean;
+    readonly showValueArea: boolean;
+    readonly showInitialBalance: boolean;
+    readonly showSinglePrints: boolean;
+}
+export declare const defaultTpoSeriesOptions: Readonly<TpoSeriesOptions>;
+export declare const TpoSeries: CustomSeriesDefinition<TpoBar, TpoSeriesOptions>;
+
+// Public API module: orderflow/volume-profile-series.d.ts
+import type { SeriesOptions, TimeRange } from '../core/chart-api.js';
+import type { CustomSeriesDefinition } from '../series/registry.js';
+import { type FootprintBar } from './model.js';
+import { type VolumeProfileCalculationOptions } from './volume-profile.js';
+export declare const VolumeProfileRangeMode: Readonly<{
+    readonly Visible: 'visible';
+    readonly Fixed: 'fixed';
+    readonly Session: 'session';
+}>;
+export type VolumeProfileRangeMode = typeof VolumeProfileRangeMode[keyof typeof VolumeProfileRangeMode];
+export declare const VolumeProfileDisplayMode: Readonly<{
+    readonly Total: 'total';
+    readonly BidAsk: 'bid-ask';
+    readonly Delta: 'delta';
+}>;
+export type VolumeProfileDisplayMode = typeof VolumeProfileDisplayMode[keyof typeof VolumeProfileDisplayMode];
+export declare const VolumeProfileAlignment: Readonly<{
+    readonly Left: 'left';
+    readonly Right: 'right';
+}>;
+export type VolumeProfileAlignment = typeof VolumeProfileAlignment[keyof typeof VolumeProfileAlignment];
+/** Serializable half-open session boundary [from, to). */
+export interface VolumeProfileSessionRange {
+    readonly id: string;
+    readonly from: number;
+    readonly to: number;
+}
+export interface ExactVolumeProfileRangeOptions {
+    readonly rangeMode: VolumeProfileRangeMode;
+    readonly fixedRange?: TimeRange;
+    readonly sessionRanges: readonly VolumeProfileSessionRange[];
+    /** Defaults to the viewport end. */
+    readonly sessionAnchorTime?: number;
+}
+export interface ExactVolumeProfileSeriesOptions extends SeriesOptions, VolumeProfileCalculationOptions, ExactVolumeProfileRangeOptions {
+    readonly displayMode: VolumeProfileDisplayMode;
+    readonly alignment: VolumeProfileAlignment;
+    readonly profileWidth: number;
+    readonly cellOpacity: number;
+    readonly totalColor: string;
+    readonly bidColor: string;
+    readonly askColor: string;
+    readonly positiveDeltaColor: string;
+    readonly negativeDeltaColor: string;
+    readonly pocColor: string;
+    readonly valueAreaColor: string;
+    readonly developingValueAreaColor: string;
+    readonly showPoc: boolean;
+    readonly showValueArea: boolean;
+    readonly showLabels: boolean;
+    readonly showDevelopingLevels: boolean;
+    readonly fontSize: number;
+}
+export declare const defaultExactVolumeProfileSeriesOptions: Readonly<ExactVolumeProfileSeriesOptions>;
+/** Selects the exact source bars for visible, fixed, or serializable session ranges. */
+export declare function selectExactVolumeProfileBars(bars: readonly FootprintBar[], visibleRange: TimeRange, options: Readonly<ExactVolumeProfileRangeOptions>): readonly FootprintBar[];
+export declare const ExactVolumeProfileSeries: CustomSeriesDefinition<FootprintBar, ExactVolumeProfileSeriesOptions>;
+
+// Public API module: orderflow/volume-profile.d.ts
+import { FootprintApproximation, OrderFlowDataMode, type FootprintBar, type FootprintNormalizationOptions, type OrderFlowBar } from './model.js';
+import { FootprintPocTieBreak, type FootprintValueArea } from './metrics.js';
+export declare const VolumeProfileStatus: Readonly<{
+    readonly Ready: 'ready';
+    readonly Empty: 'empty';
+    readonly Approximate: 'approximate';
+    readonly Mixed: 'mixed';
+}>;
+export type VolumeProfileStatus = typeof VolumeProfileStatus[keyof typeof VolumeProfileStatus];
+export interface VolumeProfileCalculationOptions extends FootprintNormalizationOptions {
+    readonly valueAreaPercentage?: number;
+    readonly pocTieBreak?: FootprintPocTieBreak;
+}
+export interface ExactVolumeProfileLevel {
+    readonly price: number;
+    readonly bidVolume: number;
+    readonly askVolume: number;
+    readonly totalVolume: number;
+    readonly delta: number;
+    readonly tradeCount?: number;
+}
+interface ExactVolumeProfileBase {
+    readonly dataMode: typeof OrderFlowDataMode.Exact;
+    readonly barCount: number;
+    readonly levels: readonly ExactVolumeProfileLevel[];
+    readonly totalBidVolume: number;
+    readonly totalAskVolume: number;
+    readonly totalVolume: number;
+    readonly delta: number;
+    readonly tradeCount: number | null;
+}
+export interface ReadyExactVolumeProfile extends ExactVolumeProfileBase {
+    readonly status: typeof VolumeProfileStatus.Ready;
+    readonly from: number;
+    readonly to: number;
+    readonly pocPrice: number;
+    readonly pocVolume: number;
+    readonly valueArea: FootprintValueArea;
+}
+export interface EmptyExactVolumeProfile extends ExactVolumeProfileBase {
+    readonly status: typeof VolumeProfileStatus.Empty;
+    readonly from: null;
+    readonly to: null;
+    readonly pocPrice: null;
+    readonly pocVolume: 0;
+    readonly valueArea: null;
+}
+export type ExactVolumeProfile = ReadyExactVolumeProfile | EmptyExactVolumeProfile;
+export interface UnavailableVolumeProfile {
+    readonly status: typeof VolumeProfileStatus.Approximate | typeof VolumeProfileStatus.Mixed;
+    readonly inputMode: typeof OrderFlowDataMode.Approximate | 'mixed';
+    readonly profile: null;
+    readonly approximations: readonly FootprintApproximation[];
+    readonly message: string;
+}
+export type VolumeProfileResolution = ExactVolumeProfile | UnavailableVolumeProfile;
+export type VolumeProfileAggregationUpdateKind = 'append' | 'update';
+export interface VolumeProfileAggregationUpdate {
+    readonly kind: VolumeProfileAggregationUpdateKind;
+    readonly profile: ReadyExactVolumeProfile;
+}
+export interface DevelopingVolumeProfilePoint {
+    readonly time: number;
+    readonly totalBidVolume: number;
+    readonly totalAskVolume: number;
+    readonly totalVolume: number;
+    readonly delta: number;
+    readonly pocPrice: number;
+    readonly pocVolume: number;
+    readonly valueAreaLow: number;
+    readonly valueAreaHigh: number;
+}
+/**
+ * Incremental exact volume-at-price accumulator. Append and replace-last apply
+ * level deltas only; they never rebuild prior bars or distribute candle volume.
+ */
+export declare class ExactVolumeProfileAccumulator {
+    private readonly options;
+    private levels;
+    private firstTime;
+    private lastBar;
+    private count;
+    constructor(options: VolumeProfileCalculationOptions);
+    get barCount(): number;
+    reset(values: readonly FootprintBar[]): ExactVolumeProfile;
+    push(value: FootprintBar): VolumeProfileAggregationUpdate;
+    snapshot(): ExactVolumeProfile;
+}
+export declare function calculateVolumeProfile(bars: readonly FootprintBar[], options: VolumeProfileCalculationOptions): ExactVolumeProfile;
+/**
+ * Resolves heterogeneous input without ever converting approximate total
+ * volume into a fake exact bid/ask profile.
+ */
+export declare function resolveVolumeProfile(bars: readonly OrderFlowBar[], options: VolumeProfileCalculationOptions): VolumeProfileResolution;
+export declare function calculateDevelopingVolumeProfile(bars: readonly FootprintBar[], options: VolumeProfileCalculationOptions): readonly DevelopingVolumeProfilePoint[];
+export {};
+
 // Public API module: persistence/chart-state-persistence.d.ts
 import type { DrawingController, DrawingRestoreResult } from '../drawings/drawing-controller.js';
 import { type ChartStateV1, type PersistedChartOptions, type PersistedIndicator, type PersistedPane, type PersistedSeries } from './chart-state.js';
@@ -6027,6 +6535,10 @@ export interface SeriesRendererContext<TData extends TimedSeriesData = TimedSeri
     readonly allData: readonly TData[];
     readonly options: Readonly<TOptions>;
     readonly priceRange: SeriesPriceRange;
+    readonly visibleTimeRange: Readonly<{
+        from: number;
+        to: number;
+    }>;
     readonly pane: SeriesRendererPane;
     readonly theme: SeriesRendererTheme;
     readonly barSpacing: number;
@@ -6058,6 +6570,8 @@ export interface IIncrementalSeriesDataProcessor<TData extends TimedSeriesData, 
 export type IncrementalSeriesDataProcessorFactory<TData extends TimedSeriesData, TOptions extends object> = () => IIncrementalSeriesDataProcessor<TData, TOptions>;
 export interface ISeriesRenderer<TData extends TimedSeriesData = TimedSeriesData, TOptions extends object = object> {
     readonly dataPadding?: number;
+    /** Allows all-data overlays to render when no source point intersects the viewport. */
+    readonly drawOutsideVisibleRange?: boolean;
     draw(context: SeriesRendererContext<TData, TOptions>): void;
     priceRange?(data: readonly TData[], options: Readonly<TOptions>): SeriesPriceRange | null;
     priceValue?(data: TData, options: Readonly<TOptions>): number | null;

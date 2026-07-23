@@ -36,6 +36,14 @@ describe('SeriesRendererRegistry', () => {
         assert.throws(() => registry.register({ type: 'NoDefaults', renderer: { draw() {} } }), /defaultOptions/);
         assert.throws(
             () => registry.register({
+                type: 'InvalidOutsideRange',
+                defaultOptions: {},
+                renderer: { draw() {}, drawOutsideVisibleRange: 'yes' },
+            }),
+            /drawOutsideVisibleRange must be boolean/,
+        );
+        assert.throws(
+            () => registry.register({
                 type: 'AmbiguousProcessor',
                 defaultOptions: {},
                 renderer: { draw() {} },

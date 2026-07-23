@@ -95,8 +95,10 @@ declarative API — `time` is UNIX **seconds**:
 ```
 
 Series types: `CandlestickSeries`, `BarSeries`, `LineSeries`, `AreaSeries`,
-`HistogramSeries`, `RenkoSeries`, `PointFigureSeries`, `VolumeProfileSeries`,
-`ClusterSeries`, `BoxSeries2`. In a TypeScript build you can instead
+`HistogramSeries`, `RenkoSeries`, `PointFigureSeries`, `FootprintSeries`,
+`ExactVolumeProfileSeries`, `ClusterSeries`, `BoxSeries2`. The legacy
+`VolumeProfileSeries` is retained only as an unsupported migration marker and
+does not distribute candle volume across price bins. In a TypeScript build you can instead
 `import { createChart, CandlestickSeries } from './src/sschart'` and bundle it.
 
 For the **full terminal experience** — indicator engine over the whole catalog,
@@ -137,6 +139,72 @@ SSChart.registerIndicatorPainter('my-histogram', () => ({
 TypeScript consumers can import the contract and registry from
 `src/chart/indicators/painters/index.ts`. If a painter name is absent or is not
 registered, the renderer safely falls back to normal lines.
+
+### Exact order-flow data
+
+Order flow uses an explicit `FootprintBar` contract. `bidVolume` is the volume of
+aggressive sells executed against resting bids; `askVolume` is the volume of
+aggressive buys executed against resting asks. Every level price and OHLC price
+must align to the instrument tick size:
+
+```ts
+const bars = normalizeFootprintBars([{
+  dataMode: OrderFlowDataMode.Exact,
+  time: 1704240000,
+  open: 100.00,
+  high: 100.02,
+  low: 99.99,
+  close: 100.01,
+  levels: [
+    { price: 99.99, bidVolume: 18, askVolume: 0, tradeCount: 2 },
+    { price: 100.00, bidVolume: 12, askVolume: 20, tradeCount: 5 },
+    { price: 100.01, bidVolume: 4, askVolume: 31, tradeCount: 6 },
+    { price: 100.02, bidVolume: 0, askVolume: 9, tradeCount: 1 },
+  ],
+}], { tickSize: 0.01 });
+```
+
+`ApproximateFootprintBar` is a separate discriminated type with only
+`totalVolume` and a mandatory approximation reason. The library never invents a
+bid/ask split or silently passes candle-volume distribution as exact footprint
+data. Legacy `ClusterData`/`VolumeProfileData` remain explicitly deprecated
+approximation contracts during compatibility migration.
+
+Classified executions can be aggregated incrementally without rebuilding prior
+bars. `FootprintAggregator.push(trade)` emits either a one-bar `update` patch for
+the active interval or a one-bar `append` patch for the next interval. Bar
+boundaries are aligned by `barDuration` and optional `timeOrigin`; OHLC and every
+level are derived only from the supplied executions.
+
+`calculateFootprintMetrics` is a pure calculation path for total bid/ask,
+delta, POC, value area, diagonal/stacked imbalance, and auction completion. Buy
+imbalance compares `ask(P)` to `bid(P - tick)`; sell imbalance compares `bid(P)`
+to `ask(P + tick)`. Viewport zoom is deliberately absent from these options.
+
+`FootprintSeries` is a regular `CustomSeriesDefinition`, so it is added with
+`chart.addSeries(FootprintSeries, { tickSize, mode })` and does not add a branch
+to the chart core. It supports `bid-ask`, `delta`, `total`, and `ladder` modes.
+Automatic detail switches only the presentation between numbers, heatmap cells,
+and an OHLC/delta summary; all three use the same cached metrics.
+
+`calculateVolumeProfile` and `ExactVolumeProfileAccumulator` aggregate the exact
+levels themselves, including POC and value area; candle volume is never spread
+between low and high. The accumulator supports append and replace-last through
+level deltas. `calculateDevelopingVolumeProfile` exposes cumulative POC/VAH/VAL.
+For heterogeneous input, `resolveVolumeProfile` returns an explicit
+`approximate` or `mixed` unavailable result instead of producing a profile.
+
+`ExactVolumeProfileSeries` renders that calculation as a non-time-scale custom
+overlay. Its range is explicitly `visible`, `fixed`, or `session`; session mode
+uses serializable half-open session ranges rather than runtime callbacks. Fixed
+and session profiles remain visible outside their source viewport, and optional
+developing POC/VAH/VAL paths share the same selected exact bars.
+
+`TpoSeries` is a separate Market Profile custom series. Its `TpoBar` input has
+an explicit serializable `sessionId`; calculation produces per-session TPO
+counts, letters, POC, value area, initial balance, and single prints. Automatic
+zoom switches only between letters and compact blocks and never changes those
+session calculations.
 
 ## Build & view
 

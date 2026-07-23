@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "scenario": {
+    "bars": 25000,
+    "levelsPerBar": 12,
+    "exactLevelCells": 300000,
+    "orderFlowSeries": 2,
+    "replaceLastBurst": 250,
+    "browser": "chromium-dpr1"
+  },
+  "reference": {
+    "capturedAt": "2026-07-22",
+    "platform": "Windows x64",
+    "browser": "Chromium / DPR 1",
+    "generationMs": 33.5,
+    "initializationMs": 654.9,
+    "frameMedianMs": 15.7,
+    "frameP95Ms": 19.2,
+    "detailedFrameMs": 15.8,
+    "replaceLastDispatchMs": 16.7,
+    "realtimeUpdateMs": 18.5,
+    "jsHeapUsedMiB": 86.1
+  },
+  "budgets": {
+    "initializationMs": 5000,
+    "frameP95Ms": 250,
+    "detailedFrameMs": 250,
+    "replaceLastDispatchMs": 500,
+    "realtimeUpdateMs": 1000,
+    "jsHeapUsedMiB": 512
+  }
+}

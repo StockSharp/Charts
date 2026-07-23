@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>SSChart exact order-flow fixture</title>
+    <style>
+        * { box-sizing: border-box; }
+        html, body { margin: 0; width: 100%; height: 100%; background: #090d12; overflow: hidden; }
+        #chart { width: 960px; height: 600px; }
+    </style>
+    <script>
+        (() => {
+            const texts = [];
+            const fills = [];
+            const nativeFillText = CanvasRenderingContext2D.prototype.fillText;
+            const nativeFillRect = CanvasRenderingContext2D.prototype.fillRect;
+            CanvasRenderingContext2D.prototype.fillText = function (value, ...args) {
+                texts.push(String(value));
+                return nativeFillText.call(this, value, ...args);
+            };
+            CanvasRenderingContext2D.prototype.fillRect = function (...args) {
+                fills.push({ color: String(this.fillStyle), alpha: this.globalAlpha });
+                return nativeFillRect.apply(this, args);
+            };
+            window.OrderFlowPaintTracker = {
+                reset() { texts.length = 0; fills.length = 0; },
+                snapshot() { return { texts: texts.slice(), fills: fills.slice() }; },
+            };
+        })();
+    </script>
+</head>
+<body>
+    <div id="chart"></div>
+    <script src="/dist/sschart.js"></script>
+    <script>
+        (() => {
+            const tickSize = 0.25;
+
+            function makeBars(count) {
+                const bars = [];
+                const start = Date.UTC(2026, 6, 1) / 1000;
+                for (let index = 0; index < count; index++) {
+                    const center = 100 + Math.round(Math.sin(index / 11) * 16) * tickSize;
+                    const close = center + ((index % 3) - 1) * tickSize;
+                    const low = Math.min(center, close) - tickSize * 4;
+                    const high = Math.max(center, close) + tickSize * 4;
+                    const levels = [];
+                    for (let price = low, level = 0; price <= high + 1e-9; price += tickSize, level++) {
+                        levels.push({
+                            price: Math.round(price / tickSize) * tickSize,
+                            bidVolume: 2 + ((index * 17 + level * 11) % 55),
+                            askVolume: 3 + ((index * 13 + level * 19) % 61),
+                            tradeCount: 1 + ((index + level) % 9),
+                        });
+                    }
+                    bars.push({
+                        dataMode: SSChart.OrderFlowDataMode.Exact,
+                        time: start + index * 60,
+                        open: center,
+                        high,
+                        low,
+                        close,
+                        levels,
+                    });
+                }
+                return bars;
+            }
+
+            function chartOptions() {
+                return {
+                    width: 960,
+                    height: 600,
+                    autoSize: false,
+                    layout: {
+                        background: { type: 'solid', color: '#131820' },
+                        textColor: '#d7dee9',
+                        fontFamily: 'Arial, sans-serif',
+                        fontSize: 11,
+                    },
+                    grid: {
+                        vertLines: { color: 'rgba(48,61,80,0.45)' },
+                        horzLines: { color: 'rgba(48,61,80,0.45)' },
+                    },
+                    rightPriceScale: { borderColor: '#334155' },
+                    timeScale: { borderColor: '#334155', timeVisible: true, ordinal: true },
+                };
+            }
+
+            function settle() {
+                return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            }
+
+            window.OrderFlowFixture = {
+                chart: null,
+                footprint: null,
+                profile: null,
+                bars: [],
+
+                async create() {
+                    this.destroy();
+                    this.bars = makeBars(240);
+                    this.chart = SSChart.createChart(document.getElementById('chart'), chartOptions());
+                    this.footprint = this.chart.addSeries(SSChart.FootprintSeries, {
+                        tickSize,
+                        mode: SSChart.FootprintDisplayMode.BidAsk,
+                        detailLevel: SSChart.FootprintDetailLevel.Auto,
+                        bidColor: '#d32f2f',
+                        askColor: '#00897b',
+                        showUnfinishedAuctions: false,
+                    });
+                    this.footprint.setData(this.bars);
+                    this.profile = this.chart.addSeries(SSChart.ExactVolumeProfileSeries, {
+                        tickSize,
+                        rangeMode: SSChart.VolumeProfileRangeMode.Fixed,
+                        fixedRange: { from: this.bars[0].time, to: this.bars[19].time },
+                        displayMode: SSChart.VolumeProfileDisplayMode.BidAsk,
+                        bidColor: '#7b1fa2',
+                        askColor: '#fdd835',
+                        showLabels: false,
+                        profileWidth: 0.18,
+                    });
+                    this.profile.setData(this.bars);
+                    this.chart.timeScale().setVisibleRange({
+                        from: this.bars[120].time,
+                        to: this.bars[this.bars.length - 1].time,
+                    });
+                    await settle();
+                },
+
+                async paintDetailed() {
+                    window.OrderFlowPaintTracker.reset();
+                    this.chart.timeScale().setVisibleRange({
+                        from: this.bars[this.bars.length - 8].time,
+                        to: this.bars[this.bars.length - 1].time,
+                    });
+                    await settle();
+                    return window.OrderFlowPaintTracker.snapshot();
+                },
+
+                async paintFar() {
+                    window.OrderFlowPaintTracker.reset();
+                    this.chart.timeScale().setVisibleRange({
+                        from: this.bars[0].time,
+                        to: this.bars[this.bars.length - 1].time,
+                    });
+                    await settle();
+                    return window.OrderFlowPaintTracker.snapshot();
+                },
+
+                rollbackProbe() {
+                    const before = this.footprint.data();
+                    const last = before[before.length - 1];
+                    const approximate = {
+                        dataMode: SSChart.OrderFlowDataMode.Approximate,
+                        approximation: SSChart.FootprintApproximation.UnclassifiedTrades,
+                        time: last.time + 60,
+                        open: last.open,
+                        high: last.high,
+                        low: last.low,
+                        close: last.close,
+                        levels: [{ price: last.close, totalVolume: 10 }],
+                    };
+                    const errors = [];
+                    try { this.footprint.update(approximate); }
+                    catch (error) { errors.push(String(error.message || error)); }
+                    const afterUpdate = this.footprint.data();
+                    try { this.footprint.setData([approximate]); }
+                    catch (error) { errors.push(String(error.message || error)); }
+                    const afterSet = this.footprint.data();
+                    try { this.footprint.applyOptions({ tickSize: 0 }); }
+                    catch (error) { errors.push(String(error.message || error)); }
+                    const afterOptions = this.footprint.options();
+                    return {
+                        errors,
+                        beforeLength: before.length,
+                        afterUpdateLength: afterUpdate.length,
+                        afterSetLength: afterSet.length,
+                        sameUpdateTail: afterUpdate[afterUpdate.length - 1] === last,
+                        sameSetTail: afterSet[afterSet.length - 1] === last,
+                        tickSize: afterOptions.tickSize,
+                        type: this.footprint.type(),
+                        profileType: this.profile.type(),
+                    };
+                },
+
+                destroy() {
+                    this.chart?.remove();
+                    this.chart = null;
+                    this.footprint = null;
+                    this.profile = null;
+                    this.bars = [];
+                    document.getElementById('chart')?.replaceChildren();
+                },
+            };
+        })();
+    </script>
+</body>
+</html>

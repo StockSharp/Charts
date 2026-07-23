@@ -91,6 +91,7 @@ import {
     seriesRendererRegistry,
     type CustomSeriesDefinition,
     type IIncrementalSeriesDataProcessor,
+    type SeriesDataProcessorPatch,
     type SeriesDefinition,
     type SeriesRendererContext,
     type TimedSeriesData,
@@ -174,8 +175,11 @@ export interface LineData { time: Time; value: number }
 export interface HistogramData { time: Time; value: number; color?: string }
 export interface AreaData { time: Time; value: number }
 export interface BandData { time: Time; value: number; upper: number; lower: number }
+/** @deprecated Approximate candle-volume profile input. Use exact orderflow FootprintBar levels. */
 export interface VolumeProfileData extends CandlestickData { vol?: number }
+/** @deprecated Unclassified total volume. It is not exact bid/ask footprint data. */
 export interface PriceLevelData { price: number; vol: number }
+/** @deprecated Legacy approximate cluster input. Use FootprintBar and FootprintSeries. */
 export interface ClusterData {
     time: Time;
     high: number;
@@ -196,6 +200,7 @@ export const AreaSeries = seriesRendererRegistry.reference<AreaData, SeriesOptio
 export const BandSeries = seriesRendererRegistry.reference<BandData, SeriesOptions>('Band');
 export const PointFigureSeries = seriesRendererRegistry.reference<CandlestickData, SeriesOptions>('PointFigure');
 export const RenkoSeries = seriesRendererRegistry.reference<CandlestickData, SeriesOptions>('Renko');
+/** @deprecated Candle-only input is unsupported. Use ExactVolumeProfileSeries with FootprintBar. */
 export const VolumeProfileSeries = seriesRendererRegistry.reference<VolumeProfileData, SeriesOptions>('VolumeProfile');
 export const ClusterSeries = seriesRendererRegistry.reference<ClusterData, SeriesOptions>('Cluster');
 export const BoxSeries2 = seriesRendererRegistry.reference<ClusterData, SeriesOptions>('Box');
@@ -517,6 +522,17 @@ class Series extends SeriesModel<AnyPoint> implements ISeriesApi<AnyPoint, Serie
         }
     }
     setData(points: ReadonlyArray<AnyPoint>): void {
+        if (this.incrementalProcessor !== null) {
+            const candidate = this.prepareReset(points);
+            const change = this.replaceData(points);
+            this.prepared = {
+                key: `${this.kind}:${this.store.version}:${this.optionsVersion}`,
+                store: candidate.store,
+                metadata: candidate.metadata,
+            };
+            this.chart?.onDataChanged(change);
+            return;
+        }
         const change = this.replaceData(points);
         this.resetPreparedData();
         this.chart?.onDataChanged(change);
@@ -524,12 +540,70 @@ class Series extends SeriesModel<AnyPoint> implements ISeriesApi<AnyPoint, Serie
     // Streaming-style single-point push:
     // same time as last -> replace; newer time -> append; older -> ignore.
     update(point: AnyPoint): void {
+        if (this.incrementalProcessor !== null) {
+            const last = this.store.last;
+            let kind: 'append' | 'update';
+            if (last === undefined) kind = 'append';
+            else if (Number.isFinite(point.time) && Number.isFinite(last.time)) {
+                if (point.time < last.time) return;
+                kind = point.time === last.time ? 'update' : 'append';
+            } else kind = 'update';
+            if (this.prepared === null) this.resetPreparedData();
+            const prepared = this.prepared;
+            if (prepared === null)
+                throw new Error(`sschart: series type '${this.kind}' did not prepare its data`);
+            let patch: SeriesDataProcessorPatch<AnyPoint> | null;
+            try {
+                patch = this.incrementalProcessor.update(point, this.opts, kind);
+                if (patch !== null) {
+                    prepared.store.replaceTail(
+                        patch.fromIndex,
+                        patch.removed,
+                        patch.data as readonly AnyPoint[],
+                    );
+                }
+            } catch (error) {
+                this.resetPreparedData();
+                throw error;
+            }
+            const change = this.updateTail(point);
+            if (change === null) {
+                this.resetPreparedData();
+                throw new Error(`sschart: series type '${this.kind}' produced a stale update`);
+            }
+            this.prepared = {
+                key: `${this.kind}:${this.store.version}:${this.optionsVersion}`,
+                store: prepared.store,
+                metadata: patch?.metadata === undefined
+                    ? prepared.metadata
+                    : Object.freeze({ ...patch.metadata }),
+            };
+            this.chart?.onDataChanged(change);
+            return;
+        }
         const change = this.updateTail(point);
         if (change === null) return;
-        this.updatePreparedData(this.store.last!, change);
+        this.prepared = null;
         this.chart?.onDataChanged(change);
     }
     prependData(points: ReadonlyArray<AnyPoint>): void {
+        if (this.incrementalProcessor !== null) {
+            const candidateSource = new SeriesStore<AnyPoint>();
+            candidateSource.replace(this.sourcePoints);
+            const candidateChange = candidateSource.prepend(points);
+            if (candidateChange === null) return;
+            const candidate = this.prepareReset(candidateSource.values);
+            const change = this.store.prepend(points);
+            if (change === null)
+                throw new Error(`sschart: series type '${this.kind}' produced a stale prepend`);
+            this.prepared = {
+                key: `${this.kind}:${this.store.version}:${this.optionsVersion}`,
+                store: candidate.store,
+                metadata: candidate.metadata,
+            };
+            this.chart?.onDataChanged(change);
+            return;
+        }
         const change = this.store.prepend(points);
         if (change !== null) {
             this.resetPreparedData();
@@ -537,6 +611,24 @@ class Series extends SeriesModel<AnyPoint> implements ISeriesApi<AnyPoint, Serie
         }
     }
     pop(count = 1): AnyPoint[] {
+        if (this.incrementalProcessor !== null) {
+            const amount = Math.min(
+                this.store.length,
+                Math.max(0, Number.isFinite(count) ? Math.floor(count) : 0),
+            );
+            if (amount === 0) return [];
+            const candidate = this.prepareReset(this.sourcePoints.slice(0, -amount));
+            const result = this.store.pop(amount);
+            if (result.change === null)
+                throw new Error(`sschart: series type '${this.kind}' produced a stale pop`);
+            this.prepared = {
+                key: `${this.kind}:${this.store.version}:${this.optionsVersion}`,
+                store: candidate.store,
+                metadata: candidate.metadata,
+            };
+            this.chart?.onDataChanged(result.change);
+            return result.points;
+        }
         const result = this.store.pop(count);
         if (result.change !== null) {
             this.resetPreparedData();
@@ -558,19 +650,37 @@ class Series extends SeriesModel<AnyPoint> implements ISeriesApi<AnyPoint, Serie
             && (typeof patch.id !== 'string' || patch.id.trim() !== this.stableId)) {
             throw new Error('sschart: series id cannot change after creation');
         }
-        if (patch.persist !== undefined) {
-            if (typeof patch.persist !== 'boolean')
-                throw new TypeError('sschart: series persist must be a boolean');
-            this.persistable = patch.persist;
-        }
+        if (patch.persist !== undefined && typeof patch.persist !== 'boolean')
+            throw new TypeError('sschart: series persist must be a boolean');
         if (patch.visible !== undefined && typeof patch.visible !== 'boolean')
             throw new TypeError('sschart: series visible must be a boolean');
         const { id: _id, persist: _persist, ...rendererPatch } = patch;
-        this.opts = { ...this.opts, ...rendererPatch };
+        const nextOptions = { ...this.opts, ...rendererPatch };
         const dataOptionsChanged = Object.keys(rendererPatch).some(key => key !== 'visible');
+        let candidate: {
+            store: SeriesStore<AnyPoint>;
+            metadata: Readonly<Record<string, unknown>>;
+        } | null = null;
+        if (dataOptionsChanged && this.incrementalProcessor !== null) {
+            try {
+                candidate = this.prepareReset(this.sourcePoints, nextOptions);
+            } catch (error) {
+                this.prepareReset(this.sourcePoints, this.opts);
+                throw error;
+            }
+        }
+        this.opts = nextOptions;
+        if (patch.persist !== undefined) this.persistable = patch.persist;
         if (dataOptionsChanged) {
             this.optionsVersion++;
-            this.resetPreparedData();
+            if (candidate === null) this.resetPreparedData();
+            else {
+                this.prepared = {
+                    key: `${this.kind}:${this.store.version}:${this.optionsVersion}`,
+                    store: candidate.store,
+                    metadata: candidate.metadata,
+                };
+            }
         }
         const visibilityChanged = wasVisible !== this.visible;
         if (visibilityChanged) this.chart?.seriesVisibilityChanged(this);
@@ -609,41 +719,30 @@ class Series extends SeriesModel<AnyPoint> implements ISeriesApi<AnyPoint, Serie
     private resetPreparedData(): void {
         this.prepared = null;
         if (this.incrementalProcessor === null) return;
-        const result = this.incrementalProcessor.reset(this.sourcePoints, this.opts);
-        const store = new SeriesStore<AnyPoint>();
-        store.replace(result.data as readonly AnyPoint[]);
+        const candidate = this.prepareReset(this.sourcePoints);
         this.prepared = {
             key: `${this.kind}:${this.store.version}:${this.optionsVersion}`,
-            store,
-            metadata: Object.freeze({ ...(result.metadata ?? {}) }),
+            store: candidate.store,
+            metadata: candidate.metadata,
         };
     }
-    private updatePreparedData(point: AnyPoint, change: DataChangeSet): void {
-        if (this.incrementalProcessor === null) {
-            this.prepared = null;
-            return;
-        }
-        if (this.prepared === null) this.resetPreparedData();
-        const prepared = this.prepared;
-        if (prepared === null) return;
-        const patch = this.incrementalProcessor.update(
-            point,
-            this.opts,
-            change.kind === 'append' ? 'append' : 'update',
-        );
-        if (patch !== null) {
-            prepared.store.replaceTail(
-                patch.fromIndex,
-                patch.removed,
-                patch.data as readonly AnyPoint[],
-            );
-        }
-        this.prepared = {
-            key: `${this.kind}:${this.store.version}:${this.optionsVersion}`,
-            store: prepared.store,
-            metadata: patch?.metadata === undefined
-                ? prepared.metadata
-                : Object.freeze({ ...patch.metadata }),
+    private prepareReset(
+        points: readonly AnyPoint[],
+        options: SeriesOptions = this.opts,
+    ): {
+        store: SeriesStore<AnyPoint>;
+        metadata: Readonly<Record<string, unknown>>;
+    } {
+        if (this.incrementalProcessor === null)
+            throw new Error(`sschart: series type '${this.kind}' has no incremental processor`);
+        const ordered = new SeriesStore<AnyPoint>();
+        ordered.replace(points);
+        const result = this.incrementalProcessor.reset(ordered.values, options);
+        const store = new SeriesStore<AnyPoint>();
+        store.replace(result.data as readonly AnyPoint[]);
+        return {
+            store,
+            metadata: Object.freeze({ ...(result.metadata ?? {}) }),
         };
     }
     priceScaleId(): string { return this.opts.priceScaleId ?? 'right'; }
@@ -2954,13 +3053,14 @@ class ChartImpl implements IChartApi {
             this.viewTo,
             s.definition.renderer.dataPadding ?? 1,
         ).points;
-        if (visible.length === 0) return;
+        if (visible.length === 0 && s.definition.renderer.drawOutsideVisibleRange !== true) return;
         const context: SeriesRendererContext<AnyPoint, SeriesOptions> = {
             target: this.ctx,
             data: visible,
             allData: render.store.values,
             options: s.opts,
             priceRange: this.visiblePriceRange(b, s),
+            visibleTimeRange: Object.freeze({ from: this.viewFrom, to: this.viewTo }),
             pane: {
                 left: this.plotL(),
                 right: this.plotR(),

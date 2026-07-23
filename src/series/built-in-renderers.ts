@@ -383,33 +383,17 @@ function drawLineLike(c: Context, area: boolean): void {
     }
 }
 
-function drawVolumeProfile(c: Context): void {
-    const { target: ctx, options: o, pane } = c;
+function drawUnsupportedVolumeProfile(c: Context): void {
+    const { target: ctx, pane, theme } = c;
     if (c.data.length === 0) return;
-    const span = (c.priceRange.max - c.priceRange.min) || 1;
-    const bins = Math.max(12, Math.min(90, Math.round(pane.height / 8)));
-    const step = span / bins;
-    const aggregate = new Array<number>(bins).fill(0);
-    for (const point of c.data) {
-        if (!Number.isFinite(point.high) || !Number.isFinite(point.low)) continue;
-        const volume = Number.isFinite(point.vol) ? point.vol! : 1;
-        const from = Math.max(0, Math.min(bins - 1, Math.floor((point.low! - c.priceRange.min) / step)));
-        const to = Math.max(0, Math.min(bins - 1, Math.floor((point.high! - c.priceRange.min) / step)));
-        const value = volume / (to - from + 1);
-        for (let bin = from; bin <= to; bin++) aggregate[bin] += value;
-    }
-    let maximum = 0;
-    for (const value of aggregate) maximum = Math.max(maximum, value);
-    if (maximum <= 0) return;
-    const maximumWidth = pane.width * 0.22;
-    const height = Math.max(1, pane.height / bins - 1);
-    ctx.fillStyle = o.color ?? 'rgba(74,158,255,0.16)';
-    for (let bin = 0; bin < bins; bin++) {
-        if (aggregate[bin] <= 0) continue;
-        const width = aggregate[bin] / maximum * maximumWidth;
-        const y = c.priceToCoordinate(c.priceRange.min + (bin + 0.5) * step);
-        ctx.fillRect(pane.right - width, y - height / 2, width, height);
-    }
+    const previousAlpha = ctx.globalAlpha;
+    ctx.fillStyle = theme.textColor;
+    ctx.globalAlpha = 0.72;
+    ctx.font = `11px ${theme.fontFamily}`;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    ctx.fillText('Exact footprint levels required', pane.right - 8, pane.top + 8);
+    ctx.globalAlpha = previousAlpha;
 }
 
 function definition(
@@ -493,7 +477,7 @@ export const builtInSeriesDefinitions = [
         { incrementalDataProcessorFactory: pointFigureProcessorFactory, magnetValues: ohlcMagnetValues }),
     definition('Renko', drawRenko, ohlcRange, ohlcValue, 1, candleColor,
         { incrementalDataProcessorFactory: renkoProcessorFactory, magnetValues: ohlcMagnetValues }),
-    definition('VolumeProfile', drawVolumeProfile, () => null, () => null, 0, defaultColor,
+    definition('VolumeProfile', drawUnsupportedVolumeProfile, () => null, () => null, 0, defaultColor,
         { affectsTimeScale: false }),
     definition('Cluster', drawCluster, ohlcRange, ohlcValue, 1, defaultColor,
         { magnetValues: ohlcMagnetValues }),

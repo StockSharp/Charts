@@ -17,7 +17,7 @@
     "test": "npm run typecheck:core && npm run api:check && node build-tests.mjs && node --test \"tests/_dist/**/*.test.cjs\"",
     "test:browser": "npm run build && npm run build:browser-fixtures && playwright test",
     "test:browser:update": "npm run build && npm run build:browser-fixtures && playwright test --update-snapshots",
-    "test:performance": "npm run build && npm run build:browser-fixtures && playwright test tests/browser/chart.performance.spec.ts --project=chromium-dpr1"
+    "test:performance": "npm run build && npm run build:browser-fixtures && playwright test tests/browser/chart.performance.spec.ts tests/browser/orderflow.performance.spec.ts --project=chromium-dpr1"
   },
   "devDependencies": {
     "@playwright/test": "1.61.1",

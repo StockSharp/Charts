@@ -32,6 +32,7 @@ export interface SeriesRendererContext<
     readonly allData: readonly TData[];
     readonly options: Readonly<TOptions>;
     readonly priceRange: SeriesPriceRange;
+    readonly visibleTimeRange: Readonly<{ from: number; to: number }>;
     readonly pane: SeriesRendererPane;
     readonly theme: SeriesRendererTheme;
     readonly barSpacing: number;
@@ -86,6 +87,8 @@ export interface ISeriesRenderer<
     TOptions extends object = object,
 > {
     readonly dataPadding?: number;
+    /** Allows all-data overlays to render when no source point intersects the viewport. */
+    readonly drawOutsideVisibleRange?: boolean;
     draw(context: SeriesRendererContext<TData, TOptions>): void;
     priceRange?(data: readonly TData[], options: Readonly<TOptions>): SeriesPriceRange | null;
     priceValue?(data: TData, options: Readonly<TOptions>): number | null;
@@ -134,6 +137,12 @@ export class SeriesRendererRegistry {
         if (definition.renderer === null || typeof definition.renderer !== 'object'
             || typeof definition.renderer.draw !== 'function')
             throw new TypeError(`sschart: series type '${type}' must provide a renderer.draw function`);
+        if (definition.renderer.drawOutsideVisibleRange !== undefined
+            && typeof definition.renderer.drawOutsideVisibleRange !== 'boolean') {
+            throw new TypeError(
+                `sschart: series type '${type}' drawOutsideVisibleRange must be boolean`,
+            );
+        }
         if (definition.defaultOptions === null || typeof definition.defaultOptions !== 'object')
             throw new TypeError(`sschart: series type '${type}' must provide defaultOptions`);
         if (definition.dataProcessor !== undefined
