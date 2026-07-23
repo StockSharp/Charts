@@ -7,6 +7,8 @@ name: Deploy demo to GitHub Pages
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -29,6 +31,8 @@ jobs:
       - run: npm ci
       - run: npm run build            # -> dist/sschart.js + dist/chart-app.js
       - run: npm test                 # the ported indicator suite
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser
       - name: Stage site
         run: |
           mkdir -p _site/demo _site/dist
@@ -40,6 +44,7 @@ jobs:
           path: _site
 
   deploy:
+    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     environment:

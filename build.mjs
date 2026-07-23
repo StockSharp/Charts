@@ -13,7 +13,7 @@ import { dirname, join } from 'node:path';
 const here = dirname(fileURLToPath(import.meta.url));
 
 const targets = [
-    { entryPoints: [join(here, 'src', 'sschart.ts')], outfile: join(here, 'dist', 'sschart.js'), globalName: 'SSChart' },
+    { entryPoints: [join(here, 'src', 'index.ts')], outfile: join(here, 'dist', 'sschart.js'), globalName: 'SSChart' },
     { entryPoints: [join(here, 'src', 'chart', 'app.ts')], outfile: join(here, 'dist', 'chart-app.js') },
 ];
 

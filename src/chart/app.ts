@@ -164,8 +164,8 @@ function boot() {
     if (themeBtn) themeBtn.addEventListener('click', () => { themeName = themeName === 'dark' ? 'light' : 'dark'; applyTheme(); });
 
     // Default studies (one overlay + one sub-pane) so the chart is populated.
-    engine.add('BollingerBands', { period: 20, stdDev: 2 });
-    engine.add('RSI', { period: 14 });
+    engine.add('BollingerBands', { length: 20, stdDev: 2 });
+    engine.add('RelativeStrengthIndex', { length: 14 });
     legend.refresh();
 
     // ---- realtime feed: mutate the shared array in place, then let the engine

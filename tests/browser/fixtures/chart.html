@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>SSChart browser fixture</title>
+    <style>
+        * { box-sizing: border-box; }
+        html, body { margin: 0; width: 100%; height: 100%; background: #090d12; overflow: hidden; }
+        #chart { width: 960px; height: 600px; }
+    </style>
+    <script>
+        // Instrument browser-owned resources before the chart bundle loads. The
+        // lifecycle test uses this to prove that remove() releases global
+        // listeners, ResizeObservers and an already-queued animation frame.
+        (() => {
+            const originalAdd = EventTarget.prototype.addEventListener;
+            const originalRemove = EventTarget.prototype.removeEventListener;
+            const active = [];
+            const nativeRequestFrame = window.requestAnimationFrame.bind(window);
+            const nativeCancelFrame = window.cancelAnimationFrame.bind(window);
+            const activeFrames = new Set();
+            const NativeResizeObserver = window.ResizeObserver;
+            const activeResizeObservers = new Set();
+            let canceledFrames = 0;
+
+            EventTarget.prototype.addEventListener = function (type, listener, options) {
+                if ((this === window || this === document) && listener) {
+                    active.push({ target: this === window ? 'window' : 'document', type, listener, options });
+                }
+                return originalAdd.call(this, type, listener, options);
+            };
+            EventTarget.prototype.removeEventListener = function (type, listener, options) {
+                if ((this === window || this === document) && listener) {
+                    const target = this === window ? 'window' : 'document';
+                    const capture = typeof options === 'boolean' ? options : !!(options && options.capture);
+                    const index = active.findIndex((entry) => {
+                        const entryCapture = typeof entry.options === 'boolean'
+                            ? entry.options
+                            : !!(entry.options && entry.options.capture);
+                        return entry.target === target && entry.type === type
+                            && entry.listener === listener && entryCapture === capture;
+                    });
+                    if (index >= 0) active.splice(index, 1);
+                }
+                return originalRemove.call(this, type, listener, options);
+            };
+
+            window.requestAnimationFrame = (callback) => {
+                let id = 0;
+                id = nativeRequestFrame((time) => {
+                    activeFrames.delete(id);
+                    callback(time);
+                });
+                activeFrames.add(id);
+                return id;
+            };
+            window.cancelAnimationFrame = (id) => {
+                if (activeFrames.delete(id)) canceledFrames++;
+                nativeCancelFrame(id);
+            };
+
+            if (NativeResizeObserver) {
+                window.ResizeObserver = class TrackedResizeObserver {
+                    constructor(callback) {
+                        this.targets = new Set();
+                        this.inner = new NativeResizeObserver(callback);
+                    }
+                    observe(target, options) {
+                        this.targets.add(target);
+                        activeResizeObservers.add(this);
+                        this.inner.observe(target, options);
+                    }
+                    unobserve(target) {
+                        this.targets.delete(target);
+                        if (this.targets.size === 0) activeResizeObservers.delete(this);
+                        this.inner.unobserve(target);
+                    }
+                    disconnect() {
+                        this.targets.clear();
+                        activeResizeObservers.delete(this);
+                        this.inner.disconnect();
+                    }
+                };
+            }
+
+            function listenerSnapshot() {
+                const counts = {};
+                for (const entry of active) {
+                    const key = entry.target + ':' + entry.type;
+                    counts[key] = (counts[key] || 0) + 1;
+                }
+                return counts;
+            }
+
+            window.ListenerTracker = {
+                snapshot: listenerSnapshot,
+            };
+            window.LifecycleTracker = {
+                snapshot() {
+                    return {
+                        listeners: listenerSnapshot(),
+                        animationFrames: activeFrames.size,
+                        canceledFrames,
+                        resizeObservers: activeResizeObservers.size,
+                    };
+                },
+            };
+        })();
+    </script>
+</head>
+<body>
+    <div id="chart"></div>
+    <script src="/dist/sschart.js"></script>
+    <script>
+        (() => {
+            const dark = {
+                background: '#131820',
+                text: '#8b97a7',
+                grid: 'rgba(48,61,80,0.55)',
+                border: '#334155',
+            };
+            const light = {
+                background: '#ffffff',
+                text: '#475569',
+                grid: 'rgba(148,163,184,0.4)',
+                border: '#cbd5e1',
+            };
+
+            function chartOptions(theme) {
+                return {
+                    width: 960,
+                    height: 600,
+                    autoSize: false,
+                    layout: {
+                        background: { type: 'solid', color: theme.background },
+                        textColor: theme.text,
+                        fontFamily: 'Arial, sans-serif',
+                        fontSize: 11,
+                    },
+                    grid: {
+                        vertLines: { color: theme.grid },
+                        horzLines: { color: theme.grid },
+                    },
+                    rightPriceScale: { borderColor: theme.border },
+                    timeScale: {
+                        borderColor: theme.border,
+                        timeVisible: true,
+                        secondsVisible: false,
+                        ordinal: true,
+                    },
+                    crosshair: {
+                        mode: SSChart.CrosshairMode.Normal,
+                        vertLine: { color: 'rgba(74,158,255,0.45)' },
+                        horzLine: { color: 'rgba(74,158,255,0.45)' },
+                    },
+                };
+            }
+
+            function makeData(count) {
+                const bars = [];
+                let close = 120;
+                const start = Date.UTC(2024, 0, 2) / 1000;
+                for (let i = 0; i < count; i++) {
+                    const wave = Math.sin(i / 7) * 1.7 + Math.cos(i / 17) * 0.8;
+                    const open = close;
+                    close = open + Math.sin(i * 1.31) * 0.85 + 0.06;
+                    const high = Math.max(open, close) + 0.8 + Math.abs(wave) * 0.22;
+                    const low = Math.min(open, close) - 0.7 - Math.abs(wave) * 0.18;
+                    bars.push({
+                        time: start + i * 86_400,
+                        open,
+                        high,
+                        low,
+                        close,
+                        volume: 1_000 + (i % 13) * 110,
+                    });
+                }
+                return bars;
+            }
+
+            function movingAverage(bars, length) {
+                const result = [];
+                let sum = 0;
+                for (let i = 0; i < bars.length; i++) {
+                    sum += bars[i].close;
+                    if (i >= length) sum -= bars[i - length].close;
+                    if (i >= length - 1) result.push({ time: bars[i].time, value: sum / length });
+                }
+                return result;
+            }
+
+            function nextFrame() {
+                return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            }
+
+            window.ChartFixture = {
+                async create(options = {}) {
+                    if (window.__fixture) window.__fixture.chart.remove();
+                    const host = document.getElementById('chart');
+                    host.replaceChildren();
+
+                    const optionsForChart = chartOptions(dark);
+                    if (options.autoSize) {
+                        delete optionsForChart.width;
+                        delete optionsForChart.height;
+                        optionsForChart.autoSize = true;
+                    }
+                    const chart = SSChart.createChart(host, optionsForChart);
+                    const bars = makeData(180);
+                    const candles = chart.addSeries(SSChart.CandlestickSeries, {
+                        upColor: '#00c853',
+                        downColor: '#ff3d57',
+                        wickUpColor: '#00c853',
+                        wickDownColor: '#ff3d57',
+                        borderVisible: false,
+                        priceFormat: { precision: 2, minMove: 0.01 },
+                    });
+                    const volume = chart.addSeries(SSChart.HistogramSeries, {
+                        priceScaleId: 'volume',
+                        priceFormat: { type: 'volume', precision: 0 },
+                    });
+                    volume.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+                    const average = chart.addSeries(SSChart.LineSeries, {
+                        color: '#f0b90b',
+                        lineWidth: 2,
+                        priceLineVisible: false,
+                    });
+
+                    candles.setData(bars);
+                    volume.setData(bars.map((bar) => ({
+                        time: bar.time,
+                        value: bar.volume,
+                        color: bar.close >= bar.open
+                            ? 'rgba(0,200,83,0.35)'
+                            : 'rgba(255,61,87,0.35)',
+                    })));
+                    average.setData(movingAverage(bars, 20));
+
+                    SSChart.createSeriesMarkers(candles, [
+                        { time: bars[48].time, position: 'belowBar', color: '#22c55e', shape: 'circle' },
+                        { time: bars[126].time, position: 'aboveBar', color: '#ef4444', shape: 'square' },
+                    ]);
+
+                    const dragPrices = [];
+                    const dragCommits = [];
+                    const orderLine = candles.createPriceLine({
+                        id: 'fixture-order',
+                        price: 124,
+                        color: '#4a9eff',
+                        lineWidth: 1,
+                        lineStyle: SSChart.LineStyle.Dashed,
+                        title: 'BUY 1',
+                        draggable: true,
+                        onDrag: (price) => dragPrices.push(price),
+                        onDragCommit: (price) => dragCommits.push(price),
+                    });
+
+                    const crosshairEvents = [];
+                    const orderEvents = [];
+                    chart.subscribeCrosshairMove((event) => crosshairEvents.push(event));
+                    chart.setOrderPlacement({ modifier: 'ctrl', color: '#ffb74d', title: 'ORDER' });
+                    chart.subscribeOrderPlace((event) => orderEvents.push(event));
+                    chart.timeScale().fitContent();
+
+                    window.__fixture = {
+                        chart,
+                        bars,
+                        candles,
+                        volume,
+                        average,
+                        orderLine,
+                        dragPrices,
+                        dragCommits,
+                        crosshairEvents,
+                        orderEvents,
+                        setTheme(name) {
+                            chart.applyOptions(chartOptions(name === 'light' ? light : dark));
+                        },
+                        async settle() { await nextFrame(); },
+                    };
+                    await nextFrame();
+                },
+                destroyNow() {
+                    if (!window.__fixture) return;
+                    window.__fixture.chart.remove();
+                    window.__fixture = null;
+                    document.getElementById('chart').replaceChildren();
+                },
+                async destroy() {
+                    this.destroyNow();
+                    await nextFrame();
+                },
+            };
+        })();
+    </script>
+</body>
+</html>

@@ -1,4 +1,7 @@
 node_modules/
 dist/
 tests/_dist/
+test-results/
+playwright-report/
+tests/browser/fixtures/_dist/
 *.log
