@@ -4,6 +4,8 @@ import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+import { buildPublicApiManifest } from './public-api-manifest.mjs';
+
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const snapshotPath = join(root, 'tests', 'api', 'sschart.d.ts');
 const tscPath = join(root, 'node_modules', 'typescript', 'bin', 'tsc');
@@ -22,8 +24,7 @@ try {
         throw new Error(`TypeScript declaration emit failed with exit code ${result.status ?? 1}.`);
     }
 
-    const declarationPath = join(temp, 'core', 'chart-api.d.ts');
-    const normalized = (await readFile(declarationPath, 'utf8')).replaceAll('\r\n', '\n');
+    const normalized = await buildPublicApiManifest(temp);
 
     if (update) {
         await mkdir(dirname(snapshotPath), { recursive: true });

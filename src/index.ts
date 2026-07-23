@@ -4,3 +4,4 @@
 export * from './core/chart-api.js';
 export * from './primitives/horizontal-line.js';
 export * from './primitives/trend-line.js';
+export * from './data/index.js';
