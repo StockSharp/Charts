@@ -14,7 +14,15 @@
 
 import { calculateBarStepPx } from '../series-spacing.js';
 import { DisposableStore } from './disposable.js';
+import { PaneLayout, type PaneLayoutRect, type PaneLayoutResult, type PaneSplitter } from './layout/pane-layout.js';
+import { ChartModel } from './model/chart-model.js';
+import { PaneModel, type PaneOptions } from './model/pane-model.js';
+import { SeriesModel } from './model/series-model.js';
 import { RenderDirty, RenderScheduler, type RenderDirtyFlags } from './render-scheduler.js';
+import type { TimeRange } from './scale/time-scale.js';
+
+export type { TimeRange } from './scale/time-scale.js';
+export type { PaneOptions, PaneState } from './model/pane-model.js';
 
 export type Time = number; // UNIX seconds (the only form the app feeds)
 
@@ -268,34 +276,23 @@ export function pnfBars(candles: ReadonlyArray<CandlestickData>, boxSize?: numbe
         : { time: times[i], open: col.hi, high: col.hi, low: col.lo, close: col.lo }) as AnyPoint);
 }
 
-class Series implements ISeriesApi {
+class Series extends SeriesModel<AnyPoint> implements ISeriesApi {
     readonly kind: SeriesKind;
     opts: SeriesOptions;
-    data: AnyPoint[] = [];
     markers: SeriesMarker[] = [];
     constructor(kind: SeriesKind, opts: SeriesOptions) {
+        super();
         this.kind = kind;
         this.opts = opts;
     }
     setData(points: ReadonlyArray<unknown>): void {
-        this.data = (points as AnyPoint[]).slice().sort((a, b) => a.time - b.time);
+        this.replaceData(points as ReadonlyArray<AnyPoint>);
         this.chart?.onDataChanged();
     }
     // Streaming-style single-point push:
     // same time as last -> replace; newer time -> append; older -> ignore.
     update(point: unknown): void {
-        const p = point as AnyPoint;
-        const n = this.data.length;
-        if (n === 0) { this.data.push(p); this.chart?.onDataChanged(); return; }
-        const last = this.data[n - 1];
-        if (Number.isFinite(p.time) && Number.isFinite(last.time)) {
-            if (p.time === last.time) this.data[n - 1] = p;
-            else if (p.time > last.time) this.data.push(p);
-            else return;
-        } else {
-            this.data[n - 1] = p;
-        }
-        this.chart?.onDataChanged();
+        if (this.updateTail(point as AnyPoint)) this.chart?.onDataChanged();
     }
     applyOptions(patch: SeriesOptions): void {
         this.opts = { ...this.opts, ...patch };
@@ -304,9 +301,10 @@ class Series implements ISeriesApi {
     priceScaleId(): string { return this.opts.priceScaleId ?? 'right'; }
     // Per-series price-scale handle. Lets the host adjust scaleMargins
     // (used for volume overlays — bottom band of the plot).
-    priceScale(): PriceScaleApi { return new PriceScaleApi(this.chart, this.priceScaleId()); }
+    priceScale(): PriceScaleApi { return new PriceScaleApi(this.chart, this.priceScaleId(), this.pane); }
     // back-ref wired by the chart
     chart: ChartImpl | null = null;
+    pane: PaneModel<Series> | null = null;
 
     // ---- horizontal price lines (orders / alerts / preview) ----
     priceLines: PriceLine[] = [];
@@ -324,11 +322,11 @@ class Series implements ISeriesApi {
     // Public so external order-overlay code can hit-test / drag.
     priceToCoordinate(price: number): number | null {
         if (this.chart === null || !Number.isFinite(price)) return null;
-        return this.chart.priceToY(price, this.priceScaleId());
+        return this.chart.priceToY(price, this.priceScaleId(), this.pane);
     }
     coordinateToPrice(y: number): number | null {
         if (this.chart === null || !Number.isFinite(y)) return null;
-        return this.chart.yToPrice(y, this.priceScaleId());
+        return this.chart.yToPrice(y, this.priceScaleId(), this.pane);
     }
 }
 
@@ -369,18 +367,22 @@ export interface PriceScaleOptions {
     autoScale?: boolean;
 }
 class PriceScaleApi implements IPriceScaleApi {
-    constructor(private readonly chart: ChartImpl | null, private readonly scaleId: string) {}
+    constructor(
+        private readonly chart: ChartImpl | null,
+        private readonly scaleId: string,
+        private readonly pane: PaneModel<Series> | null = null,
+    ) {}
     applyOptions(patch: PriceScaleOptions): void {
         if (this.chart === null) return;
         if (patch.scaleMargins) {
-            const cur = this.chart.getScaleMargins(this.scaleId);
+            const cur = this.chart.getScaleMargins(this.scaleId, this.pane);
             this.chart.setScaleMargins(this.scaleId, {
                 top:    Math.min(0.9, Math.max(0, patch.scaleMargins.top    ?? cur.top)),
                 bottom: Math.min(0.9, Math.max(0, patch.scaleMargins.bottom ?? cur.bottom)),
-            });
+            }, this.pane);
         }
-        if (patch.mode !== undefined) this.chart.setScaleMode(this.scaleId, patch.mode);
-        if (patch.autoScale !== undefined) this.chart.setAutoScale(this.scaleId, patch.autoScale);
+        if (patch.mode !== undefined) this.chart.setScaleMode(this.scaleId, patch.mode, this.pane);
+        if (patch.autoScale !== undefined) this.chart.setAutoScale(this.scaleId, patch.autoScale, this.pane);
     }
 }
 
@@ -392,7 +394,6 @@ class MarkersPlugin implements ISeriesMarkersPlugin {
     }
 }
 
-export interface TimeRange { from: Time; to: Time }
 export interface CrosshairMoveEvent { time?: Time; point?: { x: number; y: number } }
 export type RangeListener = (range: TimeRange | null) => void;
 export type CrosshairListener = (param: CrosshairMoveEvent) => void;
@@ -466,6 +467,24 @@ export interface ITimeScaleApi {
     coordinateToLogical(x: number): number | null;
 }
 
+export interface PaneSize {
+    width: number;
+    height: number;
+    top: number;
+}
+
+export interface IPaneApi {
+    id(): string;
+    addSeries(definition: SeriesDefinition, options?: SeriesOptions): ISeriesApi;
+    removeSeries(series: ISeriesApi): void;
+    series(): readonly ISeriesApi[];
+    priceScale(scaleId?: string): IPriceScaleApi;
+    timeScale(): ITimeScaleApi;
+    applyOptions(options: Omit<PaneOptions, 'id'>): void;
+    options(): Required<PaneOptions>;
+    getSize(): PaneSize;
+}
+
 export interface OrderPlacementOptions {
     modifier?: 'ctrl' | 'shift' | 'alt';
     color?: string;
@@ -473,7 +492,10 @@ export interface OrderPlacementOptions {
 }
 
 export interface IChartApi {
-    addSeries(definition: SeriesDefinition, options?: SeriesOptions): ISeriesApi;
+    addPane(options?: PaneOptions): IPaneApi;
+    panes(): readonly IPaneApi[];
+    removePane(pane: IPaneApi): void;
+    addSeries(definition: SeriesDefinition, options?: SeriesOptions, pane?: IPaneApi): ISeriesApi;
     removeSeries(series: ISeriesApi): void;
     timeScale(): ITimeScaleApi;
     priceScale(scaleId?: string): IPriceScaleApi;
@@ -527,13 +549,60 @@ class TimeScaleApi implements ITimeScaleApi {
     }
 }
 
+class PaneApi implements IPaneApi {
+    constructor(
+        private readonly chart: ChartImpl,
+        readonly model: PaneModel<Series>,
+    ) {}
+
+    id(): string { return this.model.id; }
+    addSeries(definition: SeriesDefinition, options: SeriesOptions = {}): ISeriesApi {
+        return this.chart.addSeries(definition, options, this);
+    }
+    removeSeries(series: ISeriesApi): void { this.chart.removeSeries(series); }
+    series(): readonly ISeriesApi[] { return this.model.series.slice(); }
+    priceScale(scaleId = 'right'): IPriceScaleApi { return new PriceScaleApi(this.chart, scaleId, this.model); }
+    timeScale(): ITimeScaleApi { return this.chart.timeScale(); }
+    applyOptions(options: Omit<PaneOptions, 'id'>): void { this.chart.applyPaneOptions(this, options); }
+    options(): Required<PaneOptions> {
+        return {
+            id: this.model.id,
+            height: this.model.height,
+            minHeight: this.model.minHeight,
+            order: this.model.order,
+            state: this.model.state,
+        };
+    }
+    getSize(): PaneSize { return this.chart.paneSize(this); }
+}
+
 class ChartImpl implements IChartApi {
     private readonly host: HTMLElement;
+    private readonly root: HTMLDivElement;
+    private readonly baseCanvas: HTMLCanvasElement;
     private readonly canvas: HTMLCanvasElement;
-    private readonly ctx: CanvasRenderingContext2D;
+    private readonly baseCtx: CanvasRenderingContext2D;
+    private readonly overlayCtx: CanvasRenderingContext2D;
+    private ctx: CanvasRenderingContext2D;
     private readonly opts: ChartOptions;
-    private readonly series: Series[] = [];
+    private readonly model = new ChartModel<Series>();
     private readonly tsApi = new TimeScaleApi(this);
+    private readonly paneLayout = new PaneLayout();
+    private paneLayoutResult: PaneLayoutResult = { panes: [], splitters: [] };
+    private readonly paneApis = new Map<string, PaneApi>();
+    private activePane: PaneModel<Series> = this.model.mainPane;
+    private activePaneRect: PaneLayoutRect = {
+        paneId: 'main', state: 'normal', x: 0, y: 0, width: 0, height: 0,
+    };
+
+    private get series(): readonly Series[] { return this.model.series; }
+    private get activeSeries(): readonly Series[] { return this.activePane.series; }
+    private get viewFrom(): number { return this.model.timeScale.visibleFrom; }
+    private set viewFrom(value: number) { this.model.timeScale.visibleFrom = value; }
+    private get viewTo(): number { return this.model.timeScale.visibleTo; }
+    private set viewTo(value: number) { this.model.timeScale.visibleTo = value; }
+    private get dataMin(): number { return this.model.timeScale.dataFrom; }
+    private get dataMax(): number { return this.model.timeScale.dataTo; }
 
     rangeListeners: RangeListener[] = [];
     logicalRangeListeners: LogicalRangeListener[] = [];
@@ -546,23 +615,9 @@ class ChartImpl implements IChartApi {
     private height = 0;
     private dpr = 1;
 
-    // visible window expressed in time
-    private viewFrom = 0;
-    private viewTo = 1;
-    private dataMin = 0;
-    private dataMax = 1;
     private readonly disposables = new DisposableStore();
     private readonly renderScheduler: RenderScheduler;
     private disposed = false;
-    // scaleMargins per scaleId — set via Series.priceScale().applyOptions()
-    // OR chart.applyOptions({ rightPriceScale: { scaleMargins } }).
-    private scaleMarginsByScale = new Map<string, { top: number; bottom: number }>();
-    // When a scale has autoscale disabled, its price range is pinned here (the fully-computed
-    // bounds captured at the moment it was frozen) and priceBounds returns it verbatim instead of
-    // re-fitting to the visible data. Absence of an entry means autoscale is on (the default).
-    private frozenPriceBounds = new Map<string, { min: number; max: number; mode: PriceScaleModeValue }>();
-    // Per-scale display mode (Normal / Logarithmic).
-    private scaleModeByScale = new Map<string, PriceScaleModeValue>();
     // optional ResizeObserver when autoSize is on (default true)
     private autoResizer: ResizeObserver | null = null;
 
@@ -572,12 +627,18 @@ class ChartImpl implements IChartApi {
     private dragging = false;
     private lastDragX = 0;
     // manual vertical price-scale stretch (drag the price axis)
-    private priceZoom = 1;
     private priceDragging = false;
+    private gesturePane: PaneModel<Series> | null = null;
     private lastDragY = 0;
     // manual horizontal time-scale stretch (drag the time axis)
     private timeDragging = false;
     private lastAxisX = 0;
+    private splitterDrag: {
+        splitter: PaneSplitter;
+        startY: number;
+        beforeHeight: number;
+        afterHeight: number;
+    } | null = null;
     // order-line drag engine: the draggable price line currently grabbed (null = none)
     private lineDrag: { series: Series; line: PriceLine } | null = null;
     // true between a pointerdown that landed on the canvas and its release — so a stray global
@@ -616,7 +677,24 @@ class ChartImpl implements IChartApi {
     constructor(host: HTMLElement, opts: ChartOptions) {
         this.host = host;
         this.opts = opts;
+        this.paneApis.set(this.model.mainPane.id, new PaneApi(this, this.model.mainPane));
+        this.root = document.createElement('div');
+        this.root.className = 'sschart-root';
+        this.root.style.position = 'relative';
+        this.root.style.overflow = 'hidden';
+        this.root.style.display = 'block';
+
+        this.baseCanvas = document.createElement('canvas');
+        this.baseCanvas.dataset.sschartLayer = 'base';
+        this.baseCanvas.style.position = 'absolute';
+        this.baseCanvas.style.inset = '0';
+        this.baseCanvas.style.display = 'block';
+        this.baseCanvas.style.pointerEvents = 'none';
+
         this.canvas = document.createElement('canvas');
+        this.canvas.dataset.sschartLayer = 'overlay';
+        this.canvas.style.position = 'absolute';
+        this.canvas.style.inset = '0';
         this.canvas.style.display = 'block';
         this.canvas.style.cursor = 'default';
         // Stop the browser from claiming touch gestures (page scroll /
@@ -628,10 +706,14 @@ class ChartImpl implements IChartApi {
         this.canvas.style.userSelect = 'none';
         (this.canvas.style as unknown as { webkitUserSelect: string }).webkitUserSelect = 'none';
         (this.canvas.style as unknown as { webkitTouchCallout: string }).webkitTouchCallout = 'none';
-        host.appendChild(this.canvas);
-        const ctx = this.canvas.getContext('2d');
-        if (ctx === null) throw new Error('sschart: 2d context unavailable');
-        this.ctx = ctx;
+        this.root.append(this.baseCanvas, this.canvas);
+        host.appendChild(this.root);
+        const baseCtx = this.baseCanvas.getContext('2d');
+        const overlayCtx = this.canvas.getContext('2d');
+        if (baseCtx === null || overlayCtx === null) throw new Error('sschart: 2d context unavailable');
+        this.baseCtx = baseCtx;
+        this.overlayCtx = overlayCtx;
+        this.ctx = baseCtx;
         this.renderScheduler = this.disposables.add(new RenderScheduler((dirty) => this.draw(dirty)));
 
         const w = num(opts.width, host.clientWidth || 600);
@@ -662,74 +744,127 @@ class ChartImpl implements IChartApi {
         // Seed scale margins from constructor options.
         if (opts.rightPriceScale?.scaleMargins) {
             const sm = opts.rightPriceScale.scaleMargins;
-            this.scaleMarginsByScale.set('right', {
-                top:    Math.min(0.9, Math.max(0, sm.top    ?? 0)),
-                bottom: Math.min(0.9, Math.max(0, sm.bottom ?? 0)),
-            });
+            this.model.mainPane.priceScale('right').setMargins(sm);
         }
         if (opts.leftPriceScale?.scaleMargins) {
             const sm = opts.leftPriceScale.scaleMargins;
-            this.scaleMarginsByScale.set('left', {
-                top:    Math.min(0.9, Math.max(0, sm.top    ?? 0)),
-                bottom: Math.min(0.9, Math.max(0, sm.bottom ?? 0)),
-            });
+            this.model.mainPane.priceScale('left').setMargins(sm);
         }
     }
 
     // ---- public-ish (IChartApi) -------------------------------------
-    addSeries(def: SeriesDefinition, options: SeriesOptions = {}): Series {
+    addPane(options: PaneOptions = {}): PaneApi {
+        const model = this.model.addPane(options);
+        const api = new PaneApi(this, model);
+        this.paneApis.set(model.id, api);
+        this.recomputeAxisPads();
+        this.recomputePaneLayout();
+        this.scheduleDraw(RenderDirty.Layout);
+        return api;
+    }
+    panes(): readonly PaneApi[] {
+        return this.model.panes.map((pane) => this.paneApiFor(pane));
+    }
+    removePane(pane: IPaneApi): void {
+        const model = this.resolvePane(pane);
+        const removed = this.model.removePane(model);
+        for (const series of removed) {
+            series.chart = null;
+            series.pane = null;
+        }
+        this.paneApis.delete(model.id);
+        if (this.activePane === model) this.activePane = this.model.mainPane;
+        if (this.gesturePane === model) this.gesturePane = null;
+        this.recomputeAxisPads();
+        this.recomputePaneLayout();
+        this.onDataChanged();
+    }
+    addSeries(def: SeriesDefinition, options: SeriesOptions = {}, pane?: IPaneApi): Series {
+        const target = pane === undefined ? this.model.mainPane : this.resolvePane(pane);
         const s = new Series(def.type, options);
         s.chart = this;
-        this.series.push(s);
+        s.pane = target;
+        this.model.addSeries(s, target);
         // Reserve gutters only for scales that actually carry a series, so
         // a left-scale-only pane (equity overlay) doesn't paint an empty
         // 0..1 right axis.
-        this.padLeft = this.hasScale('left') ? 56 : 0;
-        this.padR = this.hasScale('right') ? 64 : 8;
+        this.recomputeAxisPads();
         this.onDataChanged();
         return s;
     }
     removeSeries(series: ISeriesApi): void {
         const s = series as Series;
-        const i = this.series.indexOf(s);
-        if (i < 0) return;
-        this.series.splice(i, 1);
-        this.padLeft = this.hasScale('left') ? 56 : 0;
-        this.padR = this.hasScale('right') ? 64 : 8;
+        if (!this.model.removeSeries(s)) return;
+        s.chart = null;
+        s.pane = null;
+        this.recomputeAxisPads();
         this.onDataChanged();
     }
     private hasScale(id: string): boolean {
-        return this.series.some((s) => s.priceScaleId() === id);
+        return this.activeSeries.some((s) => s.priceScaleId() === id);
+    }
+    private hasAnyScale(id: string): boolean { return this.series.some((s) => s.priceScaleId() === id); }
+    private recomputeAxisPads(): void {
+        this.padLeft = this.hasAnyScale('left') ? 56 : 0;
+        this.padR = this.hasAnyScale('right') ? 64 : 8;
+    }
+    private paneApiFor(pane: PaneModel<Series>): PaneApi {
+        const api = this.paneApis.get(pane.id);
+        if (api === undefined) throw new Error(`sschart: pane '${pane.id}' is not available`);
+        return api;
+    }
+    private resolvePane(pane: IPaneApi): PaneModel<Series> {
+        if (!(pane instanceof PaneApi)) throw new Error('sschart: invalid pane handle');
+        const owned = this.paneApis.get(pane.id());
+        if (owned !== pane) throw new Error('sschart: pane does not belong to this chart');
+        return pane.model;
+    }
+    applyPaneOptions(pane: PaneApi, options: Omit<PaneOptions, 'id'>): void {
+        const model = this.resolvePane(pane);
+        if (options.state === 'maximized') {
+            for (const sibling of this.model.panes) {
+                if (sibling !== model && sibling.state === 'maximized') sibling.state = 'normal';
+            }
+        }
+        model.applyOptions(options);
+        this.recomputePaneLayout();
+        this.scheduleDraw(RenderDirty.Layout);
+    }
+    paneSize(pane: PaneApi): PaneSize {
+        const model = this.resolvePane(pane);
+        const rect = this.paneLayoutResult.panes.find((item) => item.paneId === model.id);
+        return rect === undefined
+            ? { width: this.width, height: 0, top: 0 }
+            : { width: rect.width, height: rect.height, top: rect.y };
     }
     timeScale(): TimeScaleApi { return this.tsApi; }
     // Per-scale margins (PriceScaleApi accessor). Defaults to {0,0}.
-    getScaleMargins(scaleId: string): { top: number; bottom: number } {
-        return this.scaleMarginsByScale.get(scaleId) ?? { top: 0, bottom: 0 };
+    getScaleMargins(scaleId: string, pane: PaneModel<Series> | null = null): { top: number; bottom: number } {
+        return { ...(pane ?? this.model.mainPane).priceScale(scaleId).margins };
     }
-    setScaleMargins(scaleId: string, m: { top: number; bottom: number }): void {
-        this.scaleMarginsByScale.set(scaleId, m);
-        // A margin change while frozen would be ignored (priceBounds returns the pinned range), so
-        // drop the freeze to honour it — margins are set at setup, not during a drag.
-        this.frozenPriceBounds.delete(scaleId);
+    setScaleMargins(scaleId: string, m: { top: number; bottom: number }, pane: PaneModel<Series> | null = null): void {
+        (pane ?? this.model.mainPane).priceScale(scaleId).setMargins(m);
         this.scheduleDraw();
     }
     // Freeze / unfreeze the price range for a scale (PriceScaleApi.applyOptions({autoScale})).
     // Disabling captures the current fully-computed bounds and pins them; enabling resumes auto-fit.
-    setAutoScale(scaleId: string, enabled: boolean): void {
+    setAutoScale(scaleId: string, enabled: boolean, pane: PaneModel<Series> | null = null): void {
+        const target = pane ?? this.model.mainPane;
+        const scale = target.priceScale(scaleId);
         if (enabled) {
-            this.frozenPriceBounds.delete(scaleId);
-        } else if (!this.frozenPriceBounds.has(scaleId)) {
+            scale.frozenRange = null;
+        } else if (scale.frozenRange === null) {
             // priceBounds() checks the frozen map first, but it is still empty here, so this
             // computes fresh bounds — exactly what we want to pin.
-            this.frozenPriceBounds.set(scaleId, this.priceBounds(scaleId));
+            scale.frozenRange = this.priceBounds(scaleId, target);
         }
         this.scheduleDraw();
     }
-    getScaleMode(scaleId: string): PriceScaleModeValue {
-        return this.scaleModeByScale.get(scaleId) ?? PriceScaleMode.Normal;
+    getScaleMode(scaleId: string, pane: PaneModel<Series> | null = null): PriceScaleModeValue {
+        return (pane ?? this.activePane).priceScale(scaleId).mode as PriceScaleModeValue;
     }
-    setScaleMode(scaleId: string, mode: PriceScaleModeValue): void {
-        this.scaleModeByScale.set(scaleId, mode);
+    setScaleMode(scaleId: string, mode: PriceScaleModeValue, pane: PaneModel<Series> | null = null): void {
+        (pane ?? this.model.mainPane).priceScale(scaleId).setMode(mode);
         this.scheduleDraw();
     }
     subscribeClick(cb: ClickListener): void { this.clickListeners.push(cb); }
@@ -761,17 +896,18 @@ class ChartImpl implements IChartApi {
             default: return false;
         }
     }
-    private mainSeries(): Series | null {
-        return this.series.find((s) => s.priceScaleId() === 'right') ?? this.series[0] ?? null;
+    private mainSeries(pane: PaneModel<Series> = this.model.mainPane): Series | null {
+        return pane.series.find((s) => s.priceScaleId() === 'right') ?? pane.series[0] ?? null;
     }
     private updatePlacementPreview(): void {
         const placement = this.placement;
         const ok = placement !== null && this.modifierHeld && this.lineDrag === null &&
             this.mouseX !== null && this.mouseY !== null &&
             !this.inTimeGutter(this.mouseY) && !this.inPriceGutter(this.mouseX);
-        const s = this.mainSeries();
+        const pane = this.mouseY === null ? this.model.mainPane : (this.paneAt(this.mouseY) ?? this.model.mainPane);
+        const s = this.mainSeries(pane);
         if (!ok || placement === null || s === null) { this.clearPlacementPreview(); return; }
-        const p = this.yToPrice(this.mouseY as number, s.priceScaleId());
+        const p = this.yToPrice(this.mouseY as number, s.priceScaleId(), pane);
         if (p === null) { this.clearPlacementPreview(); return; }
         const color = placement.color;
         const title = placement.title + ' @ ' + this.fmtPrice(p, s.opts.priceFormat);
@@ -785,7 +921,9 @@ class ChartImpl implements IChartApi {
     }
     private clearPlacementPreview(): void {
         if (this.placementLine === null) return;
-        const s = this.mainSeries();
+        const s = this.placementLine instanceof PriceLine
+            ? this.series.find((series) => series.priceLines.includes(this.placementLine as PriceLine)) ?? null
+            : this.mainSeries();
         try { s?.removePriceLine(this.placementLine); } catch { /* */ }
         try { s?.priceScale().applyOptions({ autoScale: true }); } catch { /* */ }
         this.placementLine = null;
@@ -799,7 +937,10 @@ class ChartImpl implements IChartApi {
         Object.assign(this.opts, patch);
         // Toggling time-axis visibility must re-reserve (or free) its vertical strip so the axis
         // actually appears/disappears — not just flip a flag with no layout room for it.
-        if (patch.timeScale) this.recomputeTimeAxisPad();
+        if (patch.timeScale) {
+            this.recomputeTimeAxisPad();
+            this.recomputePaneLayout();
+        }
         // Sugar: chart.applyOptions({rightPriceScale:{scaleMargins:{...}}})
         // mirrors Series.priceScale().applyOptions and writes into the
         // same per-scale store the renderer consults.
@@ -817,26 +958,30 @@ class ChartImpl implements IChartApi {
                 bottom: Math.min(0.9, Math.max(0, patch.leftPriceScale.scaleMargins.bottom ?? cur.bottom)),
             });
         }
-        this.scheduleDraw();
+        this.scheduleDraw(RenderDirty.All);
     }
     resize(width: number, height: number): void {
         if (width < 2 || height < 2) return;
         this.applySize(width, height);
-        this.scheduleDraw();
+        this.scheduleDraw(RenderDirty.Layout);
     }
     remove(): void {
         if (this.disposed) return;
         this.disposed = true;
         this.disposables.dispose();
-        this.canvas.remove();
+        this.root.remove();
         this.rangeListeners = [];
         this.logicalRangeListeners = [];
         this.crosshairListeners = [];
         this.clickListeners = [];
         this.orderPlaceListeners = [];
         this._closeHits = [];
-        for (const series of this.series) series.chart = null;
-        this.series.length = 0;
+        for (const series of this.series) {
+            series.chart = null;
+            series.pane = null;
+            this.model.removeSeries(series);
+        }
+        this.paneApis.clear();
     }
     // Snapshot of the current frame as an HTMLCanvasElement (lwc parity).
     // Caller typically converts via .toDataURL('image/png') for export.
@@ -845,7 +990,10 @@ class ChartImpl implements IChartApi {
         out.width = this.canvas.width;
         out.height = this.canvas.height;
         const c = out.getContext('2d');
-        if (c !== null) c.drawImage(this.canvas, 0, 0);
+        if (c !== null) {
+            c.drawImage(this.baseCanvas, 0, 0);
+            c.drawImage(this.canvas, 0, 0);
+        }
         return out;
     }
 
@@ -854,12 +1002,18 @@ class ChartImpl implements IChartApi {
         this.width = w;
         this.height = h;
         this.dpr = window.devicePixelRatio || 1;
-        this.canvas.width = Math.round(w * this.dpr);
-        this.canvas.height = Math.round(h * this.dpr);
-        this.canvas.style.width = `${w}px`;
-        this.canvas.style.height = `${h}px`;
-        this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+        this.root.style.width = `${w}px`;
+        this.root.style.height = `${h}px`;
+        for (const canvas of [this.baseCanvas, this.canvas]) {
+            canvas.width = Math.round(w * this.dpr);
+            canvas.height = Math.round(h * this.dpr);
+            canvas.style.width = `${w}px`;
+            canvas.style.height = `${h}px`;
+        }
+        this.baseCtx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+        this.overlayCtx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
         this.recomputeTimeAxisPad();
+        this.recomputePaneLayout();
     }
 
     // Reserve room for the time axis only when it is visible. Bidirectional on purpose: toggling
@@ -869,6 +1023,23 @@ class ChartImpl implements IChartApi {
     // after the last sub-pane was removed.
     private recomputeTimeAxisPad(): void {
         this.padB = this.opts.timeScale?.visible === false ? 4 : 22;
+    }
+
+    private recomputePaneLayout(): void {
+        this.paneLayoutResult = this.paneLayout.compute(
+            this.width,
+            Math.max(0, this.height - this.padB),
+            this.model.panes,
+        );
+        const activeRect = this.paneLayoutResult.panes.find((rect) => rect.paneId === this.activePane.id);
+        if (activeRect !== undefined) this.activePaneRect = activeRect;
+        else {
+            const first = this.paneLayoutResult.panes[0];
+            if (first !== undefined) {
+                this.activePane = this.model.paneById(first.paneId) ?? this.model.mainPane;
+                this.activePaneRect = first;
+            }
+        }
     }
 
     onDataChanged(): void {
@@ -883,25 +1054,14 @@ class ChartImpl implements IChartApi {
             hi = Math.max(hi, t1);
         }
         if (Number.isFinite(lo) && Number.isFinite(hi) && hi > lo) {
-            this.dataMin = lo;
-            this.dataMax = hi;
-            // Only snap when the view is degenerate (empty / inverted) or
-            // has no overlap with data at all. A user-panned view that
-            // overshoots either edge stays put — otherwise live ticks
-            // would yank a centered last bar back to the right edge.
-            const noOverlap = this.viewTo < lo || this.viewFrom > hi;
-            if (this.viewTo <= this.viewFrom || noOverlap) {
-                this.viewFrom = lo;
-                this.viewTo = hi;
-            }
+            this.model.timeScale.updateDataRange(lo, hi);
         }
         this.scheduleDraw();
     }
 
     fitContent(): void {
-        this.viewFrom = this.dataMin;
-        this.viewTo = this.dataMax;
-        this.priceZoom = 1;          // reset the manual vertical stretch too
+        this.model.timeScale.fitContent();
+        for (const pane of this.model.panes) pane.priceZoom = 1;
         this.emitRange();
         this.scheduleDraw();
     }
@@ -910,20 +1070,18 @@ class ChartImpl implements IChartApi {
     // view alone, so a realtime feed opts into following the tape by calling
     // this after each append.
     scrollToRealTime(): void {
-        const width = this.viewTo - this.viewFrom;
-        if (!(width > 0) || !Number.isFinite(this.dataMax)) return;
-        this.viewTo = this.dataMax + width * 0.04;
-        this.viewFrom = this.viewTo - width;
+        if (!this.model.timeScale.scrollToRealTime()) return;
         this.emitRange();
         this.scheduleDraw();
     }
     // Chart-level price-scale handle by id (mirrors Series.priceScale() but lets
     // callers address a scale — e.g. 'right' — without holding a series). Used by
     // indicator renderers to set an oscillator pane's scaleMargins.
-    priceScale(scaleId: string = 'right'): PriceScaleApi { return new PriceScaleApi(this, scaleId); }
+    priceScale(scaleId: string = 'right'): PriceScaleApi {
+        return new PriceScaleApi(this, scaleId, this.model.mainPane);
+    }
     getVisibleRange(): { from: Time; to: Time } | null {
-        if (this.viewTo <= this.viewFrom) return null;
-        return { from: this.viewFrom, to: this.viewTo };
+        return this.model.timeScale.visibleRange;
     }
     setVisibleRange(range: { from: Time; to: Time }, emit: boolean): void {
         if (range === null || !(range.to > range.from)) return;
@@ -934,25 +1092,7 @@ class ChartImpl implements IChartApi {
     // Keep the visible window sane: bounded span AND always overlapping
     // the data, so wheel/pan can never leave the chart empty.
     private clampView(nf: number, nt: number): void {
-        const ds = (this.dataMax - this.dataMin) || 1;
-        const minSpan = ds * 0.004;
-        const maxSpan = ds * 3;
-        let s = nt - nf;
-        if (!(s > 0)) { s = ds; nf = this.dataMin; nt = this.dataMax; }
-        if (s < minSpan || s > maxSpan) {
-            s = Math.min(Math.max(s, minSpan), maxSpan);
-            const c = (nf + nt) / 2;
-            nf = c - s / 2;
-            nt = c + s / 2;
-        }
-        const minLo = this.dataMin - ds * 0.5;
-        const maxHi = this.dataMax + ds * 0.5;
-        if (nf < minLo) { nt += minLo - nf; nf = minLo; }
-        if (nt > maxHi) { nf -= nt - maxHi; nt = maxHi; }
-        if (nf < minLo) nf = minLo;
-        if (nt > maxHi) nt = maxHi;
-        this.viewFrom = nf;
-        this.viewTo = nt;
+        this.model.timeScale.clampVisibleRange(nf, nt);
     }
     private emitRange(): void {
         const r = this.getVisibleRange();
@@ -1066,9 +1206,25 @@ class ChartImpl implements IChartApi {
     private plotL(): number { return this.padL + this.padLeft; }
     private plotR(): number { return this.width - this.padR; }
     private plotW(): number { return Math.max(1, this.plotR() - this.plotL()); }
-    private plotT(): number { return this.padT; }
-    private plotB(): number { return this.height - this.padB; }
+    private plotT(): number { return this.activePaneRect.y + this.padT; }
+    private plotB(): number { return this.activePaneRect.y + this.activePaneRect.height; }
     private plotH(): number { return Math.max(1, this.plotB() - this.plotT()); }
+
+    private activatePane(pane: PaneModel<Series>, rect?: PaneLayoutRect): void {
+        const nextRect = rect ?? this.paneLayoutResult.panes.find((item) => item.paneId === pane.id);
+        if (nextRect === undefined) return;
+        this.activePane = pane;
+        this.activePaneRect = nextRect;
+    }
+
+    private paneAt(y: number): PaneModel<Series> | null {
+        const rect = this.paneLayoutResult.panes.find((item) => y >= item.y && y <= item.y + item.height);
+        return rect === undefined ? null : (this.model.paneById(rect.paneId) ?? null);
+    }
+
+    private paneRect(pane: PaneModel<Series>): PaneLayoutRect | undefined {
+        return this.paneLayoutResult.panes.find((item) => item.paneId === pane.id);
+    }
 
     // Ordinal (bar-index) x-axis: consecutive bars are equal-spaced and time
     // gaps collapse. Falls back to time-proportional when there is no series.
@@ -1101,16 +1257,19 @@ class ChartImpl implements IChartApi {
     }
 
     // price scale per axis ('right' default, 'left' optional)
-    private priceBounds(scaleId: string): { min: number; max: number; mode: PriceScaleModeValue } {
+    private priceBounds(
+        scaleId: string,
+        pane: PaneModel<Series> = this.activePane,
+    ): { min: number; max: number; mode: PriceScaleModeValue } {
         // Autoscale disabled: return the pinned range so live data / view changes cannot shift the
         // price<->pixel mapping (used by hosts to keep a drag WYSIWYG).
-        const frozen = this.frozenPriceBounds.get(scaleId);
-        if (frozen) return frozen;
+        const scale = pane.priceScale(scaleId);
+        if (scale.frozenRange !== null) return scale.frozenRange as { min: number; max: number; mode: PriceScaleModeValue };
 
         const scan = (windowed: boolean): { min: number; max: number } => {
             let mn = Infinity;
             let mx = -Infinity;
-            for (const s of this.series) {
+            for (const s of pane.series) {
                 if (s.priceScaleId() !== scaleId) continue;
                 if (s.kind === 'VolumeProfile') continue;   // overlay — doesn't drive the scale
                 // Renko / P&F drive the scale from their derived bricks / columns
@@ -1158,24 +1317,24 @@ class ChartImpl implements IChartApi {
         // the series stays visible instead of collapsing to a default [0,1].
         if (!Number.isFinite(min) || !Number.isFinite(max)) ({ min, max } = scan(false));
         if (!Number.isFinite(min) || !Number.isFinite(max))
-            return { min: 0, max: 1, mode: this.getScaleMode(scaleId) };
+            return { min: 0, max: 1, mode: this.getScaleMode(scaleId, pane) };
         if (min === max) { min -= 1; max += 1; }
         const pad = (max - min) * 0.08;
         let lo = min - pad;
         let hi = max + pad;
         // Manual vertical stretch: shrink/grow the range around its
         // centre (priceZoom>1 → smaller range → data drawn taller).
-        if (this.priceZoom !== 1) {
+        if (pane.priceZoom !== 1) {
             const c = (lo + hi) / 2;
-            const half = (hi - lo) / 2 / this.priceZoom;
+            const half = (hi - lo) / 2 / pane.priceZoom;
             lo = c - half;
             hi = c + half;
         }
         // Apply scaleMargins: expand the virtual range so the data occupies
         // only (1 - top - bottom) of the plot. Used for volume overlays
         // (top:0.85 → bars hug the bottom 15%) and similar.
-        const m = this.scaleMarginsByScale.get(scaleId);
-        if (m && (m.top > 0 || m.bottom > 0)) {
+        const m = scale.margins;
+        if (m.top > 0 || m.bottom > 0) {
             const denom = 1 - m.top - m.bottom;
             if (denom > 0.05) {
                 const span = hi - lo;
@@ -1183,7 +1342,7 @@ class ChartImpl implements IChartApi {
                 lo = lo - span * m.bottom / denom;
             }
         }
-        const mode = this.getScaleMode(scaleId);
+        const mode = this.getScaleMode(scaleId, pane);
         // Logarithmic: clamp lower bound to a tiny positive so log() is
         // well-defined. Values <= 0 in data will be silently clamped at
         // draw time (rare in practice for price series anyway).
@@ -1226,7 +1385,7 @@ class ChartImpl implements IChartApi {
     // Find the primary right-scale series — used by axis ticks /
     // cursor pill (price-without-series). Falls back to "no format".
     private primaryFormat(scaleId: string = 'right'): PriceFormat | undefined {
-        for (const s of this.series) {
+        for (const s of this.activeSeries) {
             if (s.priceScaleId() !== scaleId) continue;
             if (s.kind === 'VolumeProfile') continue;
             if (s.opts.priceFormat !== undefined) return s.opts.priceFormat;
@@ -1235,32 +1394,52 @@ class ChartImpl implements IChartApi {
     }
     // Public price ↔ pixel for the named price scale ('right' default,
     // 'left' for the equity overlay). Used by external order overlays.
-    priceToY(price: number, scaleId: string = 'right'): number | null {
-        const b = this.priceBounds(scaleId);
+    priceToY(
+        price: number,
+        scaleId: string = 'right',
+        pane: PaneModel<Series> | null = null,
+    ): number | null {
+        const target = pane ?? this.model.mainPane;
+        const rect = this.paneRect(target);
+        if (rect === undefined) return null;
+        this.activatePane(target, rect);
+        const b = this.priceBounds(scaleId, target);
         if (!Number.isFinite(b.min) || !Number.isFinite(b.max)) return null;
         return this.valueToY(price, b);
     }
-    yToPrice(y: number, scaleId: string = 'right'): number | null {
-        const b = this.priceBounds(scaleId);
+    yToPrice(
+        y: number,
+        scaleId: string = 'right',
+        pane: PaneModel<Series> | null = null,
+    ): number | null {
+        const target = pane ?? this.model.mainPane;
+        const rect = this.paneRect(target);
+        if (rect === undefined) return null;
+        this.activatePane(target, rect);
+        const b = this.priceBounds(scaleId, target);
         if (!Number.isFinite(b.min) || !Number.isFinite(b.max)) return null;
-        const span = b.max - b.min || 1;
-        return b.min + ((this.plotB() - y) / this.plotH()) * span;
+        return this.yToValue(y, b);
     }
 
     // ---- drawing ----------------------------------------------------
-    private draw(_dirty: RenderDirtyFlags): void {
-        const ctx = this.ctx;
+    private draw(requested: RenderDirtyFlags): void {
+        const dirty = (requested & RenderDirty.Layout) !== 0 ? RenderDirty.All : requested;
+        const redrawBase = (dirty & (RenderDirty.Base | RenderDirty.Axes)) !== 0;
+        if (redrawBase) this.drawBase();
+        if (redrawBase || (dirty & RenderDirty.Overlay) !== 0) this.drawOverlay();
+    }
+
+    private drawBase(): void {
+        const ctx = this.baseCtx;
+        this.ctx = ctx;
         const lay = this.opts.layout ?? {};
         ctx.clearRect(0, 0, this.width, this.height);
-        this._closeHits = [];
         ctx.fillStyle = lay.background?.color ?? DEF_LAYOUT_BG;
         ctx.fillRect(0, 0, this.width, this.height);
 
-        const hasRight = this.hasScale('right');
-        const hasLeft = this.hasScale('left');
         // Auto-fit right gutter to the widest PRICE label (the price
         // pill lives in the gutter; the title pill lives on the plot).
-        if (hasRight) {
+        if (this.hasAnyScale('right')) {
             ctx.font = `11px ${lay.fontFamily ?? DEF_FONT}`;
             let maxPriceW = 0;
             for (const s of this.series) {
@@ -1276,40 +1455,78 @@ class ChartImpl implements IChartApi {
             const desired = Math.max(64, Math.ceil(maxPriceW) + 4);
             if (desired !== this.padR) this.padR = desired;
         }
-        const rb = this.priceBounds('right');
-        const lb = hasLeft ? this.priceBounds('left') : rb;
-        const primary = hasRight ? rb : lb;
 
-        // Watermark on the background — under series, over the bg fill.
-        this.drawWatermark();
-        this.drawGrid(primary);
-        for (const s of this.series) {
-            // Draw each series against bounds of ITS OWN scale, not just
-            // left vs right. Overlay scales (priceScaleId='' on the host's
-            // volume series, etc.) have their own scaleMargins blob — e.g.
-            // volume sits at top:0.85 to hug the bottom 15%. Folding them
-            // into 'right' bounds maps their values (30 000 vol) onto the
-            // candle range (0.44–0.46), so valueToY produces an extreme
-            // off-canvas Y and fillRect clips to a full-height vertical
-            // band — visible as solid red/green stripes covering the chart.
-            const sid = s.priceScaleId();
-            const sb = sid === 'right'
-                ? rb
-                : (sid === 'left' && hasLeft ? lb : this.priceBounds(sid));
-            this.drawSeries(s, sb);
+        const visible = this.paneLayoutResult.panes;
+        for (let index = 0; index < visible.length; index++) {
+            const rect = visible[index];
+            const pane = this.model.paneById(rect.paneId);
+            if (pane === undefined) continue;
+            this.activatePane(pane, rect);
+            const last = index === visible.length - 1;
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(rect.x, rect.y, rect.width, rect.height + (last ? this.padB : 0));
+            ctx.clip();
+
+            const hasRight = this.hasScale('right');
+            const hasLeft = this.hasScale('left');
+            const rb = this.priceBounds('right', pane);
+            const lb = hasLeft ? this.priceBounds('left', pane) : rb;
+            const primary = hasRight ? rb : lb;
+
+            if (pane === this.model.mainPane) this.drawWatermark();
+            this.drawGrid(primary);
+            for (const s of pane.series) {
+                // Draw each series against bounds of ITS OWN scale. Overlay
+                // scales remain independent inside their owning pane.
+                const sid = s.priceScaleId();
+                const sb = sid === 'right'
+                    ? rb
+                    : (sid === 'left' && hasLeft ? lb : this.priceBounds(sid, pane));
+                this.drawSeries(s, sb);
+            }
+            this.drawMarkers(rb, lb);
+            this.drawAxes(hasRight ? rb : null, hasLeft ? lb : null, last);
+            this.drawPriceTags(rb, lb);
+            ctx.restore();
         }
-        this.drawMarkers(rb, lb);
-        this.drawAxes(hasRight ? rb : null, hasLeft ? lb : null);
-        this.drawPriceTags(rb, lb);
-        // Order / alert / preview lines + their colored axis labels
-        // draw LAST among the value chrome so they sit on top of the
-        // axis tick text (no bleed-through) and on top of the per-series
-        // last-value pills — actively-edited orders should dominate.
-        // Still under the crosshair so the user can see what they are
-        // hovering even over an order line.
-        this.drawPriceLines(rb, lb);
-        this.drawCrosshair(rb, lb);
-        this.drawClusterTip(rb, lb);
+
+        ctx.fillStyle = this.opts.rightPriceScale?.borderColor ?? DEF_BORDER;
+        for (const splitter of this.paneLayoutResult.splitters) {
+            const y = Math.round(splitter.rect.y + splitter.rect.height / 2) + 0.5;
+            ctx.fillRect(splitter.rect.x, y, splitter.rect.width, 1);
+        }
+        this.activatePane(this.model.mainPane);
+    }
+
+    private drawOverlay(): void {
+        const ctx = this.overlayCtx;
+        this.ctx = ctx;
+        ctx.clearRect(0, 0, this.width, this.height);
+        this._closeHits = [];
+        const visible = this.paneLayoutResult.panes;
+        for (let index = 0; index < visible.length; index++) {
+            const rect = visible[index];
+            const pane = this.model.paneById(rect.paneId);
+            if (pane === undefined) continue;
+            this.activatePane(pane, rect);
+            const last = index === visible.length - 1;
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(rect.x, rect.y, rect.width, rect.height + (last ? this.padB : 0));
+            ctx.clip();
+            const hasLeft = this.hasScale('left');
+            const rb = this.priceBounds('right', pane);
+            const lb = hasLeft ? this.priceBounds('left', pane) : rb;
+            // Interactive price lines and the shared crosshair are rendered
+            // once per pane against that pane's independent price scale.
+            this.drawPriceLines(rb, lb);
+            this.drawCrosshair(rb, lb, last);
+            this.drawClusterTip(rb, lb);
+            ctx.restore();
+        }
+        this.activatePane(this.model.mainPane);
+        this.ctx = this.baseCtx;
     }
 
     // Horizontal lines (orders / alerts / preview-on-Ctrl). The LINE
@@ -1330,7 +1547,7 @@ class ChartImpl implements IChartApi {
             yLine: number; yLabelNatural: number; b: { min: number; max: number };
         }
         const items: Item[] = [];
-        for (const s of this.series) {
+        for (const s of this.activeSeries) {
             if (s.priceLines.length === 0) continue;
             const b = s.priceScaleId() === 'left' ? lb : rb;
             for (const pl of s.priceLines) {
@@ -1483,7 +1700,7 @@ class ChartImpl implements IChartApi {
         }
 
         // Animation tick — keep redrawing until everyone settled.
-        if (stillMoving) this.scheduleDraw();
+        if (stillMoving) this.scheduleDraw(RenderDirty.Overlay);
     }
     // Watermark (brand text / ticker) drawn over the plot background,
     // under the series. lwc-shaped option block.
@@ -1521,7 +1738,8 @@ class ChartImpl implements IChartApi {
     private drawClusterTip(rb: { min: number; max: number }, lb: { min: number; max: number }): void {
         if (this.mouseX === null || this.mouseY === null) return;
         if (this.mouseX < this.plotL() || this.mouseX > this.plotR()) return;
-        const cs = this.series.find((s) => s.kind === 'Cluster');
+        if (this.mouseY < this.plotT() || this.mouseY > this.plotB()) return;
+        const cs = this.activeSeries.find((s) => s.kind === 'Cluster');
         if (cs === undefined) return;
         const st = this.snapTime(this.mouseX);
         if (st === undefined) return;
@@ -1570,7 +1788,7 @@ class ChartImpl implements IChartApi {
         const ctx = this.ctx;
         ctx.font = `10px ${this.opts.layout?.fontFamily ?? DEF_FONT}`;
         ctx.textBaseline = 'middle';
-        for (const s of this.series) {
+        for (const s of this.activeSeries) {
             if (s.data.length === 0 || s.kind === 'VolumeProfile') continue;   // VP has no single price
             if (s.opts.lastValueVisible === false) continue;
             // lwc parity: priceLineSource = 'lastBar' (default) shows
@@ -2014,7 +2232,7 @@ class ChartImpl implements IChartApi {
     private drawMarkers(rb: { min: number; max: number }, lb: { min: number; max: number }): void {
         const ctx = this.ctx;
         ctx.font = `10px ${this.opts.layout?.fontFamily ?? DEF_FONT}`;
-        for (const s of this.series) {
+        for (const s of this.activeSeries) {
             if (s.markers.length === 0) continue;   // markers on ANY series kind
             const b = s.priceScaleId() === 'left' ? lb : rb;
             const byTime = new Map(s.data.map((p) => [p.time, p]));
@@ -2139,7 +2357,11 @@ class ChartImpl implements IChartApi {
         return `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
     }
 
-    private drawAxes(rb: { min: number; max: number } | null, lb: { min: number; max: number } | null): void {
+    private drawAxes(
+        rb: { min: number; max: number } | null,
+        lb: { min: number; max: number } | null,
+        drawTimeAxis: boolean,
+    ): void {
         const ctx = this.ctx;
         ctx.fillStyle = this.opts.layout?.textColor ?? DEF_TEXT;
         ctx.font = `10px ${this.opts.layout?.fontFamily ?? DEF_FONT}`;
@@ -2179,7 +2401,7 @@ class ChartImpl implements IChartApi {
         }
 
         // time axis
-        if (this.opts.timeScale?.visible !== false) {
+        if (drawTimeAxis && this.opts.timeScale?.visible !== false) {
             ctx.strokeStyle = this.opts.timeScale?.borderColor ?? DEF_BORDER;
             ctx.beginPath();
             ctx.moveTo(this.plotL(), this.plotB() + 0.5);
@@ -2197,7 +2419,11 @@ class ChartImpl implements IChartApi {
         }
     }
 
-    private drawCrosshair(rb: { min: number; max: number; mode?: PriceScaleModeValue }, lb: { min: number; max: number; mode?: PriceScaleModeValue }): void {
+    private drawCrosshair(
+        rb: { min: number; max: number; mode?: PriceScaleModeValue },
+        lb: { min: number; max: number; mode?: PriceScaleModeValue },
+        showTimeLabel: boolean,
+    ): void {
         if (this.mouseX === null || this.mouseY === null) return;
         const ch = this.opts.crosshair ?? {};
         if (this.mouseX < this.plotL() || this.mouseX > this.plotR()) return;
@@ -2219,7 +2445,7 @@ class ChartImpl implements IChartApi {
         let crossY = this.mouseY;
         const crossMode = ch.mode ?? CrosshairMode.Normal;
         if (crossMode === CrosshairMode.Magnet && st !== undefined) {
-            for (const s of this.series) {
+            for (const s of this.activeSeries) {
                 if (s.kind !== 'Candlestick' && s.kind !== 'Bar') continue;
                 const p = s.data.find((d) => d.time === st);
                 if (p === undefined) continue;
@@ -2259,7 +2485,7 @@ class ChartImpl implements IChartApi {
         // Per-series value dots at the snapped time (the little circles
         // the host puts on every series/indicator at the crosshair).
         if (st !== undefined) {
-            for (const s of this.series) {
+            for (const s of this.activeSeries) {
                 if (s.kind === 'VolumeProfile') continue;
                 const p = s.data.find((d) => d.time === st);
                 if (p === undefined) continue;
@@ -2307,7 +2533,7 @@ class ChartImpl implements IChartApi {
             ctx.textAlign = align === 'center' ? 'center' : 'left';
             ctx.fillText(text, align === 'center' ? cx : cx + 6, cy);
         };
-        if (st !== undefined && vx >= this.plotL() && vx <= this.plotR()
+        if (showTimeLabel && st !== undefined && vx >= this.plotL() && vx <= this.plotR()
             && ch.vertLine?.visible !== false)
             pill(this.fmtTime(st), vx, this.plotB() + 11, 'center');
         // Right-axis price pill at the cursor's y. Gated by horzLine.visible
@@ -2347,7 +2573,11 @@ class ChartImpl implements IChartApi {
         return x >= this.plotR() || (this.padLeft > 0 && x <= this.plotL());
     }
     private inTimeGutter(y: number): boolean {
-        return this.opts.timeScale?.visible !== false && y >= this.plotB();
+        return this.opts.timeScale?.visible !== false && y >= this.height - this.padB;
+    }
+
+    private splitterAt(x: number, y: number): PaneSplitter | null {
+        return this.paneLayout.hitTestSplitter(this.paneLayoutResult, { x, y });
     }
 
     // Read live, not captured-in-closure, so an external overlay can
@@ -2370,13 +2600,16 @@ class ChartImpl implements IChartApi {
     // tolerance of `my`, or null when the cursor is over a gutter or not near one.
     private hitDraggableLine(my: number, mx: number): { series: Series; line: PriceLine } | null {
         if (this.inTimeGutter(my) || this.inPriceGutter(mx)) return null;
+        const pane = this.paneAt(my);
+        if (pane === null) return null;
+        this.activatePane(pane);
         const TOL = 6;
         let best: { series: Series; line: PriceLine } | null = null;
         let bestDist = TOL;
-        for (const s of this.series) {
+        for (const s of pane.series) {
             for (const pl of s.priceLines) {
                 if (pl.raw().draggable !== true) continue;
-                const raw = this.priceToY(pl.raw().price, s.priceScaleId());
+                const raw = this.priceToY(pl.raw().price, s.priceScaleId(), pane);
                 if (raw === null) continue;
                 // Hit-test against the RENDERED y: a line whose price is off-view is pinned to the
                 // edge (plotT/plotB ± half a label height), so grab it where it's actually drawn —
@@ -2404,12 +2637,33 @@ class ChartImpl implements IChartApi {
             const r = this.canvas.getBoundingClientRect();
             this.mouseX = e.clientX - r.left;
             this.mouseY = e.clientY - r.top;
+            const pointerPane = this.paneAt(this.mouseY);
+            if (pointerPane !== null) this.activatePane(pointerPane);
+            if (this.splitterDrag !== null) {
+                const before = this.model.paneById(this.splitterDrag.splitter.beforePaneId);
+                const after = this.model.paneById(this.splitterDrag.splitter.afterPaneId);
+                if (before !== undefined && after !== undefined) {
+                    before.height = this.splitterDrag.beforeHeight;
+                    after.height = this.splitterDrag.afterHeight;
+                    this.paneLayout.resizePair(
+                        this.model.panes,
+                        this.splitterDrag.splitter,
+                        this.mouseY - this.splitterDrag.startY,
+                    );
+                    this.recomputePaneLayout();
+                    this.scheduleDraw(RenderDirty.Layout);
+                }
+                this.canvas.style.cursor = 'row-resize';
+                return;
+            }
             if (this.lineDrag) {                        // dragging a resting order line: it follows the cursor
                 // Clamp to the plot so the line can't be dragged past the visible price range (the
                 // pointer keeps sending events off-canvas via capture; without this the price
                 // extrapolates beyond the axis and the line/label part ways at the edge).
-                const y = Math.max(this.padT, Math.min(this.plotB(), this.mouseY));
-                const p = this.yToPrice(y, this.lineDrag.series.priceScaleId());
+                const pane = this.lineDrag.series.pane ?? this.model.mainPane;
+                this.activatePane(pane);
+                const y = Math.max(this.plotT(), Math.min(this.plotB(), this.mouseY));
+                const p = this.yToPrice(y, this.lineDrag.series.priceScaleId(), pane);
                 if (p !== null) {
                     this.lineDrag.line.applyOptions({ price: p, anchored: true });
                     const cb = this.lineDrag.line.raw().onDrag;
@@ -2422,7 +2676,8 @@ class ChartImpl implements IChartApi {
                 const dy = this.mouseY - this.lastDragY;
                 this.lastDragY = this.mouseY;
                 // drag up → stretch (zoom in), drag down → compress
-                this.priceZoom = Math.min(12, Math.max(0.15, this.priceZoom * Math.exp(-dy * 0.006)));
+                const pane = this.gesturePane ?? this.model.mainPane;
+                pane.priceZoom = Math.min(12, Math.max(0.15, pane.priceZoom * Math.exp(-dy * 0.006)));
                 this.scheduleDraw();
                 return;
             }
@@ -2438,11 +2693,13 @@ class ChartImpl implements IChartApi {
                 this.scheduleDraw();
                 return;
             }
-            this.canvas.style.cursor = this.inTimeGutter(this.mouseY) ? 'ew-resize'
+            this.canvas.style.cursor = this.splitterAt(this.mouseX, this.mouseY) !== null ? 'row-resize'
+                : this.inTimeGutter(this.mouseY) ? 'ew-resize'
                 : this.inPriceGutter(this.mouseX) ? 'ns-resize'
                 : this.hitCloseButton(this.mouseX, this.mouseY) ? 'pointer'
                 : this.hitDraggableLine(this.mouseY, this.mouseX) ? 'ns-resize' : 'default';
             if (this.placement !== null && this.modifierHeld) this.updatePlacementPreview();   // order-placement preview follows the cursor
+            let viewChanged = false;
             if (this.dragging && this.dragPanEnabled) {
                 const dx = this.mouseX - this.lastDragX;
                 this.lastDragX = this.mouseX;
@@ -2453,17 +2710,18 @@ class ChartImpl implements IChartApi {
                 const shift = this.xToTime(this.plotL()) - this.xToTime(this.plotL() + dx);
                 this.clampView(this.viewFrom + shift, this.viewTo + shift);
                 this.emitRange();
+                viewChanged = true;
             }
             const time = this.snapTime(this.mouseX);
             for (const cb of this.crosshairListeners) cb({ time, point: { x: this.mouseX, y: this.mouseY } });
-            this.scheduleDraw();
+            this.scheduleDraw(viewChanged ? RenderDirty.All : RenderDirty.Overlay);
         });
         this.listen(this.canvas, 'pointerleave', () => {
             this.mouseX = null;
             this.mouseY = null;
             this.clearPlacementPreview();   // no cursor over the plot → no placement preview
             for (const cb of this.crosshairListeners) cb({});
-            this.scheduleDraw();
+            this.scheduleDraw(RenderDirty.Overlay);
         });
         // Price-line "✕" close buttons: a mousedown landing on one fires its callback and
         // is consumed here, so it neither pans the chart nor bubbles to the host element
@@ -2490,6 +2748,7 @@ class ChartImpl implements IChartApi {
             const mx = e.clientX - r.left;
             const my = e.clientY - r.top;
             this.downX = mx; this.downY = my; this.downButton = e.button; this.pointerDown = true;
+            this.gesturePane = this.paneAt(my);
             // A press on a "✕" close button is handled by the mousedown listener above — don't drag.
             for (const h of this._closeHits) {
                 if (mx >= h.x && mx <= h.x + h.w && my >= h.y && my <= h.y + h.h) return;
@@ -2497,6 +2756,21 @@ class ChartImpl implements IChartApi {
             // Only the left button drags/pans; a right (or middle) press is left to become a click
             // (a host maps right-click to "sell here", left to "buy here").
             if (e.button !== 0) return;
+            const splitter = this.splitterAt(mx, my);
+            if (splitter !== null) {
+                const before = this.model.paneById(splitter.beforePaneId);
+                const after = this.model.paneById(splitter.afterPaneId);
+                if (before !== undefined && after !== undefined) {
+                    this.splitterDrag = {
+                        splitter,
+                        startY: my,
+                        beforeHeight: before.height,
+                        afterHeight: after.height,
+                    };
+                    this.canvas.style.cursor = 'row-resize';
+                }
+                return;
+            }
             // Grab a draggable order line before any pan / axis-stretch gesture. Freeze the scale
             // and anchor the label for the whole drag so the line stays WYSIWYG under the cursor.
             const hit = this.hitDraggableLine(my, mx);
@@ -2513,8 +2787,10 @@ class ChartImpl implements IChartApi {
                 this.lastAxisX = mx;
             } else if (this.inPriceGutter(mx)) {
                 // grab the price axis → vertical stretch, not a time pan
-                this.priceDragging = true;
-                this.lastDragY = my;
+                if (this.gesturePane !== null) {
+                    this.priceDragging = true;
+                    this.lastDragY = my;
+                }
             } else {
                 this.dragging = true;
                 this.lastDragX = mx;
@@ -2523,10 +2799,22 @@ class ChartImpl implements IChartApi {
         const finishGesture = (e?: PointerEvent): void => {
             if (!this.pointerDown) return;   // ignore releases from a gesture that began off-canvas
             this.pointerDown = false;
+            if (this.splitterDrag !== null) {
+                this.splitterDrag = null;
+                this.gesturePane = null;
+                this.canvas.style.cursor = 'default';
+                return;
+            }
             // Commit an order-line drag: unfreeze the scale, drop the anchor, notify the host.
             if (this.lineDrag) {
+                const pane = this.lineDrag.series.pane ?? this.model.mainPane;
+                this.activatePane(pane);
                 const p = this.mouseY !== null
-                    ? this.yToPrice(Math.max(this.padT, Math.min(this.plotB(), this.mouseY)), this.lineDrag.series.priceScaleId())
+                    ? this.yToPrice(
+                        Math.max(this.plotT(), Math.min(this.plotB(), this.mouseY)),
+                        this.lineDrag.series.priceScaleId(),
+                        pane,
+                    )
                     : null;
                 this.lineDrag.line.applyOptions({ anchored: false });
                 try { this.lineDrag.series.priceScale().applyOptions({ autoScale: true }); } catch { /* */ }
@@ -2534,6 +2822,7 @@ class ChartImpl implements IChartApi {
                 if (cb && p !== null) { try { cb(p); } catch { /* */ } }
                 this.lineDrag = null;
                 this.dragging = false; this.priceDragging = false; this.timeDragging = false;
+                this.gesturePane = null;
                 return;
             }
             const moved = this.mouseX !== null && this.mouseY !== null &&
@@ -2543,7 +2832,8 @@ class ChartImpl implements IChartApi {
             // moved still counts as a click).
             if (e && !moved && this.mouseX !== null && this.mouseY !== null &&
                 !this.inTimeGutter(this.mouseY) && !this.inPriceGutter(this.mouseX)) {
-                const price = this.yToPrice(this.mouseY, 'right');
+                const pane = this.paneAt(this.mouseY) ?? this.model.mainPane;
+                const price = this.yToPrice(this.mouseY, 'right', pane);
                 if (this.placement !== null && this.modifierMatches(e) && price !== null) {
                     // Placement-mode click → EMIT the order-place signal (the chart does not form the
                     // order). Then drop the preview so it doesn't linger on the just-placed spot.
@@ -2563,6 +2853,7 @@ class ChartImpl implements IChartApi {
                     for (const cb of this.clickListeners) { try { cb(c); } catch { /* */ } }
                 }
             }
+            this.gesturePane = null;
         };
         // window (not canvas) so a release off the plot still ends the gesture; the pointerDown
         // guard inside finishGesture keeps unrelated global releases from being processed.

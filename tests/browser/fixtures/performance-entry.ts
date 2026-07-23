@@ -39,7 +39,7 @@ class BenchmarkPaneManager {
 function chartOptions(): any {
     return {
         width: 960,
-        height: 220,
+        height: 660,
         autoSize: false,
         layout: {
             background: { type: 'solid', color: '#131820' },
@@ -105,17 +105,17 @@ const benchmark = {
 
         const root = document.getElementById('panes')!;
         const charts = new Map<string, any>();
-        for (const id of ['main', 'pane-a', 'pane-b']) {
-            const host = document.createElement('div');
-            host.className = 'pane';
-            host.dataset.pane = id;
-            root.appendChild(host);
-            const chart = SSChart.createChart(host, chartOptions());
-            charts.set(id, chart);
-            this.charts.push(chart);
-        }
-
-        const main = charts.get('main');
+        const host = document.createElement('div');
+        host.className = 'pane';
+        root.appendChild(host);
+        const main = SSChart.createChart(host, chartOptions());
+        main.panes()[0].applyOptions({ height: 220, minHeight: 100 });
+        const paneA = main.addPane({ id: 'pane-a', height: 220, minHeight: 100, order: 1 });
+        const paneB = main.addPane({ id: 'pane-b', height: 220, minHeight: 100, order: 2 });
+        charts.set('main', main);
+        charts.set('pane-a', paneA);
+        charts.set('pane-b', paneB);
+        this.charts.push(main);
         const candles = main.addSeries(SSChart.CandlestickSeries, {
             upColor: '#00c853', downColor: '#ff3d57',
             wickUpColor: '#00c853', wickDownColor: '#ff3d57',
@@ -170,7 +170,7 @@ const benchmark = {
 
         const visibleFrom = bars[bars.length - 500].time;
         const visibleTo = bars[bars.length - 1].time;
-        for (const chart of charts.values()) chart.timeScale().setVisibleRange({ from: visibleFrom, to: visibleTo });
+        main.timeScale().setVisibleRange({ from: visibleFrom, to: visibleTo });
         await waitForPaint();
         const initializationMs = performance.now() - totalStarted;
 
@@ -198,6 +198,7 @@ const benchmark = {
             bars: bars.length,
             baseSeries: 5,
             panes: charts.size,
+            chartInstances: this.charts.length,
             activeIndicators: engine.getIndicators().length,
             replaceLastBurst: 500,
             indicatorSeries: engine.getIndicators().reduce((count, entry) => count + entry.seriesRefs.length, 0),

@@ -107,6 +107,39 @@
                 },
             };
         })();
+
+        // Count completed layer paints without coupling the production API to
+        // test-only diagnostics. Each render pass starts by clearing its layer.
+        (() => {
+            const nativeGetContext = HTMLCanvasElement.prototype.getContext;
+            const trackedContexts = new WeakSet();
+            const paints = { base: 0, overlay: 0 };
+
+            HTMLCanvasElement.prototype.getContext = function (...args) {
+                const context = nativeGetContext.apply(this, args);
+                if (args[0] !== '2d' || !context || trackedContexts.has(context)) return context;
+
+                trackedContexts.add(context);
+                const canvas = this;
+                const nativeClearRect = context.clearRect.bind(context);
+                context.clearRect = (...clearArgs) => {
+                    const layer = canvas.dataset.sschartLayer;
+                    if (layer === 'base' || layer === 'overlay') paints[layer]++;
+                    return nativeClearRect(...clearArgs);
+                };
+                return context;
+            };
+
+            window.RenderTracker = {
+                reset() {
+                    paints.base = 0;
+                    paints.overlay = 0;
+                },
+                snapshot() {
+                    return { ...paints };
+                },
+            };
+        })();
     </script>
 </head>
 <body>

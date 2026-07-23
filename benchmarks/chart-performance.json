@@ -4,6 +4,7 @@
     "bars": 100000,
     "baseSeries": 5,
     "panes": 3,
+    "chartInstances": 1,
     "activeIndicators": 10,
     "replaceLastBurst": 500
   },
@@ -11,13 +12,13 @@
     "capturedAt": "2026-07-22",
     "platform": "Windows x64",
     "browser": "Chromium 149 / DPR 1",
-    "generationMs": 27.2,
-    "initializationMs": 1944.7,
-    "frameMedianMs": 85.4,
-    "frameP95Ms": 95.0,
-    "replaceLastDispatchMs": 0.7,
-    "realtimeUpdateMs": 1746.2,
-    "jsHeapUsedMiB": 204.7
+    "generationMs": 30.5,
+    "initializationMs": 2014.3,
+    "frameMedianMs": 190.0,
+    "frameP95Ms": 202.2,
+    "replaceLastDispatchMs": 0.4,
+    "realtimeUpdateMs": 1277.0,
+    "jsHeapUsedMiB": 209.3
   },
   "budgets": {
     "initializationMs": 15000,

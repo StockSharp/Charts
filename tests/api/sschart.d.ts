@@ -1,3 +1,7 @@
+import { type PaneOptions } from './model/pane-model.js';
+import type { TimeRange } from './scale/time-scale.js';
+export type { TimeRange } from './scale/time-scale.js';
+export type { PaneOptions, PaneState } from './model/pane-model.js';
 export type Time = number;
 export interface WhitespaceData {
     time: Time;
@@ -214,10 +218,6 @@ export interface PriceScaleOptions {
     mode?: PriceScaleModeValue;
     autoScale?: boolean;
 }
-export interface TimeRange {
-    from: Time;
-    to: Time;
-}
 export interface CrosshairMoveEvent {
     time?: Time;
     point?: {
@@ -288,13 +288,32 @@ export interface ITimeScaleApi {
     logicalToCoordinate(index: number): number | null;
     coordinateToLogical(x: number): number | null;
 }
+export interface PaneSize {
+    width: number;
+    height: number;
+    top: number;
+}
+export interface IPaneApi {
+    id(): string;
+    addSeries(definition: SeriesDefinition, options?: SeriesOptions): ISeriesApi;
+    removeSeries(series: ISeriesApi): void;
+    series(): readonly ISeriesApi[];
+    priceScale(scaleId?: string): IPriceScaleApi;
+    timeScale(): ITimeScaleApi;
+    applyOptions(options: Omit<PaneOptions, 'id'>): void;
+    options(): Required<PaneOptions>;
+    getSize(): PaneSize;
+}
 export interface OrderPlacementOptions {
     modifier?: 'ctrl' | 'shift' | 'alt';
     color?: string;
     title?: string;
 }
 export interface IChartApi {
-    addSeries(definition: SeriesDefinition, options?: SeriesOptions): ISeriesApi;
+    addPane(options?: PaneOptions): IPaneApi;
+    panes(): readonly IPaneApi[];
+    removePane(pane: IPaneApi): void;
+    addSeries(definition: SeriesDefinition, options?: SeriesOptions, pane?: IPaneApi): ISeriesApi;
     removeSeries(series: ISeriesApi): void;
     timeScale(): ITimeScaleApi;
     priceScale(scaleId?: string): IPriceScaleApi;

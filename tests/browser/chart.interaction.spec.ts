@@ -6,7 +6,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('pans, zooms and publishes a snapped crosshair event', async ({ page }) => {
-    const canvas = page.locator('#chart canvas');
+    const canvas = page.locator('#chart canvas[data-sschart-layer="overlay"]');
     const box = await canvas.boundingBox();
     expect(box).not.toBeNull();
 
@@ -37,7 +37,7 @@ test('pans, zooms and publishes a snapped crosshair event', async ({ page }) => 
 });
 
 test('drags a price line and commits the final price once', async ({ page }) => {
-    const canvas = page.locator('#chart canvas');
+    const canvas = page.locator('#chart canvas[data-sschart-layer="overlay"]');
     const box = await canvas.boundingBox();
     expect(box).not.toBeNull();
     const y = await page.evaluate(() => (window as any).__fixture.candles.priceToCoordinate(124));
@@ -60,7 +60,7 @@ test('drags a price line and commits the final price once', async ({ page }) => 
 });
 
 test('emits an order-placement intent while Ctrl is held', async ({ page }) => {
-    const box = await page.locator('#chart canvas').boundingBox();
+    const box = await page.locator('#chart canvas[data-sschart-layer="overlay"]').boundingBox();
     expect(box).not.toBeNull();
 
     await page.mouse.move(box!.x + 520, box!.y + 240);
@@ -76,7 +76,7 @@ test('emits an order-placement intent while Ctrl is held', async ({ page }) => {
 });
 
 test('clears the crosshair event when the pointer leaves the chart', async ({ page }) => {
-    const canvas = page.locator('#chart canvas');
+    const canvas = page.locator('#chart canvas[data-sschart-layer="overlay"]');
     const box = await canvas.boundingBox();
     expect(box).not.toBeNull();
 
@@ -94,11 +94,25 @@ test('clears the crosshair event when the pointer leaves the chart', async ({ pa
     expect(last).toEqual({});
 });
 
+test('repaints only the overlay when the pointer moves', async ({ page }) => {
+    const canvas = page.locator('#chart canvas[data-sschart-layer="overlay"]');
+    const box = await canvas.boundingBox();
+    expect(box).not.toBeNull();
+
+    await page.evaluate(() => (window as any).RenderTracker.reset());
+    await page.mouse.move(box!.x + 440, box!.y + 230);
+    await page.evaluate(() => (window as any).__fixture.settle());
+
+    const paints = await page.evaluate(() => (window as any).RenderTracker.snapshot());
+    expect(paints.base).toBe(0);
+    expect(paints.overlay).toBeGreaterThan(0);
+});
+
 test('supports touch pan and two-finger pinch zoom', async ({ page }) => {
     const before = await page.evaluate(() => (window as any).__fixture.chart.timeScale().getVisibleRange());
 
     const touched = await page.evaluate(() => {
-        const canvas = document.querySelector('#chart canvas') as HTMLCanvasElement;
+        const canvas = document.querySelector('#chart canvas[data-sschart-layer="overlay"]') as HTMLCanvasElement;
         const rect = canvas.getBoundingClientRect();
         const pointer = (target: EventTarget, type: string, x: number) => target.dispatchEvent(new PointerEvent(type, {
             pointerId: 41,

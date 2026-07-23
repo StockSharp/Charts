@@ -7,7 +7,7 @@ const performanceContract = JSON.parse(readFileSync(
     'utf8',
 ));
 
-test('records the 100k / 5-series / 3-pane / 10-indicator baseline', async ({ page, context }, testInfo) => {
+test('records the 100k / 5-series / 3-native-pane / 10-indicator baseline', async ({ page, context }, testInfo) => {
     test.skip(testInfo.project.name !== 'chromium-dpr1', 'Performance baseline is DPR-independent.');
     test.setTimeout(120_000);
 

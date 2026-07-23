@@ -7,8 +7,9 @@ test('boots the real chart stack and adds overlay and pane indicators', async ({
     await page.goto('/demo/index.html');
 
     // The demo starts with the main chart plus the default RSI pane.
-    await expect(page.locator('#chartContainer canvas')).toHaveCount(1);
-    await expect(page.locator('.chart-sub-pane canvas')).toHaveCount(1);
+    await expect(page.locator('#chartContainer canvas[data-sschart-layer="overlay"]')).toHaveCount(1);
+    await expect(page.locator('.chart-sub-pane')).toHaveCount(1);
+    await expect(page.locator('.chart-sub-pane canvas')).toHaveCount(0);
     await expect(page.locator('.active-indicator-item')).toHaveCount(0);
 
     await page.locator('#themeBtn').click();
@@ -28,14 +29,16 @@ test('boots the real chart stack and adds overlay and pane indicators', async ({
     await page.locator('.indicator-search-input').fill('MACD');
     await page.locator('.indicator-list-item[data-id="MovingAverageConvergenceDivergence"]').click();
     await page.locator('.indicator-add-btn').click();
-    await expect(page.locator('.chart-sub-pane canvas')).toHaveCount(2);
+    await expect(page.locator('.chart-sub-pane')).toHaveCount(2);
+    await expect(page.locator('#chartContainer > .sschart-root')).toHaveCount(1);
     await page.locator('[data-close-modal]').click();
 
     // Removing the only indicator from the newly-created pane must dispose the
-    // chart and collapse the pane, while leaving the default RSI pane intact.
+    // native pane and collapse its header, while leaving the default RSI pane intact.
     const addedPane = page.locator('.chart-sub-pane').last();
     await addedPane.locator('.legend-remove-btn').click();
-    await expect(page.locator('.chart-sub-pane canvas')).toHaveCount(1);
+    await expect(page.locator('.chart-sub-pane')).toHaveCount(1);
+    await expect(page.locator('#chartContainer canvas[data-sschart-layer="overlay"]')).toHaveCount(1);
 
     // Exercise one realtime update and stop it again so the test owns no timer.
     await page.locator('#realtimeBtn').click();
