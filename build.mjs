@@ -11,6 +11,7 @@
 //   node build.mjs
 import { execFile } from 'node:child_process';
 import { rm } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
@@ -40,3 +41,20 @@ for (const t of targets) {
     await build({ ...t, bundle: true, format: 'iife', sourcemap: true, target: 'es2020', logLevel: 'info' });
     console.log('built ' + t.outfile);
 }
+
+// Build-integrity guard. The indicator registry is filled by load-time
+// `registerIndicator(...)` side effects; a wrong package.json "sideEffects" makes
+// a bundler tree-shake them away and silently empties the indicator catalog.
+// Unit tests can't see this (they import the definitions directly, so nothing is
+// tree-shaken) — so assert the app-style bundle keeps them, and fail loudly.
+const MIN_INDICATOR_REGISTRATIONS = 50;
+const appBundle = join(dist, 'chart-app.js');
+const registrations = (readFileSync(appBundle, 'utf8').match(/registerIndicator\(/g) || []).length;
+if (registrations < MIN_INDICATOR_REGISTRATIONS) {
+    throw new Error(
+        `build guard: chart-app.js has only ${registrations} registerIndicator() calls `
+        + `(expected >= ${MIN_INDICATOR_REGISTRATIONS}). Indicator definitions were tree-shaken `
+        + `away — check the package.json "sideEffects" field.`,
+    );
+}
+console.log(`guard ok: chart-app.js keeps ${registrations} indicator registrations`);
