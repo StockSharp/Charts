@@ -1,69 +1,80 @@
-<!DOCTYPE html>
-<html lang="en" data-bs-theme="dark">
+<!doctype html>
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>StockSharp JS Trading Charts</title>
+<title>sschart · StockSharp JS Charts</title>
 <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
 <link rel="icon" type="image/x-icon" href="./favicon.ico" />
-<link rel="stylesheet" href="./vendor/bootstrap-icons/bootstrap-icons.min.css" />
-<link rel="stylesheet" href="./chart-stack.css" />
 <link rel="stylesheet" href="./demo.css" />
 </head>
-<body>
+<body class="hub">
 <header class="demo-header">
-  <span class="brand">StockSharp JS Trading Charts</span>
+  <span class="brand">sschart <span class="sub">· StockSharp JS Charts</span></span>
   <span class="spacer"></span>
-  <button id="realtimeBtn" class="tbtn"><span class="dot"></span> Realtime</button>
-  <button id="fitBtn" class="tbtn">Fit content</button>
-  <button id="themeBtn" class="tbtn">&#9788; Light</button>
-  <button id="addPaneBtn" class="tbtn">+ Pane</button>
-  <button id="addIndicatorBtn" class="tbtn primary">+ Indicator</button>
+  <a class="tbtn" href="https://github.com/StockSharp/Charts" target="_blank" rel="noopener">GitHub</a>
 </header>
 
-<!-- chart panel: legend + chart container (ChartPaneManager wraps these and
-     injects sub-panes; identifiers must match what the modules look up) -->
-<div class="chart-panel">
-  <div class="chart-legend" id="chartLegend"></div>
-  <div id="chartContainer" class="chart-container"></div>
-</div>
+<main class="hub-main">
+  <section class="hub-intro">
+    <h1>A native, broker-agnostic trading chart engine</h1>
+    <p>One chart owns every pane and a single time axis; series, primitives and
+    indicators plug in without touching the core. Pick a showcase below — each is
+    a self-contained page over the published <code>SSChart</code> global.</p>
+  </section>
 
-<!-- indicator picker (driven by the real IndicatorDialog) -->
-<div class="modal indicator-modal" id="indicatorModal" tabindex="-1">
-  <div class="modal-dialog modal-lg">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Indicators</h5>
-        <button type="button" class="btn-close" data-close-modal>&times;</button>
-      </div>
-      <div class="modal-body">
-        <div class="indicator-sidebar">
-          <input type="text" class="indicator-search-input" placeholder="Search indicators&hellip;" />
-          <div class="indicator-category-tabs">
-            <button class="indicator-category-tab active" data-group="All">All</button>
-            <button class="indicator-category-tab" data-group="Trend">Trend</button>
-            <button class="indicator-category-tab" data-group="Momentum">Momentum</button>
-            <button class="indicator-category-tab" data-group="Volatility">Volatility</button>
-            <button class="indicator-category-tab" data-group="Volume">Volume</button>
-          </div>
-          <div class="indicator-list"></div>
-        </div>
-        <div class="indicator-detail">
-          <div class="indicator-settings">
-            <div style="color:var(--t-text-dim);font-size:12px;padding-top:40px;text-align:center;">Select an indicator from the list</div>
-          </div>
-          <div class="active-indicators-panel">
-            <div class="panel-title">Active indicators</div>
-            <div class="active-indicators-list"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
+  <section class="cards">
+    <a class="card" href="./trading.html">
+      <div class="card-kicker">M10 · new</div>
+      <h2>Trading from the chart</h2>
+      <p>Drag orders to modify with optimistic preview and reject-revert, bracket
+      OCO groups, live position P&amp;L, executions and quote — all broker-agnostic.
+      The chart emits intents; the host owns the broker.</p>
+      <div class="card-go">Open →</div>
+    </a>
 
-<script src="../dist/sschart.js"></script>
-<script src="./sample-data.js"></script>
-<script src="../dist/chart-app.js"></script>
+    <a class="card" href="./orderflow.html">
+      <div class="card-kicker">Order flow</div>
+      <h2>Footprint · Volume Profile · TPO</h2>
+      <p>The exact, tick-accurate volume-at-price studies driven by bid/ask volume.
+      The old approximate candle-based cluster/box series were removed — one source
+      of truth for order flow.</p>
+      <div class="card-go">Open →</div>
+    </a>
+
+    <a class="card" href="./backfill.html">
+      <div class="card-kicker">Data lifecycle</div>
+      <h2>History backfill on zoom-out</h2>
+      <p>Scroll left and older bars stream in and prepend automatically; the moving
+      average extends over the new history, and the same path feeds an exact
+      footprint series.</p>
+      <div class="card-go">Open →</div>
+    </a>
+
+    <a class="card" href="./terminal.html">
+      <div class="card-kicker">Full app</div>
+      <h2>Terminal</h2>
+      <p>The complete terminal stack: native indicator panes, the JSON-catalog
+      indicator picker with live StockSharp parity, legend, context menus and
+      realtime updates.</p>
+      <div class="card-go">Open →</div>
+    </a>
+  </section>
+
+  <section class="hub-foot">
+    <span>native panes</span><span>custom series</span><span>primitives &amp; hit-test</span>
+    <span>incremental indicators</span><span>drawings + persistence</span>
+    <span>trading calendar / DST</span><span>compare</span><span>exact order flow</span>
+    <span>broker-agnostic trading</span>
+  </section>
+</main>
+
+<script>
+// Honour the OS colour scheme on the static hub (the showcases carry their own toggle).
+(function () {
+    var dark = !window.matchMedia || !window.matchMedia('(prefers-color-scheme: light)').matches;
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+})();
+</script>
 </body>
 </html>

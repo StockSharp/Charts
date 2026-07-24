@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Terminal · sschart</title>
+<link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+<link rel="icon" type="image/x-icon" href="./favicon.ico" />
+<link rel="stylesheet" href="./vendor/bootstrap-icons/bootstrap-icons.min.css" />
+<link rel="stylesheet" href="./chart-stack.css" />
+<link rel="stylesheet" href="./demo.css" />
+</head>
+<body>
+<header class="demo-header">
+  <a class="brand-link" href="./index.html">&#8249; sschart</a>
+  <span class="brand">Terminal</span>
+  <span class="spacer"></span>
+  <button id="realtimeBtn" class="tbtn"><span class="dot"></span> Realtime</button>
+  <button id="fitBtn" class="tbtn">Fit content</button>
+  <button id="themeBtn" class="tbtn">&#9788; Light</button>
+  <button id="addPaneBtn" class="tbtn">+ Pane</button>
+  <button id="addIndicatorBtn" class="tbtn primary">+ Indicator</button>
+</header>
+
+<!-- chart panel: legend + chart container (ChartPaneManager wraps these and
+     injects sub-panes; identifiers must match what the modules look up) -->
+<div class="chart-panel">
+  <div class="chart-legend" id="chartLegend"></div>
+  <div id="chartContainer" class="chart-container"></div>
+</div>
+
+<!-- indicator picker (driven by the real IndicatorDialog) -->
+<div class="modal indicator-modal" id="indicatorModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Indicators</h5>
+        <button type="button" class="btn-close" data-close-modal>&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="indicator-sidebar">
+          <input type="text" class="indicator-search-input" placeholder="Search indicators&hellip;" />
+          <div class="indicator-category-tabs">
+            <button class="indicator-category-tab active" data-group="All">All</button>
+            <button class="indicator-category-tab" data-group="Trend">Trend</button>
+            <button class="indicator-category-tab" data-group="Momentum">Momentum</button>
+            <button class="indicator-category-tab" data-group="Volatility">Volatility</button>
+            <button class="indicator-category-tab" data-group="Volume">Volume</button>
+          </div>
+          <div class="indicator-list"></div>
+        </div>
+        <div class="indicator-detail">
+          <div class="indicator-settings">
+            <div style="color:var(--t-text-dim);font-size:12px;padding-top:40px;text-align:center;">Select an indicator from the list</div>
+          </div>
+          <div class="active-indicators-panel">
+            <div class="panel-title">Active indicators</div>
+            <div class="active-indicators-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="../dist/sschart.js"></script>
+<script src="./sample-data.js"></script>
+<script src="../dist/chart-app.js"></script>
+</body>
+</html>

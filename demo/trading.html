@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Trading from the chart · sschart</title>
+<link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+<link rel="stylesheet" href="./demo.css" />
+</head>
+<body class="showcase">
+<header class="demo-header">
+  <a class="brand-link" href="./index.html">&#8249; sschart</a>
+  <span class="brand">Trading from the chart <span class="sub">· M10 broker-agnostic layer</span></span>
+  <span class="spacer"></span>
+  <button id="rejectBtn" class="tbtn">Reject next intent</button>
+  <button id="resetBtn" class="tbtn">Reset</button>
+  <button id="themeBtn" class="tbtn">&#9788; Light</button>
+</header>
+
+<div class="showcase-body">
+  <div class="chart-wrap"><div id="chart" class="chart-host"></div></div>
+  <aside class="side">
+    <div class="side-block">
+      <div class="side-title">How it works</div>
+      <ul class="hint">
+        <li><b>Drag</b> any order line to a new price — an <i>optimistic</i> preview follows the cursor.</li>
+        <li>The chart emits a <b>modify intent</b>; the demo "broker" confirms or rejects after a moment.</li>
+        <li>On <b>reject</b> the line snaps back — the chart never mutates broker state itself.</li>
+        <li><b>Ctrl+click</b> the chart to place a limit order (left=buy, right=sell).</li>
+        <li>The bracket (ENTRY / SL / TP) is one linked OCO group; the LONG position shows live P&amp;L.</li>
+      </ul>
+    </div>
+    <div class="side-block">
+      <div class="side-title">Orders <span id="ordersCount" class="pill"></span></div>
+      <div id="ordersList" class="rows"></div>
+    </div>
+    <div class="side-block">
+      <div class="side-title">Positions <span id="posCount" class="pill"></span></div>
+      <div id="posList" class="rows"></div>
+    </div>
+    <div class="side-block grow">
+      <div class="side-title">Intent log</div>
+      <div id="log" class="log"></div>
+    </div>
+  </aside>
+</div>
+
+<script src="../dist/sschart.js"></script>
+<script src="./demo-shared.js"></script>
+<script src="./demo-trading.js"></script>
+</body>
+</html>

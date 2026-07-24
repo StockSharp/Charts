@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>History backfill on zoom-out · sschart</title>
+<link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+<link rel="stylesheet" href="./demo.css" />
+</head>
+<body class="showcase">
+<header class="demo-header">
+  <a class="brand-link" href="./index.html">&#8249; sschart</a>
+  <span class="brand">History backfill on zoom-out <span class="sub">· ChartDataController</span></span>
+  <span class="spacer"></span>
+  <div class="seg" id="modeSeg">
+    <button class="tbtn on" data-mode="candles">Candles + SMA</button>
+    <button class="tbtn" data-mode="footprint">Footprint</button>
+  </div>
+  <button id="olderBtn" class="tbtn">Load older ×1</button>
+  <button id="themeBtn" class="tbtn">&#9788; Light</button>
+</header>
+
+<div class="showcase-body">
+  <div class="chart-wrap">
+    <div id="chart" class="chart-host"></div>
+    <div class="statusbar" id="status"></div>
+  </div>
+  <aside class="side">
+    <div class="side-block">
+      <div class="side-title">How backfill works</div>
+      <ul class="hint">
+        <li>The controller loads an initial page, then watches the <b>visible range</b>.</li>
+        <li><b>Scroll / drag left</b> (or zoom out) toward the oldest loaded bar.</li>
+        <li>When the edge gets within the prefetch threshold, it asks the feed for
+        the <b>next older page</b> and <i>prepends</i> it — no full reload.</li>
+        <li>The <b>SMA</b> overlay recomputes over the extended history as it arrives;
+        in <b>Footprint</b> mode the same prepend feeds the order-flow bars.</li>
+        <li>Watch <b>loaded</b> climb from 300; <b>more before</b> flips to <i>no</i> at the start.</li>
+      </ul>
+    </div>
+    <div class="side-block">
+      <div class="side-title">Feed</div>
+      <p class="note">A fake in-memory datafeed of 2500 bars serves pages with a
+      short latency so the <b>loading…</b> state is visible. Nothing hits the network.</p>
+    </div>
+  </aside>
+</div>
+
+<script src="../dist/sschart.js"></script>
+<script src="./demo-shared.js"></script>
+<script src="./demo-backfill.js"></script>
+</body>
+</html>

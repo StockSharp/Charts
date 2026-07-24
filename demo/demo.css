@@ -65,3 +65,118 @@ body {
     padding: 4px 8px; font: inherit; font-size: 12px; min-width: 150px; cursor: pointer;
 }
 .indicator-target-select:focus { outline: none; border-color: var(--t-accent, #4a9eff); }
+
+/* ======================================================================== */
+/* Multi-page showcase (hub + trading / order-flow / backfill pages).       */
+/* The theme vars below drive the page chrome; the showcases also push the  */
+/* live palette into these same vars via JS (inline style wins), and the    */
+/* terminal keeps setting them from chart-stack.css + its own toggle.       */
+/* ======================================================================== */
+:root, :root[data-theme="dark"] {
+    --t-bg: #0b0e11; --t-panel: #131820; --t-header: #131820;
+    --t-text: #c7d0dc; --t-text-dim: #6b7a8d; --t-text-bright: #ffffff;
+    --t-border: #2a3546; --t-accent: #4a9eff; --t-up: #26a69a; --t-down: #ef5350;
+}
+:root[data-theme="light"] {
+    --t-bg: #eef1f6; --t-panel: #f4f6fa; --t-header: #ffffff;
+    --t-text: #2a3441; --t-text-dim: #67748a; --t-text-bright: #0b1220;
+    --t-border: #cbd5e1; --t-accent: #2f6fed; --t-up: #0f9d80; --t-down: #e03d4e;
+}
+
+.demo-header .brand-link {
+    color: var(--t-text-dim); text-decoration: none; font-size: 13px; font-weight: 600;
+    padding: 4px 8px; border-radius: 6px;
+}
+.demo-header .brand-link:hover { color: var(--t-accent); background: rgba(74,158,255,.08); }
+.demo-header .seg { display: inline-flex; gap: 4px; }
+.demo-header .seg .tbtn { font-size: 12px; }
+
+/* ---- showcase layout: chart + right side panel ---- */
+body.showcase { overflow: hidden; }
+.showcase-body { display: flex; height: calc(100vh - 52px); }
+.chart-wrap { position: relative; flex: 1; min-width: 0; background: var(--t-panel); }
+.chart-host { position: absolute; inset: 0; }
+.side {
+    width: 320px; flex: none; border-left: 1px solid var(--t-border);
+    background: var(--t-bg); display: flex; flex-direction: column; overflow: hidden;
+}
+.side-block { padding: 14px 16px; border-bottom: 1px solid var(--t-border); }
+.side-block.grow { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.side-title {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--t-text-dim); margin-bottom: 10px; display: flex; align-items: center; gap: 8px;
+}
+.pill {
+    background: var(--t-accent); color: #fff; border-radius: 10px;
+    padding: 0 7px; font-size: 11px; line-height: 17px;
+}
+.hint { margin: 0; padding-left: 18px; font-size: 12px; line-height: 1.7; color: var(--t-text); }
+.hint li { margin-bottom: 4px; }
+.hint b { color: var(--t-text-bright); }
+.note { margin: 10px 0 0; font-size: 11.5px; line-height: 1.6; color: var(--t-text-dim); }
+.note b { color: var(--t-text); }
+
+.rows { display: flex; flex-direction: column; gap: 5px; }
+.row {
+    display: grid; grid-template-columns: 62px 1fr auto; align-items: center; gap: 8px;
+    padding: 6px 8px; border-radius: 6px; background: rgba(127,127,127,.06);
+    border-left: 3px solid var(--t-border); font-size: 12px;
+}
+.row.buy { border-left-color: var(--t-up); }
+.row.sell { border-left-color: var(--t-down); }
+.row .tag { font-size: 10px; font-weight: 700; color: var(--t-text-dim); letter-spacing: .04em; }
+.row .mono { font-family: 'IBM Plex Mono','Consolas',monospace; color: var(--t-text); }
+.row .px { text-align: right; color: var(--t-text-bright); }
+.row .px.pos { color: var(--t-up); }
+.row .px.neg { color: var(--t-down); }
+
+.log { flex: 1; overflow-y: auto; font-family: 'IBM Plex Mono','Consolas',monospace; font-size: 11px; }
+.log-line { padding: 3px 6px; border-radius: 4px; margin-bottom: 2px; color: var(--t-text-dim); }
+.log-line.intent { color: var(--t-text); background: rgba(74,158,255,.08); }
+.log-line.accept { color: var(--t-up); }
+.log-line.reject { color: var(--t-down); }
+
+/* ---- status bar (backfill) ---- */
+.statusbar {
+    position: absolute; left: 10px; bottom: 10px; z-index: 5;
+    display: flex; gap: 8px; flex-wrap: wrap;
+    background: color-mix(in srgb, var(--t-panel) 82%, transparent);
+    border: 1px solid var(--t-border); border-radius: 8px; padding: 6px 8px;
+    font-size: 11px; font-family: 'IBM Plex Mono','Consolas',monospace;
+    backdrop-filter: blur(3px);
+}
+.statusbar .st { color: var(--t-text-dim); padding: 1px 6px; border-radius: 5px; }
+.statusbar .st b { color: var(--t-text-bright); font-weight: 700; }
+.statusbar .st.busy { color: #fff; background: var(--t-accent); }
+.statusbar .st.err { color: #fff; background: var(--t-down); }
+
+/* ======================================================================== */
+/* Hub landing page                                                         */
+/* ======================================================================== */
+body.hub { overflow: auto; }
+.hub-main { max-width: 1120px; margin: 0 auto; padding: 40px 24px 64px; }
+.hub-intro h1 { font-size: 28px; margin: 0 0 12px; color: var(--t-text-bright); font-weight: 700; }
+.hub-intro p { margin: 0 0 8px; max-width: 760px; color: var(--t-text-dim); font-size: 14px; line-height: 1.7; }
+.hub-intro code { color: var(--t-accent); }
+.cards {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 16px; margin: 32px 0;
+}
+.card {
+    display: block; text-decoration: none; color: inherit; position: relative;
+    background: var(--t-panel); border: 1px solid var(--t-border); border-radius: 12px;
+    padding: 20px; transition: border-color .15s, transform .15s;
+}
+.card:hover { border-color: var(--t-accent); transform: translateY(-2px); }
+.card-kicker {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--t-accent); font-weight: 700; margin-bottom: 10px;
+}
+.card h2 { font-size: 17px; margin: 0 0 10px; color: var(--t-text-bright); }
+.card p { margin: 0; font-size: 13px; line-height: 1.65; color: var(--t-text-dim); }
+.card-go { margin-top: 14px; font-size: 13px; font-weight: 600; color: var(--t-accent); }
+.hub-foot { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.hub-foot span {
+    font-size: 11px; color: var(--t-text-dim); border: 1px solid var(--t-border);
+    border-radius: 999px; padding: 4px 11px;
+}
