@@ -12,7 +12,8 @@ const { join } = require('node:path');
 
 const { createIndicatorPainter } = require('../../src/chart/indicators/painters/indicator-painter-registry.js');
 const { DefaultIndicatorPainter } = require('../../src/chart/indicators/painters/default-painter.js');
-require('../../src/chart/indicators/painters/builtin-painters.js'); // side-effect: registers the built-ins
+const { registerBuiltInIndicatorPainters } = require('../../src/chart/indicators/painters/builtin-painters.js');
+registerBuiltInIndicatorPainters(); // register the built-ins for this snapshot
 
 const SNAP_DIR = join(__dirname, '..', '..', 'render', '__snapshots__');
 const SNAP_FILE = join(SNAP_DIR, 'indicator-painters.snap.txt');

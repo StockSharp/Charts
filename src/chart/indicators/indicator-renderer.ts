@@ -4,7 +4,11 @@ import { IndicatorSettings } from './indicator-settings.js';
 import type { IndicatorPainter, IndicatorPainterContext, IndicatorSeriesKind } from './painters/indicator-painter.js';
 import { createIndicatorPainter } from './painters/indicator-painter-registry.js';
 import { DefaultIndicatorPainter } from './painters/default-painter.js';
-import './painters/builtin-painters.js';
+import { registerBuiltInIndicatorPainters } from './painters/builtin-painters.js';
+
+// Explicit registration so the built-in painters survive bundler tree-shaking
+// (a bare side-effect import is dropped under `sideEffects: false`).
+registerBuiltInIndicatorPainters();
 import type {
     IndicatorRuntime,
     IndicatorRuntimePatch,

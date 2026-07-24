@@ -550,27 +550,37 @@ class DirectionalHistogramPainter implements IndicatorPainter {
 }
 
 // Names below are persisted in catalog.json and form the stable public lookup API.
-registerIndicatorPainter('band', () => new BandPainter());
-registerIndicatorPainter('macd-histogram', () => new MacdHistogramPainter('macd'));
-registerIndicatorPainter('ppo-histogram', () => new MacdHistogramPainter('ppo'));
-registerIndicatorPainter('stochastic', () => new LinesPainter([
-    { key: 'k', title: 'K', width: 2 },
-    { key: 'd', title: 'D', style: 2 },
-]));
-registerIndicatorPainter('adx', () => new LinesPainter([
-    { key: 'plusDI', title: '+DI' },
-    { key: 'minusDI', title: '-DI' },
-    { key: 'adx', title: 'ADX', width: 2 },
-]));
-registerIndicatorPainter('alligator', () => new LinesPainter([
-    { key: 'jaw', title: 'Jaw', color: '#1E90FF' },
-    { key: 'teeth', title: 'Teeth', color: '#FF0000' },
-    { key: 'lips', title: 'Lips', color: '#32CD32' },
-]));
-registerIndicatorPainter('ichimoku', () => new IchimokuPainter());
-registerIndicatorPainter('dots', () => new DotsPainter());
-registerIndicatorPainter('fractals', () => new FractalsPainter());
-registerIndicatorPainter('gator', () => new GatorPainter());
-registerIndicatorPainter('volume', () => new DirectionalHistogramPainter(true));
-registerIndicatorPainter('directional-histogram', () => new DirectionalHistogramPainter());
-registerIndicatorPainter('dual-line', () => new LinesPainter());
+// Registration is an explicit call (not a bare-import side effect) so it survives
+// bundler tree-shaking regardless of the package's `sideEffects` declaration.
+let builtInPaintersRegistered = false;
+
+/** Registers every built-in indicator painter once; safe to call repeatedly. */
+export function registerBuiltInIndicatorPainters(): void {
+    if (builtInPaintersRegistered) return;
+    builtInPaintersRegistered = true;
+
+    registerIndicatorPainter('band', () => new BandPainter());
+    registerIndicatorPainter('macd-histogram', () => new MacdHistogramPainter('macd'));
+    registerIndicatorPainter('ppo-histogram', () => new MacdHistogramPainter('ppo'));
+    registerIndicatorPainter('stochastic', () => new LinesPainter([
+        { key: 'k', title: 'K', width: 2 },
+        { key: 'd', title: 'D', style: 2 },
+    ]));
+    registerIndicatorPainter('adx', () => new LinesPainter([
+        { key: 'plusDI', title: '+DI' },
+        { key: 'minusDI', title: '-DI' },
+        { key: 'adx', title: 'ADX', width: 2 },
+    ]));
+    registerIndicatorPainter('alligator', () => new LinesPainter([
+        { key: 'jaw', title: 'Jaw', color: '#1E90FF' },
+        { key: 'teeth', title: 'Teeth', color: '#FF0000' },
+        { key: 'lips', title: 'Lips', color: '#32CD32' },
+    ]));
+    registerIndicatorPainter('ichimoku', () => new IchimokuPainter());
+    registerIndicatorPainter('dots', () => new DotsPainter());
+    registerIndicatorPainter('fractals', () => new FractalsPainter());
+    registerIndicatorPainter('gator', () => new GatorPainter());
+    registerIndicatorPainter('volume', () => new DirectionalHistogramPainter(true));
+    registerIndicatorPainter('directional-histogram', () => new DirectionalHistogramPainter());
+    registerIndicatorPainter('dual-line', () => new LinesPainter());
+}
