@@ -30,9 +30,11 @@ jobs:
           node-version: 22
       - run: npm ci
       - run: npm run build            # -> dist/sschart.js + dist/chart-app.js
-      - run: npm test                 # the ported indicator suite
-      - run: npx playwright install --with-deps chromium
-      - run: npm run test:browser
+      - run: npm test                 # full node-only suite: logic + browser-free draw-call render snapshots
+      # No Playwright in CI: GitHub never launches a browser. Rendering is
+      # verified browser-free by the draw-call snapshots inside `npm test`
+      # (tests/render/**). The remaining browser specs (interaction, hit-test,
+      # lifecycle, …) are run locally on demand via `npm run test:browser`.
       - name: Stage site
         run: |
           mkdir -p _site/demo _site/dist

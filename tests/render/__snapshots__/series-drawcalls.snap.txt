@@ -1,0 +1,423 @@
+## Candlestick (96 ops)
+strokeStyle = "#26a69a"
+lineWidth = 1
+beginPath()
+moveTo(0.5, 108.824)
+lineTo(0.5, 138.235)
+stroke()
+fillStyle = "#26a69a"
+fillRect(-12, 118, 24, 12)
+strokeStyle = "#26a69a"
+lineWidth = 1
+beginPath()
+moveTo(36.5, 88.706)
+lineTo(36.5, 112.706)
+stroke()
+fillStyle = "#26a69a"
+fillRect(24, 98, 24, 6)
+strokeStyle = "#ef5350"
+lineWidth = 1
+beginPath()
+moveTo(73.5, 75.118)
+lineTo(73.5, 97.647)
+stroke()
+fillStyle = "#ef5350"
+fillRect(61, 84, 24, 5)
+strokeStyle = "#ef5350"
+lineWidth = 1
+beginPath()
+moveTo(109.5, 64.824)
+lineTo(109.5, 94.118)
+stroke()
+fillStyle = "#ef5350"
+fillRect(97, 74, 24, 12)
+strokeStyle = "#ef5350"
+lineWidth = 1
+beginPath()
+moveTo(145.5, 66.059)
+lineTo(145.5, 91.353)
+stroke()
+fillStyle = "#ef5350"
+fillRect(133, 75, 24, 8)
+strokeStyle = "#26a69a"
+lineWidth = 1
+beginPath()
+moveTo(182.5, 74.353)
+lineTo(182.5, 95.353)
+stroke()
+fillStyle = "#26a69a"
+fillRect(170, 83, 24, 3)
+strokeStyle = "#26a69a"
+lineWidth = 1
+beginPath()
+moveTo(218.5, 85)
+lineTo(218.5, 113.941)
+stroke()
+fillStyle = "#26a69a"
+fillRect(206, 94, 24, 11)
+strokeStyle = "#26a69a"
+lineWidth = 1
+beginPath()
+moveTo(255.5, 107.647)
+lineTo(255.5, 134.176)
+stroke()
+fillStyle = "#26a69a"
+fillRect(243, 116, 24, 9)
+strokeStyle = "#ef5350"
+lineWidth = 1
+beginPath()
+moveTo(291.5, 132.647)
+lineTo(291.5, 152.059)
+stroke()
+fillStyle = "#ef5350"
+fillRect(279, 141, 24, 2)
+strokeStyle = "#ef5350"
+lineWidth = 1
+beginPath()
+moveTo(327.5, 140.118)
+lineTo(327.5, 168.471)
+stroke()
+fillStyle = "#ef5350"
+fillRect(315, 149, 24, 11)
+strokeStyle = "#ef5350"
+lineWidth = 1
+beginPath()
+moveTo(364.5, 136.294)
+lineTo(364.5, 163.824)
+stroke()
+fillStyle = "#ef5350"
+fillRect(352, 145, 24, 10)
+strokeStyle = "#26a69a"
+lineWidth = 1
+beginPath()
+moveTo(400.5, 121.412)
+lineTo(400.5, 139.059)
+stroke()
+fillStyle = "#26a69a"
+fillRect(388, 130, 24, 1)
+
+## Bar (109 ops)
+lineWidth = 3
+strokeStyle = "#26a69a"
+beginPath()
+moveTo(0.5, 108.824)
+lineTo(0.5, 138.235)
+moveTo(-11.5, 129.412)
+lineTo(0.5, 129.412)
+moveTo(0.5, 117.647)
+lineTo(12.5, 117.647)
+stroke()
+strokeStyle = "#26a69a"
+beginPath()
+moveTo(36.5, 88.706)
+lineTo(36.5, 112.706)
+moveTo(24.5, 103.882)
+lineTo(36.5, 103.882)
+moveTo(36.5, 97.529)
+lineTo(48.5, 97.529)
+stroke()
+strokeStyle = "#ef5350"
+beginPath()
+moveTo(73.5, 75.118)
+lineTo(73.5, 97.647)
+moveTo(61.5, 83.941)
+lineTo(73.5, 83.941)
+moveTo(73.5, 88.824)
+lineTo(85.5, 88.824)
+stroke()
+strokeStyle = "#ef5350"
+beginPath()
+moveTo(109.5, 64.824)
+lineTo(109.5, 94.118)
+moveTo(97.5, 73.647)
+lineTo(109.5, 73.647)
+moveTo(109.5, 85.294)
+lineTo(121.5, 85.294)
+stroke()
+strokeStyle = "#ef5350"
+beginPath()
+moveTo(145.5, 66.059)
+lineTo(145.5, 91.353)
+moveTo(133.5, 74.882)
+lineTo(145.5, 74.882)
+moveTo(145.5, 82.529)
+lineTo(157.5, 82.529)
+stroke()
+strokeStyle = "#26a69a"
+beginPath()
+moveTo(182.5, 74.353)
+lineTo(182.5, 95.353)
+moveTo(170.5, 86.529)
+lineTo(182.5, 86.529)
+moveTo(182.5, 83.176)
+lineTo(194.5, 83.176)
+stroke()
+strokeStyle = "#26a69a"
+beginPath()
+moveTo(218.5, 85)
+lineTo(218.5, 113.941)
+moveTo(206.5, 105.118)
+lineTo(218.5, 105.118)
+moveTo(218.5, 93.824)
+lineTo(230.5, 93.824)
+stroke()
+strokeStyle = "#26a69a"
+beginPath()
+moveTo(255.5, 107.647)
+lineTo(255.5, 134.176)
+moveTo(243.5, 125.353)
+lineTo(255.5, 125.353)
+moveTo(255.5, 116.471)
+lineTo(267.5, 116.471)
+stroke()
+strokeStyle = "#ef5350"
+beginPath()
+moveTo(291.5, 132.647)
+lineTo(291.5, 152.059)
+moveTo(279.5, 141.471)
+lineTo(291.5, 141.471)
+moveTo(291.5, 143.235)
+lineTo(303.5, 143.235)
+stroke()
+strokeStyle = "#ef5350"
+beginPath()
+moveTo(327.5, 140.118)
+lineTo(327.5, 168.471)
+moveTo(315.5, 148.941)
+lineTo(327.5, 148.941)
+moveTo(327.5, 159.647)
+lineTo(339.5, 159.647)
+stroke()
+strokeStyle = "#ef5350"
+beginPath()
+moveTo(364.5, 136.294)
+lineTo(364.5, 163.824)
+moveTo(352.5, 145.118)
+lineTo(364.5, 145.118)
+moveTo(364.5, 155)
+lineTo(376.5, 155)
+stroke()
+strokeStyle = "#26a69a"
+beginPath()
+moveTo(400.5, 121.412)
+lineTo(400.5, 139.059)
+moveTo(388.5, 130.235)
+lineTo(400.5, 130.235)
+moveTo(400.5, 130.235)
+lineTo(412.5, 130.235)
+stroke()
+
+## Line (19 ops)
+lineJoin = "round"
+beginPath()
+moveTo(0, 117.647)
+lineTo(36.364, 97.529)
+lineTo(72.727, 88.824)
+lineTo(109.091, 85.294)
+lineTo(145.455, 82.529)
+lineTo(181.818, 83.176)
+lineTo(218.182, 93.824)
+lineTo(254.545, 116.471)
+lineTo(290.909, 143.235)
+lineTo(327.273, 159.647)
+lineTo(363.636, 155)
+lineTo(400, 130.235)
+strokeStyle = "#2962FF"
+lineWidth = 2
+setLineDash([])
+stroke()
+setLineDash([])
+
+## Histogram (24 ops)
+fillStyle = "#2962FF"
+fillRect(-12.833, 117.647, 25.667, 600)
+fillStyle = "#2962FF"
+fillRect(23.53, 97.529, 25.667, 620.118)
+fillStyle = "#2962FF"
+fillRect(59.894, 88.824, 25.667, 628.824)
+fillStyle = "#2962FF"
+fillRect(96.258, 85.294, 25.667, 632.353)
+fillStyle = "#2962FF"
+fillRect(132.621, 82.529, 25.667, 635.118)
+fillStyle = "#2962FF"
+fillRect(168.985, 83.176, 25.667, 634.471)
+fillStyle = "#2962FF"
+fillRect(205.348, 93.824, 25.667, 623.824)
+fillStyle = "#2962FF"
+fillRect(241.712, 116.471, 25.667, 601.176)
+fillStyle = "#2962FF"
+fillRect(278.076, 143.235, 25.667, 574.412)
+fillStyle = "#2962FF"
+fillRect(314.439, 159.647, 25.667, 558)
+fillStyle = "#2962FF"
+fillRect(350.803, 155, 25.667, 562.647)
+fillStyle = "#2962FF"
+fillRect(387.167, 130.235, 25.667, 587.412)
+
+## Area (40 ops)
+lineJoin = "round"
+createLinearGradient(0, 0, 0, 200)
+gradient.addColorStop(0, "#2962FF")
+gradient.addColorStop(1, "rgba(41,98,255,0)")
+beginPath()
+moveTo(0, 117.647)
+lineTo(36.364, 97.529)
+lineTo(72.727, 88.824)
+lineTo(109.091, 85.294)
+lineTo(145.455, 82.529)
+lineTo(181.818, 83.176)
+lineTo(218.182, 93.824)
+lineTo(254.545, 116.471)
+lineTo(290.909, 143.235)
+lineTo(327.273, 159.647)
+lineTo(363.636, 155)
+lineTo(400, 130.235)
+lineTo(400, 200)
+lineTo(0, 200)
+closePath()
+fillStyle = gradient
+fill()
+beginPath()
+moveTo(0, 117.647)
+lineTo(36.364, 97.529)
+lineTo(72.727, 88.824)
+lineTo(109.091, 85.294)
+lineTo(145.455, 82.529)
+lineTo(181.818, 83.176)
+lineTo(218.182, 93.824)
+lineTo(254.545, 116.471)
+lineTo(290.909, 143.235)
+lineTo(327.273, 159.647)
+lineTo(363.636, 155)
+lineTo(400, 130.235)
+strokeStyle = "#2962FF"
+lineWidth = 2
+setLineDash([])
+stroke()
+setLineDash([])
+
+## Band (124 ops)
+beginPath()
+moveTo(0, 100)
+lineTo(36.364, 79.882)
+lineTo(36.364, 115.176)
+lineTo(0, 135.294)
+closePath()
+fillStyle = "rgba(50,205,50,0.16)"
+fill()
+beginPath()
+moveTo(36.364, 79.882)
+lineTo(72.727, 71.176)
+lineTo(72.727, 106.471)
+lineTo(36.364, 115.176)
+closePath()
+fillStyle = "rgba(50,205,50,0.16)"
+fill()
+beginPath()
+moveTo(72.727, 71.176)
+lineTo(109.091, 67.647)
+lineTo(109.091, 102.941)
+lineTo(72.727, 106.471)
+closePath()
+fillStyle = "rgba(50,205,50,0.16)"
+fill()
+beginPath()
+moveTo(109.091, 67.647)
+lineTo(145.455, 64.882)
+lineTo(145.455, 100.176)
+lineTo(109.091, 102.941)
+closePath()
+fillStyle = "rgba(50,205,50,0.16)"
+fill()
+beginPath()
+moveTo(145.455, 64.882)
+lineTo(181.818, 65.529)
+lineTo(181.818, 100.824)
+lineTo(145.455, 100.176)
+closePath()
+fillStyle = "rgba(50,205,50,0.16)"
+fill()
+beginPath()
+moveTo(181.818, 65.529)
+lineTo(218.182, 76.176)
+lineTo(218.182, 111.471)
+lineTo(181.818, 100.824)
+closePath()
+fillStyle = "rgba(50,205,50,0.16)"
+fill()
+beginPath()
+moveTo(218.182, 76.176)
+lineTo(254.545, 98.824)
+lineTo(254.545, 134.118)
+lineTo(218.182, 111.471)
+closePath()
+fillStyle = "rgba(50,205,50,0.16)"
+fill()
+beginPath()
+moveTo(254.545, 98.824)
+lineTo(290.909, 125.588)
+lineTo(290.909, 160.882)
+lineTo(254.545, 134.118)
+closePath()
+fillStyle = "rgba(50,205,50,0.16)"
+fill()
+beginPath()
+moveTo(290.909, 125.588)
+lineTo(327.273, 142)
+lineTo(327.273, 177.294)
+lineTo(290.909, 160.882)
+closePath()
+fillStyle = "rgba(50,205,50,0.16)"
+fill()
+beginPath()
+moveTo(327.273, 142)
+lineTo(363.636, 137.353)
+lineTo(363.636, 172.647)
+lineTo(327.273, 177.294)
+closePath()
+fillStyle = "rgba(50,205,50,0.16)"
+fill()
+beginPath()
+moveTo(363.636, 137.353)
+lineTo(400, 112.588)
+lineTo(400, 147.882)
+lineTo(363.636, 172.647)
+closePath()
+fillStyle = "rgba(50,205,50,0.16)"
+fill()
+beginPath()
+moveTo(0, 100)
+lineTo(36.364, 79.882)
+lineTo(72.727, 71.176)
+lineTo(109.091, 67.647)
+lineTo(145.455, 64.882)
+lineTo(181.818, 65.529)
+lineTo(218.182, 76.176)
+lineTo(254.545, 98.824)
+lineTo(290.909, 125.588)
+lineTo(327.273, 142)
+lineTo(363.636, 137.353)
+lineTo(400, 112.588)
+strokeStyle = "#2962FF"
+lineWidth = 2
+setLineDash([])
+stroke()
+setLineDash([])
+beginPath()
+moveTo(0, 135.294)
+lineTo(36.364, 115.176)
+lineTo(72.727, 106.471)
+lineTo(109.091, 102.941)
+lineTo(145.455, 100.176)
+lineTo(181.818, 100.824)
+lineTo(218.182, 111.471)
+lineTo(254.545, 134.118)
+lineTo(290.909, 160.882)
+lineTo(327.273, 177.294)
+lineTo(363.636, 172.647)
+lineTo(400, 147.882)
+strokeStyle = "#2962FF"
+lineWidth = 2
+setLineDash([])
+stroke()
+setLineDash([])

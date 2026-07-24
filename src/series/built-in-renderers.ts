@@ -158,82 +158,7 @@ function drawBar(c: Context): void {
     }
 }
 
-function drawCluster(c: Context): void {
-    const { target: ctx, options: o } = c;
-    const slot = Math.max(6, c.barSpacing);
-    for (const point of c.data) {
-        const levels = point.levels;
-        if (!levels?.length || !Number.isFinite(point.high) || !Number.isFinite(point.low)) continue;
-        const center = c.timeToCoordinate(point.time);
-        let maximum = 0;
-        for (const level of levels) maximum = Math.max(maximum, level.vol);
-        if (maximum <= 0) continue;
-        const cellHeight = Math.max(1,
-            Math.abs(c.priceToCoordinate(point.high!) - c.priceToCoordinate(point.low!)) / levels.length);
-        for (const level of levels) {
-            const y = c.priceToCoordinate(level.price);
-            const width = (level.vol / maximum) * (slot * 0.92);
-            ctx.fillStyle = level.vol === maximum ? '#fcd535' : (o.color ?? 'rgba(74,158,255,0.55)');
-            ctx.fillRect(center - slot * 0.46, y - cellHeight / 2, width, Math.max(1, cellHeight - 0.5));
-        }
-    }
-}
 
-function drawBox(c: Context): void {
-    const { target: ctx, options: o, pane } = c;
-    const slot = Math.max(2, c.barSpacing);
-    const span = (c.priceRange.max - c.priceRange.min) || 1;
-    const rows = Math.max(5, Math.min(60, Math.round(pane.height / 20)));
-    const rowHeight = pane.height / rows;
-    const columns = c.data.map((point) => {
-        const values = new Array<number>(rows).fill(0);
-        for (const level of point.levels ?? []) {
-            const row = Math.max(0, Math.min(rows - 1,
-                Math.floor((level.price - c.priceRange.min) / span * rows)));
-            values[row] += level.vol;
-        }
-        return values;
-    });
-    let maximum = 0;
-    for (const column of columns) for (const value of column) maximum = Math.max(maximum, value);
-    if (maximum <= 0) return;
-    const showText = slot >= 26 && rowHeight >= 11;
-    const fontSize = Math.max(7, Math.min(Math.floor(rowHeight - 3), Math.floor(slot * 0.4)));
-    ctx.strokeStyle = c.theme.horizontalGridColor;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (let row = 0; row <= rows; row++) {
-        const y = Math.round(pane.bottom - row * rowHeight) + 0.5;
-        ctx.moveTo(pane.left, y);
-        ctx.lineTo(pane.right, y);
-    }
-    ctx.stroke();
-    ctx.font = `${fontSize}px ${c.theme.fontFamily}`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    c.data.forEach((point, columnIndex) => {
-        const center = c.timeToCoordinate(point.time);
-        if (showText) {
-            ctx.strokeStyle = c.theme.verticalGridColor;
-            ctx.strokeRect(Math.round(center - slot / 2) + 0.5, pane.top + 0.5,
-                Math.round(slot), Math.round(pane.height));
-        }
-        const column = columns[columnIndex];
-        for (let row = 0; row < rows; row++) {
-            const value = column[row];
-            if (value <= 0) continue;
-            const y = pane.bottom - (row + 0.5) * rowHeight;
-            if (showText) {
-                ctx.fillStyle = value === maximum ? '#fcd535' : c.theme.textColor;
-                ctx.fillText(String(value), center, y, slot - 3);
-            } else {
-                const alpha = 0.12 + 0.6 * (value / maximum);
-                ctx.fillStyle = value === maximum ? 'rgba(252,213,53,0.8)' : `rgba(74,158,255,${alpha})`;
-                ctx.fillRect(center - slot / 2, y - rowHeight / 2, slot, Math.max(1, rowHeight - 1));
-            }
-        }
-    });
-}
 
 function drawRenko(c: Context): void {
     const { target: ctx, options: o } = c;
@@ -383,18 +308,6 @@ function drawLineLike(c: Context, area: boolean): void {
     }
 }
 
-function drawUnsupportedVolumeProfile(c: Context): void {
-    const { target: ctx, pane, theme } = c;
-    if (c.data.length === 0) return;
-    const previousAlpha = ctx.globalAlpha;
-    ctx.fillStyle = theme.textColor;
-    ctx.globalAlpha = 0.72;
-    ctx.font = `11px ${theme.fontFamily}`;
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'top';
-    ctx.fillText('Exact footprint levels required', pane.right - 8, pane.top + 8);
-    ctx.globalAlpha = previousAlpha;
-}
 
 function definition(
     type: string,
@@ -477,12 +390,6 @@ export const builtInSeriesDefinitions = [
         { incrementalDataProcessorFactory: pointFigureProcessorFactory, magnetValues: ohlcMagnetValues }),
     definition('Renko', drawRenko, ohlcRange, ohlcValue, 1, candleColor,
         { incrementalDataProcessorFactory: renkoProcessorFactory, magnetValues: ohlcMagnetValues }),
-    definition('VolumeProfile', drawUnsupportedVolumeProfile, () => null, () => null, 0, defaultColor,
-        { affectsTimeScale: false }),
-    definition('Cluster', drawCluster, ohlcRange, ohlcValue, 1, defaultColor,
-        { magnetValues: ohlcMagnetValues }),
-    definition('Box', drawBox, ohlcRange, ohlcValue, 1, defaultColor,
-        { magnetValues: ohlcMagnetValues }),
 ] as const;
 
 export function registerBuiltInSeries(registry: SeriesRendererRegistry): void {

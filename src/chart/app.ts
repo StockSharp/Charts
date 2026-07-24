@@ -87,7 +87,6 @@ function boot() {
     const engine = new IndicatorEngine();
     engine.setRenderer(renderer);
     engine.setPaneManager(paneManager);
-    engine.setWsClient({});               // legacy no-op; truthy so add() isn't gated
     engine.onChange = () => { if (themeName !== 'dark') applyTheme(); };   // re-theme freshly-added sub-panes
     (window as any)._indicatorEngine = engine;
     engine.setCandles(live);              // shares the same array reference

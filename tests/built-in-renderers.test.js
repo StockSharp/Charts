@@ -64,38 +64,4 @@ describe('built-in series renderers', () => {
         assert.equal(context.fillCalls, 0);
         assert.deepEqual(strokes, [{ color: '#aa0000', width: 4, dash: [12, 8] }]);
     });
-
-    it('does not distribute legacy candle volume into fabricated price bins', () => {
-        const profile = builtInSeriesDefinitions.find(item => item.type === 'VolumeProfile');
-        const calls = [];
-        const context = {
-            globalAlpha: 1,
-            fillStyle: '',
-            font: '',
-            textAlign: '',
-            textBaseline: '',
-            fillRect() { calls.push('profile-bar'); },
-            fillText(value) { calls.push(value); },
-        };
-
-        profile.renderer.draw({
-            target: context,
-            data: [{ time: 1, open: 10, high: 20, low: 10, close: 15, vol: 1_000 }],
-            allData: [],
-            options: {},
-            priceRange: { min: 10, max: 20 },
-            visibleTimeRange: { from: 1, to: 1 },
-            pane: { left: 0, right: 100, top: 0, bottom: 100, width: 100, height: 100 },
-            theme: {
-                fontFamily: 'sans-serif', textColor: '#fff',
-                horizontalGridColor: '#000', verticalGridColor: '#000',
-            },
-            barSpacing: 8,
-            metadata: {},
-            timeToCoordinate: value => value,
-            priceToCoordinate: value => value,
-        });
-
-        assert.deepEqual(calls, ['Exact footprint levels required']);
-    });
 });

@@ -92,8 +92,6 @@ export class ChartLegend {
                     ['heikin', 'bi-bar-chart-steps', T.t('HeikinAshi')],
                     ['renko', 'bi-bricks', T.t('Renko')],
                     ['pf', 'bi-x-diamond', T.t('Point & Figure')],
-                    ['cluster', 'bi-bar-chart-line-fill', T.t('Cluster')],
-                    ['box', 'bi-grid-3x3-gap-fill', T.t('Box')],
                 ];
                 const menu = document.createElement('div');
                 menu.className = 'chart-legend-floating-ct-menu dropdown-menu';

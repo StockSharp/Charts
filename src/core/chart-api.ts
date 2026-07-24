@@ -175,22 +175,8 @@ export interface LineData { time: Time; value: number }
 export interface HistogramData { time: Time; value: number; color?: string }
 export interface AreaData { time: Time; value: number }
 export interface BandData { time: Time; value: number; upper: number; lower: number }
-/** @deprecated Approximate candle-volume profile input. Use exact orderflow FootprintBar levels. */
-export interface VolumeProfileData extends CandlestickData { vol?: number }
-/** @deprecated Unclassified total volume. It is not exact bid/ask footprint data. */
-export interface PriceLevelData { price: number; vol: number }
-/** @deprecated Legacy approximate cluster input. Use FootprintBar and FootprintSeries. */
-export interface ClusterData {
-    time: Time;
-    high: number;
-    low: number;
-    open?: number;
-    close?: number;
-    levels: readonly PriceLevelData[];
-}
-
 export type SeriesKind = 'Candlestick' | 'Bar' | 'Line' | 'Histogram' | 'Area'
-    | 'Band' | 'PointFigure' | 'Renko' | 'VolumeProfile' | 'Cluster' | 'Box';
+    | 'Band' | 'PointFigure' | 'Renko';
 
 export const CandlestickSeries = seriesRendererRegistry.reference<CandlestickData, SeriesOptions>('Candlestick');
 export const BarSeries = seriesRendererRegistry.reference<CandlestickData, SeriesOptions>('Bar');
@@ -200,10 +186,6 @@ export const AreaSeries = seriesRendererRegistry.reference<AreaData, SeriesOptio
 export const BandSeries = seriesRendererRegistry.reference<BandData, SeriesOptions>('Band');
 export const PointFigureSeries = seriesRendererRegistry.reference<CandlestickData, SeriesOptions>('PointFigure');
 export const RenkoSeries = seriesRendererRegistry.reference<CandlestickData, SeriesOptions>('Renko');
-/** @deprecated Candle-only input is unsupported. Use ExactVolumeProfileSeries with FootprintBar. */
-export const VolumeProfileSeries = seriesRendererRegistry.reference<VolumeProfileData, SeriesOptions>('VolumeProfile');
-export const ClusterSeries = seriesRendererRegistry.reference<ClusterData, SeriesOptions>('Cluster');
-export const BoxSeries2 = seriesRendererRegistry.reference<ClusterData, SeriesOptions>('Box');
 
 export const ColorType = { Solid: 'solid', VerticalGradient: 'gradient' } as const;
 
@@ -346,8 +328,6 @@ export interface TimeScaleOptions {
     timeZone?: string;
     /** Optional formatter shared by tick and crosshair labels. */
     formatter?: TimeScaleFormatter;
-    /** @deprecated Use mode: TimeScaleMode.Ordinal. */
-    ordinal?: boolean;
 }
 
 export interface ChartOptions {
@@ -413,8 +393,6 @@ function normalizeTimeScaleOptions(value: TimeScaleOptions | undefined): TimeSca
         throw new TypeError('sschart: timeScale options must be an object');
     if (value.mode !== undefined && !TIME_SCALE_MODES.has(value.mode))
         throw new TypeError(`sschart: invalid timeScale mode ${String(value.mode)}`);
-    if (value.ordinal !== undefined && typeof value.ordinal !== 'boolean')
-        throw new TypeError('sschart: timeScale.ordinal must be boolean');
     if (value.calendar !== undefined && !isTradingCalendar(value.calendar))
         throw new TypeError('sschart: timeScale.calendar must implement ITradingCalendar');
     if (value.formatter !== undefined && typeof value.formatter !== 'function')
@@ -446,7 +424,7 @@ function normalizeTimeScaleOptions(value: TimeScaleOptions | undefined): TimeSca
         sessionKinds = Object.freeze(unique);
     }
 
-    const mode = value.mode ?? (value.ordinal === true ? TimeScaleMode.Ordinal : TimeScaleMode.Continuous);
+    const mode = value.mode ?? TimeScaleMode.Continuous;
     if (mode === TimeScaleMode.SessionAware && !isTradingCalendar(value.calendar))
         throw new TypeError('sschart: session-aware timeScale mode requires a trading calendar');
     return Object.freeze({ ...value, locale, timeZone, sessionKinds });
@@ -913,8 +891,6 @@ export interface CrosshairEvent {
     readonly hoveredObject: HoveredObject | null;
     readonly sourceEvent: PointerEvent | MouseEvent | null;
 }
-/** @deprecated Use CrosshairEvent. */
-export type CrosshairMoveEvent = CrosshairEvent;
 export interface CrosshairPosition {
     readonly time: Time;
     readonly price?: number;
@@ -2224,8 +2200,7 @@ class ChartImpl implements IChartApi {
     }
 
     private timeScaleMode(): TimeScaleModeValue {
-        return this.opts.timeScale?.mode
-            ?? (this.opts.timeScale?.ordinal === true ? TimeScaleMode.Ordinal : TimeScaleMode.Continuous);
+        return this.opts.timeScale?.mode ?? TimeScaleMode.Continuous;
     }
 
     private ordinalMode(): boolean { return this.timeScaleMode() === TimeScaleMode.Ordinal; }

@@ -1,0 +1,46 @@
+## PriceLines (45 ops)
+save()
+setTransform(1, 0, 0, 1, 0, 0)
+font = "12px sans-serif"
+textBaseline = "middle"
+textAlign = "left"
+measureText("Order")
+measureText("112.00")
+strokeStyle = "#26a69a"
+lineWidth = 1
+setLineDash([])
+beginPath()
+moveTo(0, 59.5)
+lineTo(360, 59.5)
+stroke()
+setLineDash([])
+fillStyle = "#26a69a"
+fillRect(360, 49.824, 40, 18)
+fillStyle = "#fff"
+fillText("Order", 365, 59.824)
+fillStyle = "#26a69a"
+fillRect(401, 49.824, 46, 18)
+fillStyle = "#fff"
+fillText("112.00", 406, 59.824)
+font = "12px sans-serif"
+textBaseline = "middle"
+textAlign = "left"
+measureText("Stop")
+measureText("96.00")
+strokeStyle = "#ef5350"
+lineWidth = 1
+setLineDash([])
+beginPath()
+moveTo(0, 153.5)
+lineTo(366, 153.5)
+stroke()
+setLineDash([])
+fillStyle = "#ef5350"
+fillRect(366, 143.941, 34, 18)
+fillStyle = "#fff"
+fillText("Stop", 371, 153.941)
+fillStyle = "#ef5350"
+fillRect(401, 143.941, 40, 18)
+fillStyle = "#fff"
+fillText("96.00", 406, 153.941)
+restore()

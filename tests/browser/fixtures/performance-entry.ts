@@ -52,7 +52,7 @@ function chartOptions(): any {
             horzLines: { color: 'rgba(48,61,80,0.45)' },
         },
         rightPriceScale: { borderColor: '#334155' },
-        timeScale: { borderColor: '#334155', timeVisible: true, ordinal: true },
+        timeScale: { borderColor: '#334155', timeVisible: true, mode: 'ordinal' },
     };
 }
 

@@ -146,16 +146,6 @@ export class ChartTypeSwitcher {
                 newSeries.setData(this._rawCandles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close })));
                 break;
 
-            case 'cluster':
-                newSeries = this._chart.addSeries(SSChart.ClusterSeries, { color: 'rgba(74,158,255,0.55)', priceFormat });
-                newSeries.setData(this._rawCandles.map(c => ({ time: c.time, high: c.high, low: c.low, levels: c.levels })));
-                break;
-
-            case 'box':
-                newSeries = this._chart.addSeries(SSChart.BoxSeries2, { priceFormat });
-                newSeries.setData(this._rawCandles.map(c => ({ time: c.time, high: c.high, low: c.low, levels: c.levels })));
-                break;
-
             default:
                 return this._currentSeries;
         }
@@ -184,8 +174,6 @@ export class ChartTypeSwitcher {
         if (type === 'candle' || type === 'bar' || type === 'renko' || type === 'pf') {
             this._currentSeries.update(candle);
             if (type === 'renko' || type === 'pf') this._derivedRuntime?.update(candle);
-        } else if (type === 'cluster' || type === 'box') {
-            this._currentSeries.update({ time: candle.time, high: candle.high, low: candle.low, levels: candle.levels });
         } else if (type === 'heikin') {
             // Approximate HA update using last raw candle
             const haClose = (candle.open + candle.high + candle.low + candle.close) / 4;

@@ -86,7 +86,7 @@ test('continuous, ordinal and session-aware modes use distinct time domains', as
             calendar,
             sessionKinds: [api.TradingSessionKind.Regular],
         });
-        const legacyToggle = await measure({ ordinal: true }, { ordinal: false });
+        const legacyToggle = await measure({ mode: 'ordinal' }, { mode: 'continuous' });
 
         const invalidHost = document.createElement('div');
         let invalidMessage = '';

@@ -65,25 +65,7 @@ export interface BandData {
     upper: number;
     lower: number;
 }
-/** @deprecated Approximate candle-volume profile input. Use exact orderflow FootprintBar levels. */
-export interface VolumeProfileData extends CandlestickData {
-    vol?: number;
-}
-/** @deprecated Unclassified total volume. It is not exact bid/ask footprint data. */
-export interface PriceLevelData {
-    price: number;
-    vol: number;
-}
-/** @deprecated Legacy approximate cluster input. Use FootprintBar and FootprintSeries. */
-export interface ClusterData {
-    time: Time;
-    high: number;
-    low: number;
-    open?: number;
-    close?: number;
-    levels: readonly PriceLevelData[];
-}
-export type SeriesKind = 'Candlestick' | 'Bar' | 'Line' | 'Histogram' | 'Area' | 'Band' | 'PointFigure' | 'Renko' | 'VolumeProfile' | 'Cluster' | 'Box';
+export type SeriesKind = 'Candlestick' | 'Bar' | 'Line' | 'Histogram' | 'Area' | 'Band' | 'PointFigure' | 'Renko';
 export declare const CandlestickSeries: SeriesDefinition<CandlestickData, SeriesOptions>;
 export declare const BarSeries: SeriesDefinition<CandlestickData, SeriesOptions>;
 export declare const LineSeries: SeriesDefinition<LineData, SeriesOptions>;
@@ -92,10 +74,6 @@ export declare const AreaSeries: SeriesDefinition<AreaData, SeriesOptions>;
 export declare const BandSeries: SeriesDefinition<BandData, SeriesOptions>;
 export declare const PointFigureSeries: SeriesDefinition<CandlestickData, SeriesOptions>;
 export declare const RenkoSeries: SeriesDefinition<CandlestickData, SeriesOptions>;
-/** @deprecated Candle-only input is unsupported. Use ExactVolumeProfileSeries with FootprintBar. */
-export declare const VolumeProfileSeries: SeriesDefinition<VolumeProfileData, SeriesOptions>;
-export declare const ClusterSeries: SeriesDefinition<ClusterData, SeriesOptions>;
-export declare const BoxSeries2: SeriesDefinition<ClusterData, SeriesOptions>;
 export declare const ColorType: {
     readonly Solid: 'solid';
     readonly VerticalGradient: 'gradient';
@@ -220,8 +198,6 @@ export interface TimeScaleOptions {
     timeZone?: string;
     /** Optional formatter shared by tick and crosshair labels. */
     formatter?: TimeScaleFormatter;
-    /** @deprecated Use mode: TimeScaleMode.Ordinal. */
-    ordinal?: boolean;
 }
 export interface ChartOptions {
     width?: number;
@@ -346,8 +322,6 @@ export interface CrosshairEvent {
     readonly hoveredObject: HoveredObject | null;
     readonly sourceEvent: PointerEvent | MouseEvent | null;
 }
-/** @deprecated Use CrosshairEvent. */
-export type CrosshairMoveEvent = CrosshairEvent;
 export interface CrosshairPosition {
     readonly time: Time;
     readonly price?: number;

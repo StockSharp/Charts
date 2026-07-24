@@ -1,0 +1,99 @@
+## (default)
+output("value")
+addSeries("line", {"color":"#e57373","lineWidth":2,"title":"TestIndicator"}, data[5])
+=> series: 1
+
+## band
+output("upper")
+output("lower")
+addSeries("band", {"upperColor":"#e57373","lowerColor":"#e57373","fillColor":"rgba(255,255,255,0.08)","lineWidth":1,"lineStyle":2,"lastValueVisible":false,"title":"Band"}, data[5])
+=> series: 1
+
+## macd-histogram
+output("histogram")
+addSeries("histogram", {"color":"#81c784","title":"Histogram","priceScaleId":"right"}, data[5])
+output("macd")
+addSeries("line", {"color":"#e57373","lineWidth":2,"title":"TestIndicator"}, data[5])
+output("signal")
+addSeries("line", {"color":"#64b5f6","lineWidth":1,"title":"Signal"}, data[5])
+=> series: 3
+
+## ppo-histogram
+output("histogram")
+addSeries("histogram", {"color":"#81c784","title":"Histogram","priceScaleId":"right"}, data[5])
+output("ppo")
+addSeries("line", {"color":"#e57373","lineWidth":2,"title":"TestIndicator"}, data[5])
+output("signal")
+addSeries("line", {"color":"#64b5f6","lineWidth":1,"title":"Signal"}, data[5])
+=> series: 3
+
+## stochastic
+output("k")
+addSeries("line", {"color":"#e57373","lineWidth":2,"lineStyle":0,"title":"K"}, data[5])
+output("d")
+addSeries("line", {"color":"#64b5f6","lineWidth":1,"lineStyle":2,"title":"D"}, data[5])
+=> series: 2
+
+## adx
+output("plusDI")
+addSeries("line", {"color":"#e57373","lineWidth":2,"lineStyle":0,"title":"+DI"}, data[5])
+output("minusDI")
+addSeries("line", {"color":"#64b5f6","lineWidth":1,"lineStyle":0,"title":"-DI"}, data[5])
+output("adx")
+addSeries("line", {"color":"#81c784","lineWidth":2,"lineStyle":0,"title":"ADX"}, data[5])
+=> series: 3
+
+## alligator
+output("jaw")
+addSeries("line", {"color":"#1E90FF","lineWidth":2,"lineStyle":0,"title":"Jaw"}, data[5])
+output("teeth")
+addSeries("line", {"color":"#FF0000","lineWidth":1,"lineStyle":0,"title":"Teeth"}, data[5])
+output("lips")
+addSeries("line", {"color":"#32CD32","lineWidth":1,"lineStyle":0,"title":"Lips"}, data[5])
+=> series: 3
+
+## ichimoku
+output("tenkan")
+addSeries("line", {"color":"#FF6347","lineWidth":1,"title":"Tenkan"}, data[5])
+output("kijun")
+addSeries("line", {"color":"#1E90FF","lineWidth":1,"title":"Kijun"}, data[5])
+output("chikou")
+addSeries("line", {"color":"#EE82EE","lineWidth":1,"lineStyle":2,"title":"Chikou"}, data[5])
+output("senkouA")
+output("senkouB")
+addSeries("band", {"upperColor":"#32CD32","lowerColor":"#FF1493","positiveFillColor":"rgba(50,205,50,0.18)","negativeFillColor":"rgba(255,61,87,0.18)","lineWidth":1,"lastValueVisible":false,"title":"Senkou cloud"}, data[5])
+=> series: 4
+
+## dots
+output("value")
+addSeries("line", {"color":"#e57373","lineWidth":0,"lineVisible":false,"title":"TestIndicator","crosshairMarkerRadius":4,"pointMarkersVisible":true,"pointMarkersRadius":4}, data[5])
+=> series: 1
+
+## fractals
+output("up")
+addSeries("line", {"color":"#32CD32","title":"Fractal Up","lineWidth":0,"lineVisible":false,"pointMarkersVisible":true,"pointMarkersRadius":4,"crosshairMarkerRadius":4}, data[5])
+output("down")
+addSeries("line", {"color":"#FF3D57","title":"Fractal Down","lineWidth":0,"lineVisible":false,"pointMarkersVisible":true,"pointMarkersRadius":4,"crosshairMarkerRadius":4}, data[5])
+=> series: 2
+
+## gator
+output("upper")
+addSeries("histogram", {"color":"#00c853","title":"Upper","priceScaleId":"right"}, data[5])
+output("lower")
+addSeries("histogram", {"color":"#ff3d57","title":"Lower","priceScaleId":"right"}, data[5])
+=> series: 2
+
+## volume
+output("value")
+addSeries("histogram", {"color":"#4a9eff","title":"TestIndicator","priceFormat":{"type":"volume"},"priceScaleId":"right"}, data[5])
+=> series: 1
+
+## directional-histogram
+output("value")
+addSeries("histogram", {"color":"#4a9eff","title":"TestIndicator","priceScaleId":"right"}, data[5])
+=> series: 1
+
+## dual-line
+output("value")
+addSeries("line", {"color":"#e57373","lineWidth":2,"lineStyle":0,"title":"value"}, data[5])
+=> series: 1

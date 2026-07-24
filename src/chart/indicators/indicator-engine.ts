@@ -4,9 +4,8 @@
 // Engine drives add/remove/render lifecycle and keeps the legend on the exact
 // same targetIndex model as the rendered series.
 //
-// No server round-trip, no wsClient.subscribeIndicator. Old `subId` field is
-// kept on the entry object purely as a legacy placeholder — nothing reads it
-// anymore. Live updates: terminal-app shares the chart's raw-candle array with
+// No server round-trip: indicator calc runs locally. Live updates:
+// terminal-app shares the chart's raw-candle array with
 // the engine via setCandles (same reference), and chart.updatePrice mutates
 // that array in place on every tick, then fires chart.onLiveBarUpdate →
 // engine.onLiveUpdate(). One animation-frame pass advances incremental entries.
@@ -47,19 +46,12 @@ export class IndicatorEngine {
     _nextId: number;
     _renderer: any;
     _paneManager: any;
-    _wsClient: any;
     _symbol: any;
     _timeframe: any;
-    _subIdToEntry: Map<any, any>;
     _candles: any[];
     onChange: (() => void) | null;
     _renderPending: boolean | undefined;
     _retainRuntimeHistory: boolean;
-    // Open time of the last candle already reflected in the sub-pane spine.
-    // Lets onLiveUpdate extend the spine exactly once per new bar without a
-    // full spine rebuild on every intra-bar tick.
-    _lastSpineTime: any;
-    _lastSpineCount: number;
     _changeListeners: Set<() => void>;
 
     /// Drop warm-up points where `value` is not a finite number. Operates on
@@ -85,26 +77,16 @@ export class IndicatorEngine {
         this._nextId = 1;
         this._renderer = null;
         this._paneManager = null;
-        this._wsClient = null;
         this._symbol = null;
         this._timeframe = null;
-        this._subIdToEntry = new Map();
         this._candles = [];
         this._retainRuntimeHistory = false;
-        this._lastSpineCount = 0;
         this._changeListeners = new Set();
         this.onChange = null;
     }
 
     setRenderer(renderer) { this._renderer = renderer; }
     setPaneManager(paneManager) { this._paneManager = paneManager; }
-
-    setWsClient(wsClient) {
-        // wsClient is no longer the indicator source — calc runs locally. Kept
-        // as a setter for API compatibility; engine still inspects it on add()
-        // to gate behaviour while the chart is still booting (no candles yet).
-        this._wsClient = wsClient;
-    }
 
     setSymbol(symbol) { this._symbol = symbol; }
     setTimeframe(timeframe) { this._timeframe = timeframe; }
@@ -127,14 +109,10 @@ export class IndicatorEngine {
     }
 
     // Keep the raw candle window as the source for incremental runtime reseeds
-    // and shifted sparse timestamps. The same data
-    // also drives the invisible pane spine.
+    // and shifted sparse timestamps.
     setCandles(candles, options: { rewindableTail?: boolean } = {}) {
         this._candles = candles || [];
         this._retainRuntimeHistory = options.rewindableTail === true;
-        if (this._paneManager) this._paneManager.setSpineFromCandles(this._candles);
-        this._lastSpineTime = this._candles.length ? this._candles[this._candles.length - 1].time : null;
-        this._lastSpineCount = this._candles.length;
         // Re-render every active indicator against the fresh candle window.
         // This fires on symbol switch / timeframe change after the chart
         // pulled new candles via api.getCandles.
@@ -146,28 +124,12 @@ export class IndicatorEngine {
     /// chart.updatePrice mutates it in place — updating the last bar or pushing
     /// a new one — before firing chart.onLiveBarUpdate. So the candle window is
     /// already current here; we must NOT push again (that would duplicate the
-    /// bar). We only (a) extend the sub-pane spine once per genuinely new bar so
-    /// separate-pane indicators keep an x-slot for it, and (b) schedule a
-    /// coalesced incremental update+render so overlays (SMA/EMA/BB) and sub-pane
-    /// indicators track the moving bar and new bars instead of freezing on the
-    /// initial snapshot. Migrated entries produce one tail patch here.
+    /// bar). We only schedule a coalesced incremental update+render so overlays
+    /// (SMA/EMA/BB) and sub-pane indicators track the moving bar and new bars
+    /// instead of freezing on the initial snapshot. Migrated entries produce one
+    /// tail patch here. Native panes share the owner's time axis, so no separate
+    /// per-pane spine bookkeeping is needed.
     onLiveUpdate() {
-        const count = this._candles.length;
-        const last = count > 0 ? this._candles[count - 1] : null;
-        if (this._paneManager) {
-            try {
-                if (count < this._lastSpineCount
-                    || (count === this._lastSpineCount
-                        && (last?.time ?? null) !== this._lastSpineTime)) {
-                    this._paneManager.setSpineFromCandles(this._candles);
-                } else if (count > this._lastSpineCount) {
-                    for (let index = this._lastSpineCount; index < count; index++)
-                        this._paneManager.appendSpineCandle(this._candles[index]);
-                }
-            } catch { /* pane torn down */ }
-        }
-        this._lastSpineTime = last?.time ?? null;
-        this._lastSpineCount = count;
         this._scheduleRender();
     }
 
@@ -177,12 +139,9 @@ export class IndicatorEngine {
         const isNewBar = last.time !== candle.time;
         if (isNewBar) {
             this._candles.push(candle);
-            if (this._paneManager) this._paneManager.appendSpineCandle(candle);
         } else {
             this._candles[this._candles.length - 1] = candle;
         }
-        this._lastSpineTime = candle.time;
-        this._lastSpineCount = this._candles.length;
         // Live processing, coalesced per animation frame. Alpaca crypto bursts
         // through 50-200 ticks/sec; calling renderer.setData (which rebuilds
         // every chart series internally) that often makes the
@@ -1382,44 +1341,6 @@ export class IndicatorEngine {
         }, [] as any[]);
     }
 
-    // Called by the wsClient client when the hub pushes a point for one of our subs.
-    _onPoint(subId, point) {
-        const entry = this._subIdToEntry.get(subId);
-        if (!entry || !entry.seriesRefs.length) return;
-
-        const rawTime = Math.floor(Date.parse(point.time) / 1000);
-        // Sparse indicators (ZigZag, Fractals) give us shift=N meaning "the value
-        // actually belongs to the bar N closes back". Move the render time back
-        // to that earlier bar so markers/pivots land where traders expect.
-        const time = this._shiftTime(rawTime, point.shift);
-
-        const lastValues: Record<string, number> = {};
-        for (let i = 0; i < entry.seriesRefs.length && i < point.values.length; i++) {
-            const series = entry.seriesRefs[i];
-            const value = point.values[i];
-            if (value == null || series == null) continue;
-            const num = Number(value);
-            try { series.update({ time, value: num }); } catch { }
-            const key = entry.outputNames[i] || 'value';
-            lastValues[key] = num;
-        }
-        if (Object.keys(lastValues).length > 0) {
-            entry._lastValues = lastValues;
-            // Append/merge into the hover-history. Same bar (finalised preview
-            // → finalised close) comes back multiple times, so update the
-            // existing slot rather than duplicating.
-            if (!entry._points) entry._points = [];
-            const last = entry._points[entry._points.length - 1];
-            if (last && last.time === time) {
-                Object.assign(last.values, lastValues);
-            } else {
-                entry._points.push({ time, values: { ...lastValues } });
-                // Cap the buffer — crosshair precision only needs recent
-                // history within the visible candle range.
-                if (entry._points.length > 2000) entry._points.shift();
-            }
-        }
-    }
 
     _shiftTime(rawTime, shift) {
         if (!shift || shift <= 0 || !this._candles.length) return rawTime;

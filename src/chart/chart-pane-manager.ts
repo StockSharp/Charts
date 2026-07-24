@@ -42,7 +42,10 @@ class LegacyPaneChartAdapter {
 }
 
 /**
- * @deprecated Use chart.addPane()/chart.panes()/chart.removePane() directly.
+ * Terminal-UI chrome over the engine's native panes: HTML pane headers,
+ * per-pane context menus, pane-id lookup and empty-pane restore. The engine
+ * owns pane rendering and scales; this class only adds the terminal's DOM
+ * headers/menus on top and never re-implements pane logic.
  */
 export class ChartPaneManager {
     _containerId: string;
@@ -52,8 +55,6 @@ export class ChartPaneManager {
     _nextId: number;
     _mainChart: any;
     _wrapper: HTMLDivElement | null;
-    _spineData: any[];
-    _lastCandleCount: number;
     _resizeObserver: ResizeObserver | null;
     _headerSyncFrame: number | null;
     _onPointerMove: (() => void) | null;
@@ -67,8 +68,6 @@ export class ChartPaneManager {
         this._nextId = 1;
         this._mainChart = null;
         this._wrapper = null;
-        this._spineData = [];
-        this._lastCandleCount = 0;
         this._resizeObserver = null;
         this._headerSyncFrame = null;
         this._onPointerMove = null;
@@ -240,21 +239,6 @@ export class ChartPaneManager {
         return this._panes.get(paneId)?.chart ?? null;
     }
 
-    // Retained as no-op data bookkeeping for old IndicatorEngine callers.
-    // Native panes already share the owner's canonical TimeScale/index space.
-    setSpineFromCandles(candles) {
-        this._spineData = candles?.map((c) => ({ time: c.time })) ?? [];
-        this._lastCandleCount = this._spineData.length;
-    }
-
-    appendSpineCandle(candle) {
-        if (!candle) return;
-        const last = this._spineData[this._spineData.length - 1];
-        if (last?.time === candle.time) return;
-        this._spineData.push({ time: candle.time });
-        this._lastCandleCount = this._spineData.length;
-    }
-
     setPaneTitle(paneId, label) {
         const pane = this._panes.get(paneId);
         if (!pane) return;
@@ -272,9 +256,6 @@ export class ChartPaneManager {
 
     getPanes() { return Array.from(this._panes.keys()); }
     resize() { this._scheduleHeaderSync(); }
-
-    // The engine owns one bottom time axis for the whole native pane stack.
-    _updateTimeScaleVisibility() { /* compatibility no-op */ }
 
     _scheduleHeaderSync() {
         if (this._headerSyncFrame !== null) return;

@@ -8,8 +8,6 @@ global.SSChart = {
     AreaSeries: { type: 'Area' },
     RenkoSeries: { type: 'Renko' },
     PointFigureSeries: { type: 'PointFigure' },
-    ClusterSeries: { type: 'Cluster' },
-    BoxSeries2: { type: 'Box' },
 };
 
 const { ChartTypeSwitcher } = require('../src/chart/chart-type-switcher.js');

@@ -202,9 +202,7 @@ export class CompareController<TBar extends TimedSeriesData> {
         const original = this.chart.options().timeScale;
         this.originalTimeScale = Object.freeze({
             ...(original ?? {}),
-            mode: original?.mode
-                ?? (original?.ordinal === true ? TimeScaleMode.Ordinal : TimeScaleMode.Continuous),
-            ordinal: original?.ordinal,
+            mode: original?.mode ?? TimeScaleMode.Continuous,
             calendar: original?.calendar,
             sessionKinds: original?.sessionKinds,
             locale: original?.locale,
@@ -502,7 +500,6 @@ export class CompareController<TBar extends TimedSeriesData> {
             timeScale: {
                 ...this.originalTimeScale,
                 mode: TimeScaleMode.SessionAware,
-                ordinal: undefined,
                 calendar: primary.calendar,
                 timeZone: schedule.timeZone,
             },
