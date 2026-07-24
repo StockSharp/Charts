@@ -1,14 +1,104 @@
 {
-  "name": "sschart",
+  "name": "@stocksharp/chart",
   "version": "0.1.0",
-  "description": "In-house canvas trading-chart engine with a lightweight-charts-shaped API (window.LightweightCharts).",
-  "license": "UNLICENSED",
-  "private": true,
+  "description": "Browser trading-chart engine for StockSharp: native panes, custom series, primitives, incremental indicators, exact order flow (footprint/volume-profile/TPO) and a broker-agnostic trading layer, with a TypeScript API and the SSChart global.",
+  "license": "SEE LICENSE IN LICENSE",
+  "author": {
+    "name": "StockSharp Platform LLC",
+    "url": "https://stocksharp.com/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/StockSharp/Charts.git"
+  },
+  "homepage": "https://stocksharp.github.io/Charts/",
+  "bugs": {
+    "url": "https://github.com/StockSharp/Charts/issues"
+  },
+  "keywords": [
+    "stocksharp",
+    "chart",
+    "charts",
+    "trading",
+    "candlestick",
+    "footprint",
+    "volume-profile",
+    "market-profile",
+    "tpo",
+    "order-flow",
+    "indicators",
+    "technical-analysis",
+    "financial-charts",
+    "canvas",
+    "typescript",
+    "algorithmic-trading"
+  ],
   "type": "module",
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "sideEffects": false,
+  "main": "./dist/esm/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/types/index.d.ts",
+  "unpkg": "./dist/sschart.js",
+  "jsdelivr": "./dist/sschart.js",
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/esm/index.js"
+    },
+    "./orderflow": {
+      "types": "./dist/types/orderflow/index.d.ts",
+      "import": "./dist/esm/orderflow/index.js"
+    },
+    "./trading": {
+      "types": "./dist/types/trading/index.d.ts",
+      "import": "./dist/esm/trading/index.js"
+    },
+    "./data": {
+      "types": "./dist/types/data/index.d.ts",
+      "import": "./dist/esm/data/index.js"
+    },
+    "./indicators": {
+      "types": "./dist/types/indicators/index.d.ts",
+      "import": "./dist/esm/indicators/index.js"
+    },
+    "./drawings": {
+      "types": "./dist/types/drawings/index.d.ts",
+      "import": "./dist/esm/drawings/index.js"
+    },
+    "./workspace": {
+      "types": "./dist/types/workspace/index.d.ts",
+      "import": "./dist/esm/workspace/index.js"
+    },
+    "./persistence": {
+      "types": "./dist/types/persistence/index.d.ts",
+      "import": "./dist/esm/persistence/index.js"
+    },
+    "./time": {
+      "types": "./dist/types/time/index.d.ts",
+      "import": "./dist/esm/time/index.js"
+    },
+    "./source": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/esm",
+    "dist/types",
+    "dist/sschart.js",
+    "dist/sschart.js.map",
+    "src",
+    "LICENSE",
+    "NOTICE",
+    "README.md",
+    "sample.jpg"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "build": "node build.mjs",
+    "prepack": "npm run build",
     "build:browser-fixtures": "node build-browser-fixtures.mjs",
     "serve": "node serve.mjs",
     "typecheck:core": "tsc -p tsconfig.typecheck.json",
@@ -17,7 +107,12 @@
     "test": "npm run typecheck:core && npm run api:check && node build-tests.mjs && node --test \"tests/_dist/**/*.test.cjs\"",
     "test:browser": "npm run build && npm run build:browser-fixtures && playwright test",
     "test:browser:update": "npm run build && npm run build:browser-fixtures && playwright test --update-snapshots",
-    "test:performance": "npm run build && npm run build:browser-fixtures && playwright test tests/browser/chart.performance.spec.ts tests/browser/orderflow.performance.spec.ts --project=chromium-dpr1"
+    "test:performance": "npm run build && npm run build:browser-fixtures && playwright test tests/browser/chart.performance.spec.ts tests/browser/orderflow.performance.spec.ts --project=chromium-dpr1",
+    "pack:check": "npm pack --dry-run",
+    "release:check": "node tools/check-release-tag.mjs",
+    "release:patch": "npm version patch -m \"chore: release v%s\"",
+    "release:minor": "npm version minor -m \"chore: release v%s\"",
+    "release:major": "npm version major -m \"chore: release v%s\""
   },
   "devDependencies": {
     "@playwright/test": "1.61.1",

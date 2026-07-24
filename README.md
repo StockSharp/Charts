@@ -1,17 +1,44 @@
-# StockSharp JS Trading Charts
+# @stocksharp/chart
 
-In-house, dependency-free canvas trading-chart engine (**sschart**) plus the full
-StockSharp web-terminal chart stack, packaged as a standalone library with a
-self-contained demo.
+[![Build and test](https://github.com/StockSharp/Charts/actions/workflows/ci.yml/badge.svg)](https://github.com/StockSharp/Charts/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/%40stocksharp%2Fchart.svg)](https://www.npmjs.com/package/@stocksharp/chart)
+[![License](https://img.shields.io/badge/license-StockSharp%20EULA-c8202f.svg)](LICENSE)
+
+**StockSharp JS Trading Charts** is a dependency-free, canvas trading-chart
+engine: one chart owns native panes and a single time axis, with custom series,
+primitives, incremental indicators (live StockSharp parity), exact order flow
+(footprint / volume profile / TPO) and a broker-agnostic trading layer —
+published as a typed ESM package and the `SSChart` global.
 
 ![StockSharp JS Trading Charts — candlesticks with Bollinger Bands, volume and an RSI sub-pane](sample.jpg)
 
-`sschart` renders candlestick / OHLC, study and footprint charts on a plain
-`<canvas>` through a small declarative API (`createChart`, `addSeries`,
-`setData` / `update`, `timeScale`, series markers, price lines, crosshair),
-published as the `SSChart` global.
+[Live demo](https://stocksharp.github.io/Charts/demo/) ·
+[StockSharp website](https://stocksharp.com/) ·
+[GitHub repository](https://github.com/StockSharp/Charts) ·
+[Issue tracker](https://github.com/StockSharp/Charts/issues)
 
-**▶ Live demo: https://stocksharp.github.io/Charts/demo/**
+## Quick start
+
+```sh
+npm install @stocksharp/chart
+```
+
+```ts
+import { createChart, CandlestickSeries } from '@stocksharp/chart';
+
+const chart = createChart(document.getElementById('chart'));
+const candles = chart.addSeries(CandlestickSeries, {});
+candles.setData([{ time: 1, open: 100, high: 102, low: 99, close: 101 }]);
+```
+
+Or drop in the global build from a CDN — no bundler required:
+
+```html
+<script src="https://unpkg.com/@stocksharp/chart"></script>
+<script>
+  const chart = SSChart.createChart(document.getElementById('chart'));
+</script>
+```
 
 ## What's here
 

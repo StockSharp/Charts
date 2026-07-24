@@ -1,0 +1,79 @@
+name: Publish package
+
+# Releases are driven by the version in package.json. This runs on every push to
+# main, but only publishes when that version is not yet on npm -- a normal push
+# whose version is already published is a no-op. To cut a release, bump the
+# version (npm run release:patch|minor|major) and push: the new version triggers
+# build, tests, npm publish (trusted publishing + provenance), and then the
+# vX.Y.Z tag + GitHub Release. workflow_dispatch re-runs the same logic for a
+# chosen ref (manual retry).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Ref (branch, tag, or SHA) to build and publish
+        required: false
+        type: string
+
+permissions:
+  contents: write   # push the vX.Y.Z tag and create the GitHub Release
+  id-token: write   # npm trusted publishing (OIDC) + provenance signing
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Decide whether this version needs publishing
+        id: gate
+        shell: bash
+        run: |
+          name="$(node --input-type=module -e "import pkg from './package.json' with { type: 'json' }; process.stdout.write(pkg.name)")"
+          version="$(node --input-type=module -e "import pkg from './package.json' with { type: 'json' }; process.stdout.write(pkg.version)")"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::$name@$version is already on npm -- normal push, nothing to publish."
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::$name@$version is new -- building and publishing."
+          fi
+
+      - name: Upgrade npm (trusted publishing needs >= 11.5.1)
+        if: steps.gate.outputs.publish == 'true'
+        run: npm install --global npm@11.6.2
+      - name: Install dependencies
+        if: steps.gate.outputs.publish == 'true'
+        run: npm ci
+      - name: Run tests
+        if: steps.gate.outputs.publish == 'true'
+        run: npm test
+
+      - name: Publish to npm
+        # Trusted publishing (OIDC) via the id-token permission -- no NPM_TOKEN --
+        # and provenance from publishConfig.provenance. Publishes from the package
+        # directory; the prepack script builds dist/.
+        if: steps.gate.outputs.publish == 'true'
+        run: npm publish
+
+      - name: Tag the commit and create the GitHub Release
+        if: steps.gate.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git tag "${{ steps.gate.outputs.tag }}" || true
+          git push origin "${{ steps.gate.outputs.tag }}" || true
+          gh release view "${{ steps.gate.outputs.tag }}" >/dev/null 2>&1 \
+            || gh release create "${{ steps.gate.outputs.tag }}" --title "${{ steps.gate.outputs.tag }}" --generate-notes
