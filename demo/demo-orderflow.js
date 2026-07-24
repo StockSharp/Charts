@@ -45,8 +45,9 @@
             c.setData(exactBars);
             var vp = chart.addSeries(SSChart.ExactVolumeProfileSeries, {
                 tickSize: TICK,
-                rangeMode: SSChart.VolumeProfileRangeMode.Fixed,
-                fixedRange: { from: exactBars[0].time, to: exactBars[exactBars.length - 1].time },
+                // Visible mode: the profile recomputes over whatever candles are in
+                // view, so it changes as you zoom / scroll (Fixed pins one range).
+                rangeMode: SSChart.VolumeProfileRangeMode.Visible,
                 displayMode: SSChart.VolumeProfileDisplayMode.BidAsk,
                 bidColor: pal.bid, askColor: pal.ask,
                 showLabels: true, profileWidth: 0.32,
