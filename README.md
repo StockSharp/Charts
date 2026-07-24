@@ -1,4 +1,4 @@
-# @stocksharp/chart
+# StockSharp JS Trading Charts
 
 [![Build and test](https://github.com/StockSharp/Charts/actions/workflows/ci.yml/badge.svg)](https://github.com/StockSharp/Charts/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/%40stocksharp%2Fchart.svg)](https://www.npmjs.com/package/@stocksharp/chart)
@@ -51,7 +51,8 @@ Or drop in the global build from a CDN — no bundler required:
 ## What's here
 
 ```
-src/sschart.ts        the chart engine (single file, no runtime deps)
+src/index.ts          public ESM entry (createChart, addSeries, timeScale, …)
+src/core/             the chart engine (canvas render, panes, scales, hit-test)
 src/chart/            the terminal chart stack, ported verbatim from Broker.Web.Trader:
   indicators/         IndicatorEngine + IndicatorRenderer + IndicatorSettings +
                       calc/ (≈160 indicator implementations)
@@ -68,7 +69,7 @@ build.mjs             esbuild -> dist/sschart.js (SSChart global) + dist/chart-a
 
 The chart modules are the **same code the web terminal runs** — they were lifted
 out and decoupled from the terminal's Bootstrap / DI infrastructure so they build
-standalone. The engine (`src/sschart.ts`) is the shared source of truth; the demo
+standalone. The engine (`src/index.ts` / `src/core/`) is the shared source of truth; the demo
 loads it as the `SSChart` global, then the chart-stack bundle on top.
 
 ## Demo
@@ -134,7 +135,7 @@ Series types: `CandlestickSeries`, `BarSeries`, `LineSeries`, `AreaSeries`,
 `ExactVolumeProfileSeries`, `ClusterSeries`, `BoxSeries2`. The legacy
 `VolumeProfileSeries` is retained only as an unsupported migration marker and
 does not distribute candle volume across price bins. In a TypeScript build you can instead
-`import { createChart, CandlestickSeries } from './src/sschart'` and bundle it.
+`import { createChart, CandlestickSeries } from '@stocksharp/chart'` and bundle it.
 
 For the **full terminal experience** — indicator engine over the whole catalog,
 crosshair legend, oscillator sub-panes, right-click menu and the picker dialog —
@@ -262,4 +263,4 @@ then `node --test` runs them.
 - Porting the stack surfaced and fixed a few latent engine bugs (chart-level
   `priceScale(id)`, whitespace/warm-up points poisoning the price-scale bounds,
   a fallback for ordinal sub-pane scales, `scrollToRealTime`). These live in
-  `src/sschart.ts` here; folding them back into the terminal's copy is a follow-up.
+  `src/core/` here; folding them back into the terminal's copy is a follow-up.

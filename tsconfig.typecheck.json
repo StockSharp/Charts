@@ -5,7 +5,6 @@
   },
   "include": [
     "src/index.ts",
-    "src/sschart.ts",
     "src/core/**/*.ts",
     "src/series-spacing.ts",
     "tests/browser/fixtures/custom-primitive-entry.ts",

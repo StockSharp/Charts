@@ -1,6 +1,5 @@
-// Canonical module entrypoint. New consumers import from this module; the
-// historical `sschart.ts` path remains a compatibility facade during the
-// architecture migration.
+// Canonical module entrypoint. Consumers import from this module or from the
+// package root `@stocksharp/chart`.
 export * from './core/chart-api.js';
 export * from './primitives/horizontal-line.js';
 export * from './primitives/trend-line.js';
