@@ -10,12 +10,20 @@ primitives, incremental indicators (live StockSharp parity), exact order flow
 (footprint / volume profile / TPO) and a broker-agnostic trading layer —
 published as a typed ESM package and the `SSChart` global.
 
-![StockSharp JS Trading Charts — candlesticks with Bollinger Bands, volume and an RSI sub-pane](sample.jpg)
+![StockSharp JS Trading Charts terminal — candlesticks with Bollinger Bands, an Ichimoku cloud, Fractals, a moving average and an RSI sub-pane](sample.png)
 
 [Live demo](https://stocksharp.github.io/Charts/demo/) ·
 [StockSharp website](https://stocksharp.com/) ·
 [GitHub repository](https://github.com/StockSharp/Charts) ·
 [Issue tracker](https://github.com/StockSharp/Charts/issues)
+
+## Screenshots
+
+| Order flow — footprint | Trading from the chart |
+| --- | --- |
+| ![Exact footprint: bid/ask volume at every price with imbalance highlighting](screenshots/footprint.png) | ![Broker-agnostic trading layer: order lines, a long position with live P&L, bracket and bid/ask/last quotes](screenshots/trading.png) |
+| **Order flow — volume profile (visible range)** | **Order flow — per-bar volume profiles** |
+| ![Exact volume profile with point-of-control and value area, recomputed over the visible range](screenshots/volume-profile.png) | ![Per-bar exact volume profiles, each with its own point-of-control and value area](screenshots/volume-profile-per-bar.png) |
 
 ## Quick start
 
