@@ -1,6 +1,6 @@
 {
   "name": "@stocksharp/chart",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Browser trading-chart engine for StockSharp: native panes, custom series, primitives, incremental indicators, exact order flow (footprint/volume-profile/TPO) and a broker-agnostic trading layer, with a TypeScript API and the SSChart global.",
   "license": "SEE LICENSE IN LICENSE",
   "author": {
