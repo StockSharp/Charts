@@ -222,7 +222,7 @@ interface IndicatorEntry {
     _sourceRevision: number | null;
     _runtimeFirstTime: number | null;
     _runtimePreviewTime: number | null;
-    _runtimeLastCommittedTime?: number | null;
+    _runtimeLastCommittedTime: number | null;
     _lastRuntimePatchChangedFromTime?: number;
     _sourceTimelineCache?: SourceTimelineCache | null;
     _points?: LegendPoint[];
@@ -248,24 +248,6 @@ export class IndicatorEngine {
     _renderPending: boolean | undefined;
     _retainRuntimeHistory: boolean;
     _changeListeners: Set<() => void>;
-
-    /// Drop warm-up points where `value` is not a finite number. Operates on
-    /// either a flat `[{time,value}]` series (single-output indicators like SMA)
-    /// or a `{key1:[...], key2:[...]}` object (multi-output like MACD/BB).
-    /// Returns the same shape with nulls removed.
-    static _stripNulls(data: IndicatorPoint[] | IndicatorLines): IndicatorPoint[] | IndicatorLines {
-        const keep = (p: IndicatorPoint) => p && typeof p.value === 'number' && Number.isFinite(p.value);
-        if (Array.isArray(data)) return data.filter(keep);
-        if (data && typeof data === 'object') {
-            const out: Record<string, any> = {};
-            for (const k of Object.keys(data)) {
-                const v = data[k];
-                out[k] = Array.isArray(v) ? v.filter(keep) : v;
-            }
-            return out;
-        }
-        return data;
-    }
 
     constructor() {
         this._indicators = []; // { id, persistenceId, type, params, seriesRefs[], paneId, outputNames[] }
@@ -451,6 +433,7 @@ export class IndicatorEngine {
             definition, runtime,
             _runtimeFirstTime: null,
             _runtimePreviewTime: null,
+            _runtimeLastCommittedTime: null,
             // Per-indicator price scale inside a sub-pane; 'right' (the visible axis) by default,
             // reassigned below for the 2nd+ indicator in a pane. Declared here so the type carries it.
             paneScaleId: 'right',
@@ -1173,9 +1156,9 @@ export class IndicatorEngine {
     _sourceNeedsHistoricalReset(entry: IndicatorEntry): boolean {
         const upstream = this._sourceEntry(entry);
         if (!upstream || entry._sourceRevision === upstream._outputRevision) return false;
-        // Before the first reset fills it in the field is simply absent, which compared the same
-        // way it does as null: an absent last committed time cannot have been overwritten.
-        const lastCommittedTime = entry._runtimeLastCommittedTime ?? null;
+        // Null until the first runtime pass commits a bar: with nothing committed there is no
+        // history for the upstream to have invalidated.
+        const lastCommittedTime = entry._runtimeLastCommittedTime;
         return lastCommittedTime !== null
             && upstream._outputChangedFromTime <= lastCommittedTime;
     }
@@ -1652,45 +1635,12 @@ export class IndicatorEngine {
         return data;
     }
 
-    _historyToRendererShape(history: IndicatorHistory): IndicatorPoint[] | IndicatorLines {
-        const outputNames = history.outputNames || ['value'];
-        const points = history.points || [];
-
-        const withTime = points.map(p => {
-            const raw = Math.floor(Date.parse(p.time) / 1000);
-            return {
-                time: this._shiftTime(raw, p.shift),
-                values: p.values || [],
-            };
-        });
-
-        if (outputNames.length === 1) {
-            return withTime
-                .filter(p => p.values[0] != null)
-                .map(p => ({ time: p.time, value: Number(p.values[0]) }));
-        }
-
-        const result: IndicatorLines = {};
-        for (let i = 0; i < outputNames.length; i++) {
-            result[outputNames[i]] = withTime
-                .filter(p => p.values[i] != null)
-                .map(p => ({ time: p.time, value: Number(p.values[i]) }));
-        }
-        return result;
-    }
-
     _mergeParams(settings: IndicatorCatalogEntry, params: IndicatorParams | null): IndicatorParams {
         const merged: IndicatorParams = {};
         settings.params.forEach(p => {
             merged[p.key] = (params && params[p.key] !== undefined) ? params[p.key] : p.default;
         });
         return merged;
-    }
-
-    _timeframeToEnum(tf: unknown): number {
-        // Server's CandleTimeframe enum uses minute counts as numeric values,
-        // matching the numeric timeframe the client already tracks.
-        return Number(tf) || 5;
     }
 
     _formatParams(params: IndicatorParams): string {

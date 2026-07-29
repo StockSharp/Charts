@@ -6,10 +6,10 @@
 // Flat-bar handling: when high == low the candle has no range —
 // StockSharp's BalanceOfPower.cs returns an empty IIndicatorValue and
 // does not advance IsFormed for that bar. We mirror that: emit `null` at
-// that array position (the renderer / `_stripNulls` will skip it; the
-// parity harness preserves expected blank rows so the row-by-row compare
-// still aligns). Same applies to bars with non-finite OHLC. Result
-// length always equals `candles.length`.
+// that array position (the renderer skips non-finite values; the parity
+// harness preserves expected blank rows so the row-by-row compare still
+// aligns). Same applies to bars with non-finite OHLC. Result length always
+// equals `candles.length`.
 
 import type { CandlePoint, IndicatorParams } from './types.js';
 

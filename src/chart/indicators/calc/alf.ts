@@ -8,11 +8,13 @@
 //   l3 = -gamma * l2    + l2    + gamma * l3_prev
 //   filt = (l0 + 2*l1 + 2*l2 + l3) / 6
 //
-// Initial l0..l3 = 0, so the filter emits a value from bar 0 (no NaN
-// warm-up). The .cs sets IsFormed on the first bar where filt >= price,
-// but that's only used to gate downstream consumers — the filter itself
-// still produces a value every bar, so we emit a value at every index
-// (no nulls except on non-finite input).
+// Initial l0..l3 = 0, so the cascade itself computes a value from bar 0 —
+// AdaptiveLaguerreFilter.OnProcess always returns a DecimalIndicatorValue and
+// never an empty one. What it withholds is IsFormed, which flips only on the
+// first bar where filt >= price. Everything that consumes an indicator reads
+// through that flag (the parity dumper included: it records `!IsFormed` as
+// null), so the pre-formed bars are null on the wire and we null them here
+// too. The filter state still advances across them.
 //
 // Param: { gamma }, default 0.8. Must be strictly between 0 and 1 (the
 // .cs throws ArgumentOutOfRangeException for values outside (0,1)); we
@@ -21,14 +23,10 @@
 // .cs deviation: none. Straight numeric port. The Source-price selector
 // in .cs defaults to close on candle inputs — we use candle.close here.
 
-import type { CandlePoint, IndicatorParams } from './types.js';
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
-/**
- * @param {CandlePoint[]} candles
- * @param {{gamma?: number}} [params]
- * @returns {IndicatorPoint[]}
- */
-export function calcAdaptiveLaguerreFilter(candles: CandlePoint[], params?: IndicatorParams) {
+/** Param: `gamma`, strictly between 0 and 1. */
+export function calcAdaptiveLaguerreFilter(candles: CandlePoint[], params?: IndicatorParams): IndicatorPoint[] {
     const gamma = params && Number.isFinite(params.gamma) ? +params.gamma : 0.8;
 
     if (!Array.isArray(candles) || candles.length === 0) return [];
