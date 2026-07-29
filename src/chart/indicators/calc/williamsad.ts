@@ -6,16 +6,13 @@
 // First bar yields null (no prev_close). Initial accumulator = 0.
 //
 // Deviations from .cs: none.
-//
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
-// @typedef {{time:number|string,value:number|null}} Point
+
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
- * @param {Candle[]} candles
- * @param {{}} [_params]
- * @returns {Point[]}
+ * @returns {IndicatorPoint[]}
  */
-export function calcWilliamsAD(candles, _params) {
+export function calcWilliamsAD(candles: CandlePoint[], _params?: IndicatorParams) {
     if (!Array.isArray(candles) || candles.length === 0) return [];
     const n = candles.length;
     const out = new Array(n);

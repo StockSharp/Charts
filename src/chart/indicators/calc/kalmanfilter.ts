@@ -33,6 +33,8 @@
 // (b) The .cs throws if Q or R are <= 0. We clamp to a tiny positive value
 //     instead so a bad UI input doesn't crash the chart.
 
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
+
 /**
  * @typedef {object} CandlePoint
  * @property {string|number} time
@@ -52,7 +54,8 @@
  * @param {{length?: number, processNoise?: number, measurementNoise?: number}} [params]
  * @returns {IndicatorPoint[]}
  */
-export function calcKalmanFilter(candles, params) {
+
+export function calcKalmanFilter(candles: CandlePoint[], params?: IndicatorParams): IndicatorPoint[] {
     let processNoise = params && Number.isFinite(params.processNoise) ? +params.processNoise : 1e-5;
     let measurementNoise = params && Number.isFinite(params.measurementNoise) ? +params.measurementNoise : 1e-3;
     if (processNoise <= 0) processNoise = 1e-12;
@@ -76,7 +79,7 @@ export function calcKalmanFilter(candles, params) {
             continue;
         }
         validCount++;
-        let estimate;
+        let estimate: number;
         if (lastEstimate === null) {
             lastEstimate = c;
             errorCovariance = 1;

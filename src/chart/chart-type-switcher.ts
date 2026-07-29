@@ -1,7 +1,26 @@
 import {
+    AreaSeries,
+    BarSeries,
+    CandlestickSeries,
+    LineSeries,
+    PointFigureSeries,
+    RenkoSeries,
+} from '../core/chart-api.js';
+import type { IChartApi, ISeriesApi } from '../core/chart-api.js';
+import {
     PointFigureDataRuntime,
     RenkoDataRuntime,
 } from '../series/derived-data.js';
+import type { OhlcData } from '../series/derived-data.js';
+
+/**
+ * One source bar. Only OHLC is read here; volume and the per-bar volume-by-price ladder ride
+ * along untouched so the caller can hand the switcher the very same objects it feeds the chart.
+ */
+export interface ChartTypeSwitcherCandle extends OhlcData {
+    volume?: number;
+    levels?: unknown;
+}
 
 // Chart Type Switcher — switch between Candle/Bar/Line/Area
 export class ChartTypeSwitcher {
@@ -9,7 +28,7 @@ export class ChartTypeSwitcher {
     _currentSeries: any;
     _currentType: string;
     _volumeSeries: any;
-    _rawCandles: any[];
+    _rawCandles: ChartTypeSwitcherCandle[];
     _derivedRuntime: RenkoDataRuntime | PointFigureDataRuntime | null;
     _lastHA: { open: number; close: number } | null = null;
 
@@ -22,17 +41,17 @@ export class ChartTypeSwitcher {
         this._derivedRuntime = null;
     }
 
-    init(chart, candleSeries, volumeSeries) {
+    init(chart: IChartApi, candleSeries: ISeriesApi, volumeSeries: ISeriesApi) {
         this._chart = chart;
         this._currentSeries = candleSeries;
         this._volumeSeries = volumeSeries;
     }
 
-    setRawCandles(candles) {
+    setRawCandles(candles: ChartTypeSwitcherCandle[]) {
         this._rawCandles = candles || [];
     }
 
-    switchType(type) {
+    switchType(type: string) {
         if (!this._chart || type === this._currentType) return this._currentSeries;
 
         // Remove current series
@@ -64,7 +83,7 @@ export class ChartTypeSwitcher {
         let derivedRuntime: RenkoDataRuntime | PointFigureDataRuntime | null = null;
         switch (type) {
             case 'candle':
-                newSeries = this._chart.addSeries(SSChart.CandlestickSeries, {
+                newSeries = this._chart.addSeries(CandlestickSeries, {
                     upColor: '#00c853',
                     downColor: '#ff3d57',
                     borderDownColor: '#ff3d57',
@@ -79,7 +98,7 @@ export class ChartTypeSwitcher {
                 break;
 
             case 'bar':
-                newSeries = this._chart.addSeries(SSChart.BarSeries, {
+                newSeries = this._chart.addSeries(BarSeries, {
                     upColor: '#00c853',
                     downColor: '#ff3d57',
                     priceFormat,
@@ -90,7 +109,7 @@ export class ChartTypeSwitcher {
                 break;
 
             case 'line':
-                newSeries = this._chart.addSeries(SSChart.LineSeries, {
+                newSeries = this._chart.addSeries(LineSeries, {
                     color: '#4a9eff',
                     lineWidth: 2,
                     priceFormat,
@@ -101,7 +120,7 @@ export class ChartTypeSwitcher {
                 break;
 
             case 'area':
-                newSeries = this._chart.addSeries(SSChart.AreaSeries, {
+                newSeries = this._chart.addSeries(AreaSeries, {
                     topColor: 'rgba(74,158,255,0.3)',
                     bottomColor: 'rgba(74,158,255,0.02)',
                     lineColor: '#4a9eff',
@@ -114,7 +133,7 @@ export class ChartTypeSwitcher {
                 break;
 
             case 'heikin':
-                newSeries = this._chart.addSeries(SSChart.CandlestickSeries, {
+                newSeries = this._chart.addSeries(CandlestickSeries, {
                     upColor: '#00c853',
                     downColor: '#ff3d57',
                     borderDownColor: '#ff3d57',
@@ -129,7 +148,7 @@ export class ChartTypeSwitcher {
             case 'renko':
                 derivedRuntime = new RenkoDataRuntime();
                 derivedRuntime.reset(this._rawCandles);
-                newSeries = this._chart.addSeries(SSChart.RenkoSeries, {
+                newSeries = this._chart.addSeries(RenkoSeries, {
                     upColor: '#00c853', downColor: '#ff3d57', priceFormat,
                     boxSize: derivedRuntime.boxSize,
                 });
@@ -139,7 +158,7 @@ export class ChartTypeSwitcher {
             case 'pf':
                 derivedRuntime = new PointFigureDataRuntime(undefined, 2);
                 derivedRuntime.reset(this._rawCandles);
-                newSeries = this._chart.addSeries(SSChart.PointFigureSeries, {
+                newSeries = this._chart.addSeries(PointFigureSeries, {
                     upColor: '#00c853', downColor: '#ff3d57', reversal: 2, priceFormat,
                     boxSize: derivedRuntime.boxSize,
                 });
@@ -168,7 +187,7 @@ export class ChartTypeSwitcher {
         return this._derivedRuntime?.data ?? this._rawCandles;
     }
 
-    updatePrice(candle) {
+    updatePrice(candle: ChartTypeSwitcherCandle) {
         if (!this._currentSeries) return;
         const type = this._currentType;
         if (type === 'candle' || type === 'bar' || type === 'renko' || type === 'pf') {
@@ -188,9 +207,9 @@ export class ChartTypeSwitcher {
         }
     }
 
-    _computeHeikinAshi(candles) {
+    _computeHeikinAshi(candles: ChartTypeSwitcherCandle[]) {
         if (!candles || candles.length === 0) return [];
-        const result: any[] = [];
+        const result: OhlcData[] = [];
         let prevOpen = candles[0].open;
         let prevClose = candles[0].close;
 

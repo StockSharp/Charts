@@ -10,16 +10,13 @@
 //   UO    = 100 * (4*avg7 + 2*avg14 + 1*avg28) / 7
 // Formed once the 28-period sum has filled (so first non-null UO lands at
 // index 28 — 1 bar to capture prevClose + 28 bars of windowed sums).
-//
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
-// @typedef {{time:number|string,value:number|null}} Point
+
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
- * @param {Candle[]} candles
- * @param {object} [_params]
- * @returns {Point[]}
+ * @returns {IndicatorPoint[]}
  */
-export function calcUltimateOscillator(candles, _params) {
+export function calcUltimateOscillator(candles: CandlePoint[], _params?: IndicatorParams) {
     if (!Array.isArray(candles) || candles.length === 0) return [];
     const n = candles.length;
     const out = new Array(n);
@@ -57,7 +54,7 @@ export function calcUltimateOscillator(candles, _params) {
 
     // Rolling sums of bp/tr over the three windows. Sum is "ready" only when
     // we have `period` consecutive valid (non-null) bp values.
-    function rollingSum(values, period) {
+    function rollingSum(values: (number | null)[], period: number) {
         const sums = new Array(n);
         for (let i = 0; i < n; i++) sums[i] = null;
         let sum = 0, valid = 0;
@@ -77,8 +74,9 @@ export function calcUltimateOscillator(candles, _params) {
             sum += v;
             consec++;
             if (consec > period) {
-                // evict bar at i - period
-                sum -= values[i - period];
+                // evict bar at i - period — non-null because `consec` counted
+                // that many consecutive non-null samples ending at i
+                sum -= values[i - period]!;
                 consec = period;
             }
             if (consec === period) sums[i] = sum;

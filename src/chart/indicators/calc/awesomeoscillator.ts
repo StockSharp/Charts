@@ -6,16 +6,7 @@
 // indicator's neutral colour fallback.
 
 import { simpleMA } from './helpers.js';
-
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
  * @typedef {{time: string|number, value: number|null, up: boolean}} AOPoint
@@ -26,7 +17,7 @@ import { simpleMA } from './helpers.js';
  * @param {{shortLength?: number, longLength?: number}} [params]
  * @returns {AOPoint[]}
  */
-export function calcAwesomeOscillator(candles, params) {
+export function calcAwesomeOscillator(candles: CandlePoint[], params?: IndicatorParams) {
     const shortLen = params && Number.isFinite(params.shortLength) ? (params.shortLength | 0) : 5;
     const longLen = params && Number.isFinite(params.longLength) ? (params.longLength | 0) : 34;
 

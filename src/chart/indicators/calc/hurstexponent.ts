@@ -27,26 +27,9 @@
 //     to [-1, 1] in this simplified form. Real Hurst values mostly land
 //     in (0, 1); we don't clamp.
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
-
-/**
- * @param {CandlePoint[]} candles
- * @param {{length?: number}} [params]
- * @returns {IndicatorPoint[]}
- */
-export function calcHurstExponent(candles, params) {
+export function calcHurstExponent(candles: CandlePoint[], params?: IndicatorParams): IndicatorPoint[] {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 100;
     if (!Array.isArray(candles) || candles.length === 0) return [];
 

@@ -4,8 +4,9 @@
 // ISO string). First (length-1) points carry value:null for the warm-up.
 
 import { simpleMA } from './helpers.js';
+import type { CandlePoint, IndicatorParams } from './types.js';
 
-export function calcSMA(candles, params) {
+export function calcSMA(candles: CandlePoint[], params?: IndicatorParams) {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 14;
     if (!Array.isArray(candles) || candles.length === 0) return [];
     const closes = new Array(candles.length);

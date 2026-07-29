@@ -29,19 +29,7 @@
 //     `2*Length - 1` (i.e. when both the RSI is formed AND the dynamic
 //     buffer is full), which matches "NumValuesToInitialize"-th bar 1-based.
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
 /**
  * RSI on close[] producing aligned series (length nulls then values).
@@ -49,7 +37,7 @@
  * @param {number} length
  * @returns {(number|null)[]}
  */
-function rsiSeries(closes, length) {
+function rsiSeries(closes: (number | null | undefined)[], length: number): (number | null)[] {
     const n = closes.length;
     const out = new Array(n);
     for (let i = 0; i < n; i++) out[i] = null;
@@ -91,7 +79,7 @@ function rsiSeries(closes, length) {
  * @param {{length?: number, oversoldLevel?: number, overboughtLevel?: number}} [params]
  * @returns {IndicatorPoint[]}
  */
-export function calcDZRSI(candles, params) {
+export function calcDZRSI(candles: CandlePoint[], params?: IndicatorParams): IndicatorPoint[] {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 14;
     const oversold = params && Number.isFinite(params.oversoldLevel) ? +params.oversoldLevel : 20;
     const overbought = params && Number.isFinite(params.overboughtLevel) ? +params.overboughtLevel : 80;

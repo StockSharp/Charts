@@ -23,6 +23,8 @@
 // path is not modelled — we treat every candle as final, which matches a
 // closed-candle replay.
 
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
+
 /**
  * @typedef {object} CandlePoint
  * @property {string|number} time
@@ -49,7 +51,8 @@
  *   formedAt[i] is true once `length` finite samples have been seen and
  *   the EMA value is the SMA seed or later — i.e. IsFormed=true.
  */
-function stockSharpEma(values, length) {
+
+function stockSharpEma(values: number[], length: number) {
     const n = values.length;
     const out = new Array(n);
     const formedAt = new Array(n).fill(false);
@@ -87,7 +90,7 @@ function stockSharpEma(values, length) {
                 out[i] = bufferSum / length;
             }
         } else if (prev !== null) {
-            const cur = (v - prev) * k + prev;
+            const cur: number = (v - prev) * k + prev;
             prev = cur;
             out[i] = cur;
             formedAt[i] = true;
@@ -101,7 +104,7 @@ function stockSharpEma(values, length) {
  * @param {{length?: number, emaLength?: number}} [params]
  * @returns {IndicatorPoint[]}
  */
-export function calcMassIndex(candles, params) {
+export function calcMassIndex(candles: CandlePoint[], params?: IndicatorParams): IndicatorPoint[] {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 25;
     const emaLength = params && Number.isFinite(params.emaLength) ? (params.emaLength | 0) : 9;
     if (!Array.isArray(candles) || candles.length === 0) return [];

@@ -23,18 +23,12 @@
 // SignalLength for the MACD signal EMA is 3 (also per .cs).
 // Deviations from .cs: none — direct 1:1 port; only optimisation is a
 // linear-scan min/max rather than a CircularBufferStats helper.
-//
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
-// @typedef {{time:number|string,value:number|null}} Point
 
 import { calcMACD as calcMACD_STC } from './macd.js';
+import type { CandlePoint, IndicatorParams } from './types.js';
 
-/**
- * @param {Candle[]} candles
- * @param {{length?: number, shortLength?: number, longLength?: number, cycleLength?: number, signalLength?: number}} [params]
- * @returns {Point[]}
- */
-export function calcSchaffTrendCycle(candles, params) {
+// params: length, shortLength, longLength, cycleLength, signalLength.
+export function calcSchaffTrendCycle(candles: CandlePoint[], params?: IndicatorParams) {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 10;
     const shortLength = params && Number.isFinite(params.shortLength) ? (params.shortLength | 0) : 23;
     const longLength = params && Number.isFinite(params.longLength) ? (params.longLength | 0) : 50;

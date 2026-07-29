@@ -29,20 +29,7 @@
 // Kroll documentation, while keeping the formula identical.
 
 import { partialSeedSMA } from './helpers.js';
-
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
 /**
  * @typedef {{longStop: IndicatorPoint[], shortStop: IndicatorPoint[]}} ChandeKrollStopSeries
@@ -53,7 +40,10 @@ import { partialSeedSMA } from './helpers.js';
  * @param {{period?: number, multiplier?: number, stopPeriod?: number}} [params]
  * @returns {ChandeKrollStopSeries}
  */
-export function calcChandeKrollStop(candles, params) {
+export function calcChandeKrollStop(
+    candles: CandlePoint[],
+    params?: IndicatorParams,
+): { longStop: IndicatorPoint[]; shortStop: IndicatorPoint[] } {
     const period = params && Number.isFinite(params.period) ? (params.period | 0) : 10;
     const multiplier = params && Number.isFinite(params.multiplier) ? +params.multiplier : 1.5;
     const stopPeriod = params && Number.isFinite(params.stopPeriod) ? (params.stopPeriod | 0) : 9;

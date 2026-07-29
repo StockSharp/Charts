@@ -9,26 +9,13 @@
 // 3*(length-1). Matches NumValuesToInitialize =
 // `_ema1 + _ema2 + _ema3 - 2` = 3*length - 2 (i.e. index 3*length-3).
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
-
-/**
- * @param {CandlePoint[]} candles
  * @param {{length?: number}} [params]
  * @returns {IndicatorPoint[]}
  */
-export function calcTEMA(candles, params) {
+export function calcTEMA(candles: CandlePoint[], params?: IndicatorParams) {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 32;
     if (!Array.isArray(candles) || candles.length === 0) return [];
 

@@ -7,16 +7,14 @@
 // plus the seed close at index 0). Default Length=15 from .cs ctor.
 //
 // Deviations from .cs: none.
-//
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
-// @typedef {{time:number|string,value:number|null}} Point
+
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
- * @param {Candle[]} candles
  * @param {{length?: number}} [params]
- * @returns {Point[]}
+ * @returns {IndicatorPoint[]}
  */
-export function calcVHF(candles, params) {
+export function calcVHF(candles: CandlePoint[], params?: IndicatorParams) {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 15;
     if (!Array.isArray(candles) || candles.length === 0) return [];
 

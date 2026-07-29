@@ -5,26 +5,14 @@
 // `length` default 13. EMA is seeded with SMA over the first `length` closes
 // (same convention as ema.js / calcEMA). First (length-1) outputs are null.
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
  * @param {CandlePoint[]} candles
  * @param {{length?: number}} [params]
  * @returns {IndicatorPoint[]}
  */
-export function calcBearPower(candles, params) {
+export function calcBearPower(candles: CandlePoint[], params?: IndicatorParams) {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 13;
     if (!Array.isArray(candles) || candles.length === 0) return [];
 

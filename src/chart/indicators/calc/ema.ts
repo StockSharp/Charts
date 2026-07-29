@@ -3,7 +3,9 @@
 // convention), then ema[i] = close[i]*k + ema[i-1]*(1-k) where k=2/(N+1).
 // First (length-1) outputs are null to match SMA warm-up behaviour.
 
-export function calcEMA(candles, params) {
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
+
+export function calcEMA(candles: CandlePoint[], params?: IndicatorParams): IndicatorPoint[] {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 14;
     if (!Array.isArray(candles) || candles.length === 0) return [];
 

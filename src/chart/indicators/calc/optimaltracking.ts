@@ -42,29 +42,17 @@
 //       field). It carries between bars; we model the same.
 //   (c) Bad bars (non-finite OHL) emit null and DO NOT advance state.
 
+import type { CandlePoint, IndicatorParams } from './types.js';
+
 const K1 = Math.exp(-0.25);
 const K0 = 1 - K1;
-
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
 
 /**
  * @param {CandlePoint[]} candles
  * @param {object} [_params] No tunables — Length is hardcoded to 2 in .cs.
  * @returns {IndicatorPoint[]}
  */
-export function calcOptimalTracking(candles, _params) {
+export function calcOptimalTracking(candles: CandlePoint[], _params?: IndicatorParams) {
     if (!Array.isArray(candles) || candles.length === 0) return [];
 
     const n = candles.length;

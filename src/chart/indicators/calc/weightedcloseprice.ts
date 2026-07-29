@@ -3,16 +3,13 @@
 // wcp[i] = (high + low + 2*close) / 4. Per-candle, no warm-up.
 //
 // Deviations from .cs: none.
-//
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
-// @typedef {{time:number|string,value:number|null}} Point
+
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
- * @param {Candle[]} candles
- * @param {{}} [_params]
- * @returns {Point[]}
+ * @returns {IndicatorPoint[]}
  */
-export function calcWeightedClosePrice(candles, _params) {
+export function calcWeightedClosePrice(candles: CandlePoint[], _params?: IndicatorParams) {
     if (!Array.isArray(candles) || candles.length === 0) return [];
     const n = candles.length;
     const out = new Array(n);

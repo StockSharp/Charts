@@ -22,31 +22,18 @@
 //     already encodes the same null-propagation rule, so we just reuse it.
 
 import { calcAlligator } from './alligator.js';
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
+
+interface GatorSeries {
+    upper: IndicatorPoint[];
+    lower: IndicatorPoint[];
+}
 
 /**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
+ * Accepted params mirror Alligator's: jawLength/jawShift, teethLength/teethShift,
+ * lipsLength/lipsShift — they are forwarded verbatim to calcAlligator.
  */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
-
-/**
- * @typedef {{upper: IndicatorPoint[], lower: IndicatorPoint[]}} GatorSeries
- */
-
-/**
- * @param {CandlePoint[]} candles
- * @param {{jawLength?: number, jawShift?: number, teethLength?: number, teethShift?: number, lipsLength?: number, lipsShift?: number}} [params]
- * @returns {GatorSeries}
- */
-export function calcGatorOscillator(candles, params) {
+export function calcGatorOscillator(candles: CandlePoint[], params?: IndicatorParams): GatorSeries {
     if (!Array.isArray(candles) || candles.length === 0) {
         return { upper: [], lower: [] };
     }

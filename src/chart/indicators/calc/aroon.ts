@@ -8,19 +8,7 @@
 // the buffer fills (Buffer.Count >= Length) — so warm-up: outputs are
 // null until index `length-1` (first formed at the (length)-th bar).
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
  * @typedef {{up: IndicatorPoint[], down: IndicatorPoint[]}} AroonSeries
@@ -31,7 +19,7 @@
  * @param {{length?: number}} [params]
  * @returns {AroonSeries}
  */
-export function calcAroon(candles, params) {
+export function calcAroon(candles: CandlePoint[], params?: IndicatorParams) {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 14;
 
     if (!Array.isArray(candles) || candles.length === 0) {

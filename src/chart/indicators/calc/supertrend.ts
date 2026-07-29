@@ -30,12 +30,15 @@
 
 import { csATR } from './helpers.js';
 
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
+
 /**
  * @param {Candle[]} candles
  * @param {{length?: number, multiplier?: number}} [params]
  * @returns {{value: Point[], direction: Point[]}}
  */
-export function calcSuperTrend(candles, params) {
+
+export function calcSuperTrend(candles: CandlePoint[], params?: IndicatorParams) {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 10;
     const multiplier = params && Number.isFinite(params.multiplier) ? +params.multiplier : 3;
 
@@ -86,12 +89,12 @@ export function calcSuperTrend(candles, params) {
         const basicUpper = hl2 + multiplier * a;
         const basicLower = hl2 - multiplier * a;
 
-        const finalUpper = (prevUpper === null || basicUpper < prevUpper ||
+        const finalUpper: number = (prevUpper === null || basicUpper < prevUpper ||
                            (prevClose !== null && prevClose > prevUpper))
             ? basicUpper
             : prevUpper;
 
-        const finalLower = (prevLower === null || basicLower > prevLower ||
+        const finalLower: number = (prevLower === null || basicLower > prevLower ||
                            (prevClose !== null && prevClose < prevLower))
             ? basicLower
             : prevLower;

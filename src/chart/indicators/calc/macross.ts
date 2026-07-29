@@ -14,20 +14,7 @@
 // scaler; the raw integer sign value is what the .cs emits.
 
 import { simpleMA } from './helpers.js';
-
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
  * @typedef {{fast: IndicatorPoint[], slow: IndicatorPoint[], signal: IndicatorPoint[]}} MACrossSeries
@@ -38,7 +25,7 @@ import { simpleMA } from './helpers.js';
  * @param {{shortPeriod?: number, longPeriod?: number}} [params]
  * @returns {MACrossSeries}
  */
-export function calcMovingAverageCrossover(candles, params) {
+export function calcMovingAverageCrossover(candles: CandlePoint[], params?: IndicatorParams) {
     const shortPeriod = params && Number.isFinite(params.shortPeriod) ? (params.shortPeriod | 0) : 25;
     const longPeriod = params && Number.isFinite(params.longPeriod) ? (params.longPeriod | 0) : 50;
 

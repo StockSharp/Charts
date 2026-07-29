@@ -22,26 +22,9 @@
 // close). True KAMA recursion kicks in from index `length+1`. So indices
 // 0..length-1 are null.
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
-
-/**
- * @param {CandlePoint[]} candles
- * @param {{length?: number, fastSc?: number, slowSc?: number}} [params]
- * @returns {IndicatorPoint[]}
- */
-export function calcKAMA(candles, params) {
+export function calcKAMA(candles: CandlePoint[], params?: IndicatorParams): IndicatorPoint[] {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 10;
     const fastSc = params && Number.isFinite(params.fastSc) ? (params.fastSc | 0) : 2;
     const slowSc = params && Number.isFinite(params.slowSc) ? (params.slowSc | 0) : 30;

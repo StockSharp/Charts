@@ -2,6 +2,25 @@
 import { getClientCatalog } from './calc/index.js';
 import { IndicatorTaxonomy } from '../../indicators/index.js';
 
+/** One declared parameter of a server catalog entry. */
+interface CatalogParameter {
+    key: string;
+    label?: string;
+    type: string;
+    default?: unknown;
+}
+
+/** The param descriptor the picker dialog renders (<input type=number> reads step/min/max). */
+interface ParamDescriptor {
+    key: string;
+    label: string;
+    type: string;
+    default: unknown;
+    step: number;
+    min: number | undefined;
+    max: number | undefined;
+}
+
 export const IndicatorSettings = (function () {
 
     // Dark palette from desktop IndicatorColorProvider
@@ -49,7 +68,7 @@ export const IndicatorSettings = (function () {
         if (g && !GROUPS.includes(g)) GROUPS.push(g);
     }
 
-    function getIndicator(id) {
+    function getIndicator(id: string) {
         return INDICATORS[id] || null;
     }
 
@@ -57,7 +76,7 @@ export const IndicatorSettings = (function () {
         return Object.keys(INDICATORS).map(k => ({ id: k, ...INDICATORS[k] }));
     }
 
-    function getByGroup(group) {
+    function getByGroup(group: string) {
         return Object.keys(INDICATORS)
             .filter(k => INDICATORS[k].group === group)
             .map(k => ({ id: k, ...INDICATORS[k] }));
@@ -70,7 +89,7 @@ export const IndicatorSettings = (function () {
     // kinds the server discovers land with sane defaults so the picker dialog
     // shows the whole StockSharp indicator family, not just the 17 we
     // hand-wired originally.
-    async function loadCatalog(baseUrl) {
+    async function loadCatalog(baseUrl: string) {
         const prefix = (baseUrl || '').replace(/\/$/, '');
         try {
             const resp = await fetch(prefix + '/api/v1/indicators/catalog', { credentials: 'same-origin' });
@@ -131,11 +150,11 @@ export const IndicatorSettings = (function () {
         }
     }
 
-    function aliasToClientId(alias) {
+    function aliasToClientId(alias: string) {
         // Legacy aliases were uppercase ("SMA"); the catalog returns them as
         // lowercase short codes ("sma"). Map to the existing uppercase keys
         // that indicator-renderer.js still switches on.
-        const map = {
+        const map: Record<string, string> = {
             sma: 'SMA', ema: 'EMA', rsi: 'RSI', atr: 'ATR', adx: 'ADX',
             macd: 'MACD', bb: 'BollingerBands', stochastic: 'Stochastic',
             envelope: 'Envelope', alligator: 'Alligator', ichimoku: 'Ichimoku',
@@ -145,11 +164,11 @@ export const IndicatorSettings = (function () {
         return map[alias.toLowerCase()] || alias;
     }
 
-    function inferGroup(pane) {
+    function inferGroup(pane: string) {
         return pane === 'separate' ? 'Momentum' : 'Trend';
     }
 
-    function paramsFromCatalog(parameters) {
+    function paramsFromCatalog(parameters: readonly CatalogParameter[] | undefined): ParamDescriptor[] {
         if (!parameters) return [];
         return parameters.map(p => {
             const isInt = p.type === 'int';

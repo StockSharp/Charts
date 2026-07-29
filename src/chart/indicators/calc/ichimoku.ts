@@ -25,32 +25,22 @@
 // Length = kijun, so it stays null until its buffer fills (bar kijun-1),
 // then emits close[i].
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
-
-/**
- * @typedef {{tenkan: IndicatorPoint[], kijun: IndicatorPoint[], senkouA: IndicatorPoint[], senkouB: IndicatorPoint[], chikou: IndicatorPoint[]}} IchimokuSeries
- */
+/** The five Ichimoku lines, each aligned 1:1 with the input candles. */
+export interface IchimokuSeries {
+    tenkan: IndicatorPoint[];
+    kijun: IndicatorPoint[];
+    senkouA: IndicatorPoint[];
+    senkouB: IndicatorPoint[];
+    chikou: IndicatorPoint[];
+}
 
 /**
  * Highest-close + lowest-close midpoint over a trailing window of `length` bars.
  * Returns array aligned 1:1 with input. First (length-1) slots null.
- * @param {CandlePoint[]} candles
- * @param {number} length
- * @returns {(number|null)[]}
  */
-function midpointSeries(candles, length) {
+function midpointSeries(candles: CandlePoint[], length: number) {
     const n = candles.length;
     const out = new Array(n);
     if (length <= 0) {
@@ -76,16 +66,11 @@ function midpointSeries(candles, length) {
     return out;
 }
 
-/**
- * @param {CandlePoint[]} candles
- * @param {{tenkan?: number, kijun?: number, senkouB?: number}} [params]
- * @returns {IchimokuSeries}
- */
-export function calcIchimoku(candles, params) {
+export function calcIchimoku(candles: CandlePoint[], params?: IndicatorParams): IchimokuSeries {
     // Accept both the short keys (`tenkan`/`kijun`/`senkouB`) used by the
     // terminal UI and the *Period suffix names (`tenkanPeriod`/`kijunPeriod`/
     // `senkouBPeriod`) used by some callers (parity harness, server settings).
-    const pick = (a, b, def) => {
+    const pick = (a: string, b: string, def: number): number => {
         if (params && Number.isFinite(params[a])) return params[a] | 0;
         if (params && Number.isFinite(params[b])) return params[b] | 0;
         return def;
@@ -149,13 +134,10 @@ export function calcIchimoku(candles, params) {
  *   - because the emit begins one bar before the buffer is full, the very
  *     first raw value is output TWICE (bars firstEmit and firstEmit+1) — i.e.
  *     the shifted source index is clamped at the bottom to `rawFirst`.
- * @param {CandlePoint[]} candles
- * @param {(number|null)[]} raw
- * @param {number} rawFirst first index at which `raw` is non-null
- * @param {number} kijun forward-shift length (Kijun.Length)
- * @returns {IndicatorPoint[]}
+ * @param rawFirst first index at which `raw` is non-null
+ * @param kijun forward-shift length (Kijun.Length)
  */
-function shiftForward(candles, raw, rawFirst, kijun) {
+function shiftForward(candles: CandlePoint[], raw: ReadonlyArray<number | null>, rawFirst: number, kijun: number): IndicatorPoint[] {
     const n = candles.length;
     const out = new Array(n);
     const firstEmit = rawFirst + (kijun - 1);

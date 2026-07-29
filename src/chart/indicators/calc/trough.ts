@@ -12,16 +12,14 @@
 //
 // Deviations from .cs: terminal default deviation differs from .cs ZigZag
 // field initialiser (0.001) — same convention as our zigzag.js/peak.js.
-//
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
-// @typedef {{time:number|string,value:number,shift?:number}} Point
+
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
- * @param {Candle[]} candles
  * @param {{deviation?: number}} [params]
- * @returns {Point[]}
+ * @returns {{time:number|string,value:number|null,shift?:number}[]}
  */
-export function calcTrough(candles, params) {
+export function calcTrough(candles: CandlePoint[], params?: IndicatorParams) {
     const deviation = params && Number.isFinite(params.deviation) ? +params.deviation : 0.001;
     if (!Array.isArray(candles) || candles.length === 0) return [];
 

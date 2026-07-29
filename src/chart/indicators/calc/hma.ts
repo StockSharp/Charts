@@ -12,29 +12,14 @@
 // (length-1) + (sqrtPeriod-1) = length + sqrtPeriod - 2. Mirrors
 // `NumValuesToInitialize = base + sqrtWma - 1`.
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
 /**
  * Weighted moving average on a numeric array (most-recent weight = `length`).
  * Returns an array of (number|null), same length as input. Null until index
  * length-1, or whenever a window contains a non-finite sample.
- * @param {(number|null)[]} values
- * @param {number} length
- * @returns {(number|null)[]}
  */
-function wmaArray(values, length) {
+function wmaArray(values: ReadonlyArray<number | null>, length: number): (number | null)[] {
     const n = values.length;
     const out = new Array(n);
     for (let i = 0; i < n; i++) out[i] = null;
@@ -53,12 +38,7 @@ function wmaArray(values, length) {
     return out;
 }
 
-/**
- * @param {CandlePoint[]} candles
- * @param {{length?: number, sqrtPeriod?: number}} [params]
- * @returns {IndicatorPoint[]}
- */
-export function calcHMA(candles, params) {
+export function calcHMA(candles: CandlePoint[], params?: IndicatorParams): IndicatorPoint[] {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 10;
     const sqrtRaw = params && Number.isFinite(params.sqrtPeriod) ? (params.sqrtPeriod | 0) : 0;
     if (!Array.isArray(candles) || candles.length === 0) return [];

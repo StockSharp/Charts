@@ -4,20 +4,7 @@
 // the band tightness matches what StockSharp's BollingerBands emits server-side.
 
 import { simpleMA } from './helpers.js';
-
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
  * @typedef {{upper: IndicatorPoint[], middle: IndicatorPoint[], lower: IndicatorPoint[]}} BollingerSeries
@@ -28,7 +15,7 @@ import { simpleMA } from './helpers.js';
  * @param {{length?: number, stdDev?: number}} [params]
  * @returns {BollingerSeries}
  */
-export function calcBollingerBands(candles, params) {
+export function calcBollingerBands(candles: CandlePoint[], params?: IndicatorParams) {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 20;
     const stdDev = params && Number.isFinite(params.stdDev) ? +params.stdDev : 2;
 

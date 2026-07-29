@@ -17,26 +17,14 @@
 // `length` default 10. First (length-1) outputs are null (warm-up). If
 // every close in the window is zero, sumPrice == 0 → emit null.
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
 /**
  * @param {CandlePoint[]} candles
  * @param {{length?: number}} [params]
  * @returns {IndicatorPoint[]}
  */
-export function calcCOG(candles, params) {
+export function calcCOG(candles: CandlePoint[], params?: IndicatorParams): IndicatorPoint[] {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 10;
     if (!Array.isArray(candles) || candles.length === 0) return [];
 

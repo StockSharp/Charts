@@ -22,11 +22,9 @@
 // after all EMAs are formed.
 //
 // Defaults: length = 5, volumeFactor = 0.7 per the .cs constructor.
-//
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
-// @typedef {{time:number|string,value:number|null}} Point
 
 import { partialSeedEMA } from './helpers.js';
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
  * Track when each EMA in the cascade first reaches IsFormed (Buffer.Count
@@ -35,11 +33,9 @@ import { partialSeedEMA } from './helpers.js';
  * bar as the previous (since C# EMA emits non-null from bar 0). All form
  * at bar length-1.
  *
- * @param {(number|null)[]} values
- * @param {number} length
  * @returns {{out:(number|null)[], formedAt:number}}
  */
-function emaCascadePartial(values, length) {
+function emaCascadePartial(values: (number | null)[], length: number) {
     const out = partialSeedEMA(values, length);
     // C# EMA's IsFormed becomes true at the bar where Buffer.Count >= Length.
     // Find the first index where out is non-null and we've seen `length`
@@ -57,11 +53,10 @@ function emaCascadePartial(values, length) {
 }
 
 /**
- * @param {Candle[]} candles
  * @param {{length?: number, volumeFactor?: number}} [params]
- * @returns {Point[]}
+ * @returns {IndicatorPoint[]}
  */
-export function calcT3(candles, params) {
+export function calcT3(candles: CandlePoint[], params?: IndicatorParams) {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 5;
     const vf = params && Number.isFinite(params.volumeFactor) ? +params.volumeFactor : 0.7;
     if (!Array.isArray(candles) || candles.length === 0) return [];

@@ -34,6 +34,8 @@
 // Default params per .cs ctor: Acceleration=0.02, AccelerationStep=0.02,
 // AccelerationMax=0.2.
 
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
+
 /**
  * @typedef {object} CandlePoint
  * @property {string|number} time
@@ -53,7 +55,8 @@
  * @param {{acceleration?: number, accelerationMax?: number, accelerationStep?: number}} [params]
  * @returns {IndicatorPoint[]}
  */
-export function calcParabolicSAR(candles, params) {
+
+export function calcParabolicSAR(candles: CandlePoint[], params?: IndicatorParams): IndicatorPoint[] {
     const acceleration = params && Number.isFinite(params.acceleration) ? +params.acceleration : 0.02;
     const accelerationMax = params && Number.isFinite(params.accelerationMax) ? +params.accelerationMax : 0.2;
     const accelerationStep = params && Number.isFinite(params.accelerationStep) ? +params.accelerationStep : 0.02;
@@ -83,7 +86,7 @@ export function calcParabolicSAR(candles, params) {
 
     // TodaySar helper. Returns the adjusted SAR; may flip the trend via
     // a Reverse() call (and mutates state accordingly).
-    function todaySarFn(candidate) {
+    function todaySarFn(candidate: number) {
         if (longPosition) {
             const tail1Low = list[list.length - 1].low;
             const tail2Low = list[list.length - 2].low;

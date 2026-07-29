@@ -13,26 +13,14 @@
 // `length` default 20. Warm-up: first (length-1) outputs are null.
 // Σvolume == 0 in the window → CMF = 0 (matches the .cs guard).
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
 /**
  * @param {CandlePoint[]} candles
  * @param {{length?: number}} [params]
  * @returns {IndicatorPoint[]}
  */
-export function calcCMF(candles, params) {
+export function calcCMF(candles: CandlePoint[], params?: IndicatorParams): IndicatorPoint[] {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 20;
     if (!Array.isArray(candles) || candles.length === 0) return [];
 

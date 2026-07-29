@@ -34,21 +34,216 @@ import {
     IndicatorSourceStatusReason,
     indicatorSourcesEqual,
     normalizeIndicatorSource,
+    type IndicatorDefinition,
     type IndicatorOutputAppearance,
+    type IndicatorOutputMetadataValue,
+    type IndicatorOutputSource,
     type IndicatorOutputStylePatch,
+    type IndicatorParameters,
+    type IndicatorRuntimeInput,
     type IndicatorRuntimePatch,
+    type IndicatorRuntimePatchOperation,
+    type IndicatorRuntimePoint,
     type IndicatorSource,
     type IndicatorSourceStatus,
 } from '../../indicators/index.js';
+import type { IChartApi } from '../../core/chart-api.js';
+import type { ChartPaneManager } from '../chart-pane-manager.js';
+import type { CandlePoint, IndicatorLines, IndicatorParams, IndicatorPoint } from './calc/types.js';
+import type { IndicatorStyleSeries } from './indicator-styles.js';
+
+/**
+ * The runtime as the engine holds it. One engine drives every registered definition, so the
+ * per-definition input/parameter generics are erased at this boundary — the same erasure
+ * IndicatorRenderer already uses on its `prepareRuntime` / `updateRuntime` parameters.
+ */
+type EngineRuntime = IndicatorRuntime<any, IndicatorParameters>;
+
+/** A source scalar lifted to O=H=L=C so candlestick-input definitions can consume it. */
+interface ScalarCandle {
+    time: number;
+    open: number | null;
+    high: number | null;
+    low: number | null;
+    close: number | null;
+    volume?: number | null;
+}
+
+/**
+ * What a runtime consumes per bar: a raw candle for candlestick definitions, a lifted scalar
+ * candle when a scalar source feeds one, or the bare scalar for scalar-input definitions.
+ */
+type EngineRuntimeValue = CandlePoint | ScalarCandle | number | null;
+type EngineRuntimeInput = IndicatorRuntimeInput<EngineRuntimeValue>;
+
+/**
+ * The committed/preview split of whatever feeds one indicator — the candle window or an
+ * upstream indicator output. Both producers are described by this one shape so the
+ * incremental update path never has to care which of them it is walking.
+ */
+interface IndicatorTimeline {
+    readonly committedCount: number;
+    committedAt(index: number): EngineRuntimeInput;
+    readonly preview: EngineRuntimeInput | undefined;
+    readonly firstTime: number | null;
+    readonly lastCommittedTime: number | null;
+}
+
+/** One finite upstream output sample, kept with the target index that produced it. */
+interface SourceSample {
+    readonly targetIndex: number;
+    readonly scalar: number;
+    input: EngineRuntimeInput;
+}
+
+/** Memoised upstream samples, invalidated by the upstream output revision. */
+interface SourceTimelineCache {
+    readonly key: string;
+    revision: number;
+    readonly samples: SourceSample[];
+}
+
+/** Legend readout for one bar: every output that produced a value there. */
+type LegendValues = Record<string, number>;
+
+interface LegendPoint {
+    readonly time: number;
+    readonly values: LegendValues;
+}
+
+/** A chart series handle the painter created and handed back to the engine. */
+interface IndicatorSeriesRef extends IndicatorStyleSeries {
+    applyOptions(options: object): void;
+}
+
+/** Painter-published legend binding: which series and field back one output row. */
+interface IndicatorLegendSource {
+    series?: IndicatorStyleSeries;
+    field?: string;
+    colorOption?: string;
+    lineWidthOption?: string;
+    lineStyleOption?: string;
+    visibilityOption?: string;
+}
+
+/** One point handed to the painter: the runtime value plus the point's flat metadata. */
+interface RenderedIndicatorPoint {
+    time: number;
+    value: number;
+    [key: string]: IndicatorOutputMetadataValue;
+}
+
+/** Renderer input, one point array per output id. */
+type IndicatorRenderData = Record<string, RenderedIndicatorPoint[]>;
+
+/** The catalog row IndicatorSettings hands back — only the fields the engine reads. */
+interface IndicatorCatalogParam {
+    key: string;
+    default?: unknown;
+}
+
+interface IndicatorCatalogEntry {
+    name: string;
+    pane?: string;
+    measure?: string;
+    serverKind?: string;
+    params: readonly IndicatorCatalogParam[];
+}
+
+/** One row of the crosshair legend, as chart-legend consumes it. */
+interface IndicatorLegendRow {
+    id: number;
+    type: string;
+    name: string;
+    values: Record<string, number | null>;
+    colors: string[];
+    paneId: string | null;
+}
+
+/**
+ * The crosshair readout the legend passes through: series handle -> the point under the
+ * cursor. The point itself is host-shaped — the painter names the field to read out of it —
+ * so it arrives as `unknown` and is narrowed at the one place that indexes it.
+ */
+interface IndicatorSeriesDataLookup {
+    get(series: unknown): unknown;
+}
+
+function indexableRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+    return typeof value === 'object' && value !== null;
+}
+
+/** A calc point that may ask to be drawn N bars back. */
+interface ShiftablePoint extends IndicatorPoint {
+    shift?: number;
+}
+
+/** Legacy server history payload: one row per bar carrying a value per output. */
+interface IndicatorHistory {
+    outputNames?: readonly string[];
+    points?: readonly {
+        time: string;
+        shift?: number;
+        values?: readonly (number | null)[];
+    }[];
+}
+
+/**
+ * One row of the engine's indicator table. It carries the persisted identity (id /
+ * persistenceId / type / params / source / placement) plus the underscore-prefixed
+ * incremental bookkeeping that keeps the rendered series, the legend table and the source
+ * graph on one revision. Only fields the engine itself reads or writes are declared: the
+ * painter also parks its own handles here (`_painter`, `styleSources`, …) and owns them.
+ * Everything the runtime has not produced yet is optional, because add() creates the row
+ * before the first reset fills that state in.
+ */
+interface IndicatorEntry {
+    id: number;
+    persistenceId: string;
+    type: string;
+    params: IndicatorParams;
+    seriesRefs: IndicatorSeriesRef[];
+    paneId: string | null;
+    colors: string[];
+    outputNames: string[];
+    legendSources: Record<string, IndicatorLegendSource>;
+    visible: boolean;
+    source: IndicatorSource;
+    sourceStatus: IndicatorSourceStatusReason;
+    definition: IndicatorDefinition<any, any>;
+    runtime: EngineRuntime;
+    /** Sub-pane scale chosen automatically; `priceScaleId` overrides it when set. */
+    paneScaleId: string;
+    priceScaleId: string | undefined;
+    _outputRevision: number;
+    _outputPreviousRevision: number;
+    _outputChangedFromTime: number;
+    _lastOutputChanges: IndicatorRuntimePatchOperation[] | null;
+    _sourceRevision: number | null;
+    _runtimeFirstTime: number | null;
+    _runtimePreviewTime: number | null;
+    _runtimeLastCommittedTime?: number | null;
+    _lastRuntimePatchChangedFromTime?: number;
+    _sourceTimelineCache?: SourceTimelineCache | null;
+    _points?: LegendPoint[];
+    _runtimeLegendTailTargets?: number[];
+    _lastValues?: LegendValues | null;
+    _runtimePreviewOutputTimes?: Record<string, number>;
+}
 
 export class IndicatorEngine {
-    _indicators: any[];
+    _indicators: IndicatorEntry[];
     _nextId: number;
+    // Injected after construction and never re-read as a typed value: the engine calls them
+    // through their own module boundaries (IndicatorRenderer / ChartPaneManager below), and
+    // both are absent until the host wires them up.
     _renderer: any;
     _paneManager: any;
-    _symbol: any;
-    _timeframe: any;
-    _candles: any[];
+    _symbol: string | null;
+    _timeframe: number | null;
+    // Read-only to the engine: the window belongs to whoever called setCandles, and the chart
+    // mutates that same array in place on every tick. appendCandle is the single exception.
+    _candles: readonly CandlePoint[];
     onChange: (() => void) | null;
     _renderPending: boolean | undefined;
     _retainRuntimeHistory: boolean;
@@ -58,8 +253,8 @@ export class IndicatorEngine {
     /// either a flat `[{time,value}]` series (single-output indicators like SMA)
     /// or a `{key1:[...], key2:[...]}` object (multi-output like MACD/BB).
     /// Returns the same shape with nulls removed.
-    static _stripNulls(data) {
-        const keep = (p: any) => p && typeof p.value === 'number' && Number.isFinite(p.value);
+    static _stripNulls(data: IndicatorPoint[] | IndicatorLines): IndicatorPoint[] | IndicatorLines {
+        const keep = (p: IndicatorPoint) => p && typeof p.value === 'number' && Number.isFinite(p.value);
         if (Array.isArray(data)) return data.filter(keep);
         if (data && typeof data === 'object') {
             const out: Record<string, any> = {};
@@ -85,11 +280,11 @@ export class IndicatorEngine {
         this.onChange = null;
     }
 
-    setRenderer(renderer) { this._renderer = renderer; }
-    setPaneManager(paneManager) { this._paneManager = paneManager; }
+    setRenderer(renderer: IndicatorRenderer) { this._renderer = renderer; }
+    setPaneManager(paneManager: ChartPaneManager) { this._paneManager = paneManager; }
 
-    setSymbol(symbol) { this._symbol = symbol; }
-    setTimeframe(timeframe) { this._timeframe = timeframe; }
+    setSymbol(symbol: string | null) { this._symbol = symbol; }
+    setTimeframe(timeframe: number | null) { this._timeframe = timeframe; }
 
     subscribeChange(listener: () => void): void {
         if (typeof listener !== 'function')
@@ -110,7 +305,10 @@ export class IndicatorEngine {
 
     // Keep the raw candle window as the source for incremental runtime reseeds
     // and shifted sparse timestamps.
-    setCandles(candles, options: { rewindableTail?: boolean } = {}) {
+    setCandles(
+        candles: readonly CandlePoint[] | null | undefined,
+        options: { rewindableTail?: boolean } = {},
+    ) {
         this._candles = candles || [];
         this._retainRuntimeHistory = options.rewindableTail === true;
         // Re-render every active indicator against the fresh candle window.
@@ -133,14 +331,17 @@ export class IndicatorEngine {
         this._scheduleRender();
     }
 
-    appendCandle(candle) {
+    appendCandle(candle: CandlePoint) {
         if (!this._candles.length) return;
-        const last = this._candles[this._candles.length - 1];
+        // The one path where the caller handed the engine its OWN array (see the note above),
+        // so this is the one place allowed to write into the otherwise read-only window.
+        const candles = this._candles as CandlePoint[];
+        const last = candles[candles.length - 1];
         const isNewBar = last.time !== candle.time;
         if (isNewBar) {
-            this._candles.push(candle);
+            candles.push(candle);
         } else {
-            this._candles[this._candles.length - 1] = candle;
+            candles[candles.length - 1] = candle;
         }
         // Live processing, coalesced per animation frame. Alpaca crypto bursts
         // through 50-200 ticks/sec; calling renderer.setData (which rebuilds
@@ -176,15 +377,15 @@ export class IndicatorEngine {
     // resolved sub-pane). Absent = auto is a legitimate default, so this stays
     // optional rather than threaded through every existing call site.
     add(
-        type,
-        params,
-        targetPaneId?,
+        type: string,
+        params: IndicatorParams | null,
+        targetPaneId?: string,
         persistence: {
             persistenceId?: string;
             source?: IndicatorSource;
             priceScaleId?: string;
         } = {},
-    ) {
+    ): IndicatorEntry | null {
         if (persistence === null || typeof persistence !== 'object' || Array.isArray(persistence))
             throw new TypeError('sschart: indicator persistence options must be an object');
         const requestedPersistenceId = persistence.persistenceId;
@@ -204,7 +405,7 @@ export class IndicatorEngine {
             throw new TypeError('sschart: indicator price scale id must be a non-empty string');
         }
         const priceScaleId = persistence.priceScaleId?.trim();
-        const settings = IndicatorSettings.getIndicator(type);
+        const settings: IndicatorCatalogEntry | null = IndicatorSettings.getIndicator(type);
         if (!settings) return null;
 
         const definition = getIndicatorDefinition(settings.serverKind || type)
@@ -222,20 +423,20 @@ export class IndicatorEngine {
         this._assertSourceAcyclic(persistenceId, source);
         this._assertSourceOutput(source, true);
         const mergedParams = this._mergeParams(settings, params);
-        let runtime;
+        let runtime: EngineRuntime;
         try {
             runtime = new IndicatorRuntime({
                 definition,
                 parameters: mergedParams,
                 // The engine already owns the candle window. Final bars are
                 // immutable by convention; only the separate preview tail is mutated.
-                snapshotInput: (value) => value,
+                snapshotInput: (value: EngineRuntimeValue) => value,
             } as any);
         } catch (err) {
             console.error('[Indicators] incremental runtime init failed for', type, err);
             return null;
         }
-        const entry = {
+        const entry: IndicatorEntry = {
             id, persistenceId, type,
             params: mergedParams,
             seriesRefs: [], paneId: null, colors: [], outputNames: [], legendSources: {},
@@ -293,7 +494,7 @@ export class IndicatorEngine {
         return entry;
     }
 
-    _renderData(entry, data) {
+    _renderData(entry: IndicatorEntry, data: IndicatorRenderData) {
         const settings = IndicatorSettings.getIndicator(entry.type);
         const chart = entry.paneId ? this._paneManager.getChart(entry.paneId) : null;
         if (!entry.seriesRefs.length) {
@@ -307,7 +508,7 @@ export class IndicatorEngine {
         }
     }
 
-    _resetIncrementalAndRender(entry) {
+    _resetIncrementalAndRender(entry: IndicatorEntry) {
         const runtime = entry.runtime;
         if (!runtime) return;
         const status = this._resolveSourceStatus(entry);
@@ -323,7 +524,7 @@ export class IndicatorEngine {
                 (_, index) => timeline.committedAt(index),
             );
             const preview = timeline.preview;
-            let points;
+            let points: readonly IndicatorRuntimePoint[];
             if (this._retainRuntimeHistory) {
                 runtime.reset(inputs);
                 if (preview !== undefined) runtime.update(preview, false);
@@ -348,7 +549,7 @@ export class IndicatorEngine {
         }
     }
 
-    _updateIncrementalAndRender(entry) {
+    _updateIncrementalAndRender(entry: IndicatorEntry) {
         const runtime = entry.runtime;
         if (!runtime) return;
         const status = this._resolveSourceStatus(entry);
@@ -368,7 +569,7 @@ export class IndicatorEngine {
         }
         let patchFailed = false;
         let outputChangedFromTime = Infinity;
-        const outputChanges: any[] = [];
+        const outputChanges: IndicatorRuntimePatchOperation[] = [];
         const apply = (patch: IndicatorRuntimePatch) => {
             if (this._applyRuntimePatch(entry, patch)) {
                 outputChangedFromTime = Math.min(
@@ -404,7 +605,7 @@ export class IndicatorEngine {
                 const nextCommitted = runtime.committedCount < timeline.committedCount
                     ? timeline.committedAt(runtime.committedCount)
                     : undefined;
-                if (nextCommitted?.time === entry._runtimePreviewTime) {
+                if (nextCommitted !== undefined && nextCommitted.time === entry._runtimePreviewTime) {
                     apply(runtime.update(nextCommitted, true));
                 } else if (preview?.time !== entry._runtimePreviewTime) {
                     apply(runtime.discardPreview());
@@ -438,7 +639,7 @@ export class IndicatorEngine {
         if (!this._retainRuntimeHistory) runtime.compactHistory();
     }
 
-    _applyRuntimePatch(entry, patch) {
+    _applyRuntimePatch(entry: IndicatorEntry, patch: IndicatorRuntimePatch) {
         let applied = false;
         try { applied = this._renderer.updateRuntime(entry, patch, entry.runtime); }
         catch (err) { console.warn('[Indicators] runtime painter update failed for', entry.type, err); }
@@ -450,7 +651,7 @@ export class IndicatorEngine {
         return legendApplied;
     }
 
-    _runtimeInput(entry, candle) {
+    _runtimeInput(entry: IndicatorEntry, candle: CandlePoint): EngineRuntimeInput {
         const time = this._toSec(candle.time);
         const scalarInput = entry.definition?.input?.kind === IndicatorInputKind.Scalar;
         const source: IndicatorSource = entry.source || DefaultIndicatorSource;
@@ -469,7 +670,7 @@ export class IndicatorEngine {
         };
     }
 
-    _runtimeTimeline(entry) {
+    _runtimeTimeline(entry: IndicatorEntry): IndicatorTimeline {
         const source: IndicatorSource = entry.source || DefaultIndicatorSource;
         if (source.kind !== IndicatorSourceKind.IndicatorOutput) {
             const committedCount = Math.max(0, this._candles.length - 1);
@@ -490,21 +691,28 @@ export class IndicatorEngine {
             candidate.persistenceId === source.indicatorId
         ));
         const samples = upstream === undefined ? [] : this._sourceSamples(entry, upstream, source);
-        const hasPreview = samples.length > 0
+        // `lastSample !== undefined` is exactly the old `samples.length > 0`, but it also carries
+        // the tail sample forward so the preview below needs no second lookup.
+        const lastSample = samples.at(-1);
+        const hasPreview = lastSample !== undefined
             && upstream?._runtimePreviewOutputTimes?.[source.outputId]
-                === samples.at(-1).input.time;
+                === lastSample.input.time;
         const committedCount = samples.length - (hasPreview ? 1 : 0);
         return {
             committedCount,
             committedAt: index => samples[index].input,
-            preview: hasPreview ? samples.at(-1).input : undefined,
+            preview: hasPreview && lastSample !== undefined ? lastSample.input : undefined,
             firstTime: samples[0]?.input.time ?? null,
             lastCommittedTime: committedCount > 0
                 ? samples[committedCount - 1].input.time : null,
         };
     }
 
-    _sourceSamples(entry, upstream, source) {
+    _sourceSamples(
+        entry: IndicatorEntry,
+        upstream: IndicatorEntry,
+        source: IndicatorOutputSource,
+    ): SourceSample[] {
         const key = `${source.indicatorId}\u0000${source.outputId}`;
         let cache = entry._sourceTimelineCache;
         if (!cache || cache.key !== key) cache = null;
@@ -516,7 +724,7 @@ export class IndicatorEngine {
             } else cache = null;
         }
         if (!cache) {
-            const samples: any[] = [];
+            const samples: SourceSample[] = [];
             const points = upstream._points || [];
             const targets = upstream._runtimeLegendTailTargets || [];
             for (let index = 0; index < points.length; index++) {
@@ -541,7 +749,12 @@ export class IndicatorEngine {
         return cache.samples;
     }
 
-    _applySourceSampleChanges(entry, samples, source, changes) {
+    _applySourceSampleChanges(
+        entry: IndicatorEntry,
+        samples: SourceSample[],
+        source: IndicatorOutputSource,
+        changes: readonly IndicatorRuntimePatchOperation[],
+    ) {
         for (const operation of changes) {
             if (operation.outputId !== source.outputId) continue;
             const index = samples.findIndex(sample => sample.targetIndex === operation.targetIndex);
@@ -566,7 +779,13 @@ export class IndicatorEngine {
         }
     }
 
-    _sourceSample(entry, source, targetIndex, time, scalar) {
+    _sourceSample(
+        entry: IndicatorEntry,
+        source: IndicatorOutputSource,
+        targetIndex: number,
+        time: number,
+        scalar: number,
+    ): SourceSample {
         const candle = this._candleAtTime(time);
         return {
             targetIndex,
@@ -575,7 +794,13 @@ export class IndicatorEngine {
         };
     }
 
-    _runtimeInputFromScalar(entry, candle, time, scalar, source: IndicatorSource) {
+    _runtimeInputFromScalar(
+        entry: IndicatorEntry,
+        candle: CandlePoint | null,
+        time: number,
+        scalar: number | null,
+        source: IndicatorSource,
+    ): EngineRuntimeInput {
         const scalarInput = entry.definition?.input?.kind === IndicatorInputKind.Scalar;
         return {
             time,
@@ -583,7 +808,7 @@ export class IndicatorEngine {
         };
     }
 
-    _candleAtTime(time) {
+    _candleAtTime(time: number): CandlePoint | null {
         let low = 0;
         let high = this._candles.length - 1;
         while (low <= high) {
@@ -597,7 +822,12 @@ export class IndicatorEngine {
         return null;
     }
 
-    _scalarCandle(candle, time, scalar, source: IndicatorSource) {
+    _scalarCandle(
+        candle: CandlePoint | null,
+        time: number,
+        scalar: number | null,
+        source: IndicatorSource,
+    ): ScalarCandle {
         const value = typeof scalar === 'number' && Number.isFinite(scalar) ? scalar : null;
         const volume = source.kind === IndicatorSourceKind.CandleField
             && source.field === IndicatorCandleField.Volume
@@ -613,8 +843,10 @@ export class IndicatorEngine {
         };
     }
 
-    _candleFieldValue(candle, field) {
-        const finite = (value) => typeof value === 'number' && Number.isFinite(value) ? value : null;
+    _candleFieldValue(candle: CandlePoint | null, field: IndicatorCandleField): number | null {
+        const finite = (value: unknown) => (
+            typeof value === 'number' && Number.isFinite(value) ? value : null
+        );
         if (field === IndicatorCandleField.Open) return finite(candle?.open);
         if (field === IndicatorCandleField.High) return finite(candle?.high);
         if (field === IndicatorCandleField.Low) return finite(candle?.low);
@@ -632,7 +864,7 @@ export class IndicatorEngine {
             ? null : (open + high + low + close) / 4;
     }
 
-    _indicatorOutputAt(indicatorId, outputId, time) {
+    _indicatorOutputAt(indicatorId: string, outputId: string, time: number): number | null {
         const entry = this._indicators.find(candidate => candidate.persistenceId === indicatorId);
         const points = entry?._points || [];
         let low = 0;
@@ -650,9 +882,9 @@ export class IndicatorEngine {
         return null;
     }
 
-    _clearRuntimeAndRender(entry) {
+    _clearRuntimeAndRender(entry: IndicatorEntry) {
         const runtime = entry.runtime;
-        let points;
+        let points: readonly IndicatorRuntimePoint[];
         if (this._retainRuntimeHistory) {
             runtime.reset([]);
             points = runtime.points();
@@ -670,8 +902,11 @@ export class IndicatorEngine {
         this._rememberSourceRevision(entry);
     }
 
-    _runtimeRendererShape(entry, points = entry.runtime.points()) {
-        const data: Record<string, any[]> = {};
+    _runtimeRendererShape(
+        entry: IndicatorEntry,
+        points: readonly IndicatorRuntimePoint[] = entry.runtime.points(),
+    ): IndicatorRenderData {
+        const data: IndicatorRenderData = {};
         for (const output of entry.outputNames) data[output] = [];
         for (const point of points) {
             const output = data[point.outputId];
@@ -681,7 +916,10 @@ export class IndicatorEngine {
         return data;
     }
 
-    _syncRuntimeLegend(entry, points = entry.runtime.points()) {
+    _syncRuntimeLegend(
+        entry: IndicatorEntry,
+        points: readonly IndicatorRuntimePoint[] = entry.runtime.points(),
+    ) {
         if (entry.outputNames.length === 1) {
             const outputId = entry.outputNames[0];
             entry._points = [];
@@ -698,7 +936,7 @@ export class IndicatorEngine {
             return;
         }
 
-        const byTarget = new Map<number, { time: number; values: Record<string, number> }>();
+        const byTarget = new Map<number, { time: number; values: LegendValues }>();
         for (const point of points) {
             if (point.time === null) continue;
             let row = byTarget.get(point.targetIndex);
@@ -718,7 +956,7 @@ export class IndicatorEngine {
         this._refreshRuntimePreviewOutputTimes(entry, points);
     }
 
-    _runtimePatchChangedFromTime(entry, patch) {
+    _runtimePatchChangedFromTime(entry: IndicatorEntry, patch: IndicatorRuntimePatch): number {
         let changedFromTime = Infinity;
         for (const operation of patch.operations) {
             const point = operation.point;
@@ -732,7 +970,10 @@ export class IndicatorEngine {
         return changedFromTime;
     }
 
-    _refreshRuntimePreviewOutputTimes(entry, points = entry.runtime.points()) {
+    _refreshRuntimePreviewOutputTimes(
+        entry: IndicatorEntry,
+        points: readonly IndicatorRuntimePoint[] = entry.runtime.points(),
+    ) {
         const times: Record<string, number> = {};
         if (entry.runtime.hasPreview) {
             for (const point of points) {
@@ -743,7 +984,7 @@ export class IndicatorEngine {
         entry._runtimePreviewOutputTimes = times;
     }
 
-    _applyRuntimeLegendPatch(entry, patch) {
+    _applyRuntimeLegendPatch(entry: IndicatorEntry, patch: IndicatorRuntimePatch): boolean {
         const points = entry._points || (entry._points = []);
         const targets = entry._runtimeLegendTailTargets
             || (entry._runtimeLegendTailTargets = []);
@@ -789,7 +1030,7 @@ export class IndicatorEngine {
     /// range, with the same margins so each study uses the full pane height. The
     /// engine draws axes only for 'right'/'left', so these extra scales stay
     /// invisible — they exist purely to keep the overlays from squashing.
-    _applyPaneScale(entry, chart) {
+    _applyPaneScale(entry: IndicatorEntry, chart: IChartApi | null) {
         const sid = entry.priceScaleId || entry.paneScaleId;
         if (!sid) return;
         for (const s of entry.seriesRefs) {
@@ -803,8 +1044,8 @@ export class IndicatorEngine {
     /// so the legend can read all outputs at a given bar in O(log N) (binary
     /// search by time). Time is converted to seconds-since-epoch — matches
     /// what the chart runtime and our chart-widget already use.
-    _buildLegendPoints(entry, data) {
-        const out: any[] = [];
+    _buildLegendPoints(entry: IndicatorEntry, data: IndicatorPoint[] | IndicatorLines): LegendPoint[] {
+        const out: LegendPoint[] = [];
         if (Array.isArray(data)) {
             for (const p of data) {
                 if (p.value == null) continue;
@@ -814,7 +1055,7 @@ export class IndicatorEngine {
             const keys = Object.keys(data);
             // Merge by timestamp, not array index. After null stripping sparse
             // outputs (Fractals up/down) have different lengths and timestamps.
-            const byTime = new Map<number, Record<string, number>>();
+            const byTime = new Map<number, LegendValues>();
             for (const key of keys) {
                 for (const point of data[key] || []) {
                     if (point?.value == null) continue;
@@ -830,18 +1071,21 @@ export class IndicatorEngine {
         return out;
     }
 
-    _toSec(time) {
+    _toSec(time: string | number): number {
         if (typeof time === 'number') return time;
         const p = Date.parse(time);
         return isFinite(p) ? Math.floor(p / 1000) : 0;
     }
 
-    _orderedIndicators() {
-        const byId = new Map(this._indicators.map(entry => [entry.persistenceId, entry]));
+    _orderedIndicators(): IndicatorEntry[] {
+        const byId = new Map(this._indicators.map(
+            (entry): [string, IndicatorEntry] => [entry.persistenceId, entry],
+        ));
         const visiting = new Set<string>();
         const visited = new Set<string>();
-        const ordered: any[] = [];
-        const visit = (entry) => {
+        const ordered: IndicatorEntry[] = [];
+        // The return annotation is what lets `visit` recurse into itself below.
+        const visit = (entry: IndicatorEntry): void => {
             if (visited.has(entry.persistenceId)) return;
             if (visiting.has(entry.persistenceId))
                 throw new Error('sschart: indicator source graph contains a cycle');
@@ -859,7 +1103,7 @@ export class IndicatorEngine {
         return ordered;
     }
 
-    _resetCascade(rootPersistenceId) {
+    _resetCascade(rootPersistenceId: string) {
         const affected = new Set([rootPersistenceId]);
         for (const entry of this._orderedIndicators()) {
             const source: IndicatorSource = entry.source || DefaultIndicatorSource;
@@ -869,7 +1113,7 @@ export class IndicatorEngine {
         }
     }
 
-    _resetDependents(removedPersistenceId) {
+    _resetDependents(removedPersistenceId: string) {
         const affected = new Set([removedPersistenceId]);
         for (const entry of this._orderedIndicators()) {
             const source: IndicatorSource = entry.source || DefaultIndicatorSource;
@@ -880,7 +1124,7 @@ export class IndicatorEngine {
         }
     }
 
-    _resolveSourceStatus(entry): IndicatorSourceStatus {
+    _resolveSourceStatus(entry: IndicatorEntry): IndicatorSourceStatus {
         const source: IndicatorSource = entry.source || DefaultIndicatorSource;
         if (source.kind !== IndicatorSourceKind.IndicatorOutput) {
             return Object.freeze({
@@ -919,26 +1163,33 @@ export class IndicatorEngine {
         });
     }
 
-    _sourceEntry(entry) {
+    _sourceEntry(entry: IndicatorEntry): IndicatorEntry | null {
         const source: IndicatorSource = entry.source || DefaultIndicatorSource;
         return source.kind === IndicatorSourceKind.IndicatorOutput
             ? this._indicators.find(candidate => candidate.persistenceId === source.indicatorId) || null
             : null;
     }
 
-    _sourceNeedsHistoricalReset(entry) {
+    _sourceNeedsHistoricalReset(entry: IndicatorEntry): boolean {
         const upstream = this._sourceEntry(entry);
         if (!upstream || entry._sourceRevision === upstream._outputRevision) return false;
-        return entry._runtimeLastCommittedTime !== null
-            && upstream._outputChangedFromTime <= entry._runtimeLastCommittedTime;
+        // Before the first reset fills it in the field is simply absent, which compared the same
+        // way it does as null: an absent last committed time cannot have been overwritten.
+        const lastCommittedTime = entry._runtimeLastCommittedTime ?? null;
+        return lastCommittedTime !== null
+            && upstream._outputChangedFromTime <= lastCommittedTime;
     }
 
-    _rememberSourceRevision(entry) {
+    _rememberSourceRevision(entry: IndicatorEntry) {
         const upstream = this._sourceEntry(entry);
         entry._sourceRevision = upstream?._outputRevision ?? null;
     }
 
-    _markOutputsChanged(entry, time, changes) {
+    _markOutputsChanged(
+        entry: IndicatorEntry,
+        time: number,
+        changes: IndicatorRuntimePatchOperation[] | null,
+    ) {
         const previous = entry._outputRevision || 0;
         entry._outputPreviousRevision = previous;
         entry._outputRevision = previous + 1;
@@ -946,24 +1197,27 @@ export class IndicatorEngine {
         entry._lastOutputChanges = changes;
     }
 
-    _assertSourceAcyclic(ownerPersistenceId, source: IndicatorSource) {
+    _assertSourceAcyclic(ownerPersistenceId: string, source: IndicatorSource) {
         let current = source;
         const visited = new Set<string>();
         while (current.kind === IndicatorSourceKind.IndicatorOutput) {
-            if (current.indicatorId === ownerPersistenceId)
+            // `current` is reassigned by the loop, so the kind narrowing does not reach into the
+            // closure below; bind the already-narrowed value to a const the closure can capture.
+            const outputSource = current;
+            if (outputSource.indicatorId === ownerPersistenceId)
                 throw new RangeError('sschart: indicator source dependency cannot contain a cycle');
-            if (visited.has(current.indicatorId))
+            if (visited.has(outputSource.indicatorId))
                 throw new Error('sschart: existing indicator source graph contains a cycle');
-            visited.add(current.indicatorId);
+            visited.add(outputSource.indicatorId);
             const upstream = this._indicators.find(candidate => (
-                candidate.persistenceId === current.indicatorId
+                candidate.persistenceId === outputSource.indicatorId
             ));
             if (!upstream) return;
             current = upstream.source || DefaultIndicatorSource;
         }
     }
 
-    _assertSourceOutput(source: IndicatorSource, allowMissingIndicator) {
+    _assertSourceOutput(source: IndicatorSource, allowMissingIndicator: boolean) {
         if (source.kind !== IndicatorSourceKind.IndicatorOutput) return;
         const upstream = this._indicators.find(candidate => (
             candidate.persistenceId === source.indicatorId
@@ -984,7 +1238,7 @@ export class IndicatorEngine {
         }
     }
 
-    remove(id) {
+    remove(id: number) {
         const idx = this._indicators.findIndex(e => e.id === id);
         if (idx < 0) return;
         const entry = this._indicators[idx];
@@ -994,7 +1248,7 @@ export class IndicatorEngine {
         this._emitChange();
     }
 
-    _removeEntry(entry) {
+    _removeEntry(entry: IndicatorEntry) {
         // The painter may own resources in addition to its returned series, so
         // let the renderer notify it before removing the chart primitives.
         if (this._renderer) this._renderer.removeSeries(entry);
@@ -1014,7 +1268,7 @@ export class IndicatorEngine {
         }
     }
 
-    move(id, targetPaneId) {
+    move(id: number, targetPaneId: string): boolean {
         const entry = this._indicators.find(item => item.id === id);
         if (!entry) return false;
         if (typeof targetPaneId !== 'string' || targetPaneId.trim().length === 0)
@@ -1027,10 +1281,10 @@ export class IndicatorEngine {
         if (!this._renderer || typeof this._renderer.moveSeries !== 'function')
             throw new Error('sschart: indicator renderer cannot move series');
 
-        let nextPaneId = null;
-        let targetChart = null;
-        let createdPaneId = null;
-        let restoredPaneId = null;
+        let nextPaneId: string | null = null;
+        let targetChart: IChartApi | null = null;
+        let createdPaneId: string | null = null;
+        let restoredPaneId: string | null = null;
         if (!toMain) {
             if (!this._paneManager)
                 throw new Error('sschart: indicator pane manager is unavailable');
@@ -1074,7 +1328,7 @@ export class IndicatorEngine {
     }
 
     /** Selects an explicit price scale; null returns the indicator to automatic routing. */
-    setScale(id, priceScaleId: string | null): boolean {
+    setScale(id: number, priceScaleId: string | null): boolean {
         const entry = this._indicators.find(item => item.id === id);
         if (!entry) return false;
         if (priceScaleId !== null
@@ -1089,7 +1343,7 @@ export class IndicatorEngine {
         return true;
     }
 
-    _rebalancePaneScales(paneId) {
+    _rebalancePaneScales(paneId: string | null) {
         const entries = this._indicators.filter(entry => entry.paneId === paneId);
         const chart = paneId && this._paneManager ? this._paneManager.getChart(paneId) : null;
         let automaticIndex = 0;
@@ -1120,7 +1374,7 @@ export class IndicatorEngine {
     // old subscription and add a fresh one with the same type — the server
     // keys each IIndicator instance per subscription so new params mean new
     // compute state anyway.
-    replaceParams(id, newParams) {
+    replaceParams(id: number, newParams: IndicatorParams) {
         const idx = this._indicators.findIndex(e => e.id === id);
         if (idx < 0) return;
         const entry = this._indicators[idx];
@@ -1134,7 +1388,7 @@ export class IndicatorEngine {
         const priceScaleId = entry.priceScaleId;
         const visible = entry.visible !== false;
         this.remove(id);
-        let restoredPaneId = null;
+        let restoredPaneId: string | null = null;
         if (targetPaneId !== '__main__' && this._paneManager
             && !this._paneManager.getChart(targetPaneId)
             && typeof this._paneManager.restorePane === 'function') {
@@ -1167,10 +1421,10 @@ export class IndicatorEngine {
         return replacement;
     }
 
-    getIndicators() { return this._indicators.slice(); }
+    getIndicators(): IndicatorEntry[] { return this._indicators.slice(); }
 
     /** Rebinds one runtime and every transitive dependent in graph order. */
-    setSource(id, value: IndicatorSource): boolean {
+    setSource(id: number, value: IndicatorSource): boolean {
         const entry = this._indicators.find(candidate => candidate.id === id);
         if (!entry) return false;
         const source = normalizeIndicatorSource(value);
@@ -1183,7 +1437,7 @@ export class IndicatorEngine {
         return true;
     }
 
-    getSourceStatus(id): IndicatorSourceStatus | null {
+    getSourceStatus(id: number): IndicatorSourceStatus | null {
         const entry = this._indicators.find(candidate => candidate.id === id);
         if (!entry) return null;
         if (entry.sourceStatus === IndicatorSourceStatusReason.Error) {
@@ -1197,7 +1451,7 @@ export class IndicatorEngine {
     }
 
     /** Applies one output's visual options without rebuilding its runtime or series. */
-    setOutputStyle(id, outputId: string, patch: IndicatorOutputStylePatch): boolean {
+    setOutputStyle(id: number, outputId: string, patch: IndicatorOutputStylePatch): boolean {
         const entry = this._indicators.find(candidate => candidate.id === id);
         if (!entry) return false;
         const changed = applyIndicatorOutputStyle(entry, outputId, patch);
@@ -1206,7 +1460,7 @@ export class IndicatorEngine {
     }
 
     /** Hides all painter-owned series while retaining computation and object identity. */
-    setVisible(id, visible: boolean): boolean {
+    setVisible(id: number, visible: boolean): boolean {
         if (typeof visible !== 'boolean')
             throw new TypeError('sschart: indicator visible must be boolean');
         const entry = this._indicators.find(candidate => candidate.id === id);
@@ -1217,7 +1471,7 @@ export class IndicatorEngine {
     }
 
     /** Returns a detached snapshot keyed by the painter's stable style ids. */
-    getStyles(id): Readonly<Record<string, Readonly<Record<string, unknown>>>> | null {
+    getStyles(id: number): Readonly<Record<string, Readonly<Record<string, unknown>>>> | null {
         const entry = this._indicators.find(candidate => candidate.id === id);
         if (!entry) return null;
         const styles = captureIndicatorStyles(entry);
@@ -1228,13 +1482,13 @@ export class IndicatorEngine {
     }
 
     /** Returns effective editor fields keyed by semantic output id. */
-    getOutputStyles(id): Readonly<Record<string, IndicatorOutputAppearance>> | null {
+    getOutputStyles(id: number): Readonly<Record<string, IndicatorOutputAppearance>> | null {
         const entry = this._indicators.find(candidate => candidate.id === id);
         return entry ? captureIndicatorOutputStyles(entry) : null;
     }
 
     /** Restores a complete painter-style snapshot, including clearing newer fields. */
-    replaceStyles(id, styles: Readonly<Record<string, unknown>>): boolean {
+    replaceStyles(id: number, styles: Readonly<Record<string, unknown>>): boolean {
         const entry = this._indicators.find(candidate => candidate.id === id);
         if (!entry) return false;
         const skipped = replaceIndicatorStyles(entry, styles);
@@ -1249,8 +1503,11 @@ export class IndicatorEngine {
     // forward is wrong for sparse studies (Fractals, pivots, signals): it makes
     // the legend describe a marker from another bar. Without a hover time we
     // still show the most recently formed value.
-    getValuesAt(time, seriesData?) {
-        const result: any[] = [];
+    getValuesAt(
+        time: string | number | null | undefined,
+        seriesData?: IndicatorSeriesDataLookup,
+    ): IndicatorLegendRow[] {
+        const result: IndicatorLegendRow[] = [];
         for (const entry of this._indicators) {
             if (entry.visible === false) continue;
             const fromSeries = seriesData?.get && Object.keys(entry.legendSources || {}).length > 0;
@@ -1279,7 +1536,10 @@ export class IndicatorEngine {
         return result;
     }
 
-    _pickValuesFromSeriesData(entry, seriesData) {
+    _pickValuesFromSeriesData(
+        entry: IndicatorEntry,
+        seriesData: IndicatorSeriesDataLookup,
+    ): Record<string, number | null> | null {
         const values: Record<string, number | null> = {};
         const keys = Array.isArray(entry.outputNames) && entry.outputNames.length > 0
             ? entry.outputNames
@@ -1288,14 +1548,17 @@ export class IndicatorEngine {
         for (const key of visibleKeys) {
             const source = entry.legendSources?.[key];
             const point = source ? seriesData.get(source.series) : null;
-            const raw = point == null ? null : point[source.field || 'value'];
+            // Repeating the `source` test is what carries its narrowing to the field lookup;
+            // without a source there is no point either, so the branch is unchanged. A point
+            // that is not an object could never have carried the field anyway.
+            const raw = source && indexableRecord(point) ? point[source.field || 'value'] : null;
             const numeric = raw == null ? NaN : Number(raw);
             values[key] = Number.isFinite(numeric) ? numeric : null;
         }
         return visibleKeys.length > 0 ? values : null;
     }
 
-    _pickValues(entry, time) {
+    _pickValues(entry: IndicatorEntry, time: string | number | null | undefined) {
         if (time == null) return this._completeLegendValues(entry, entry._lastValues);
 
         const arr = entry._points || [];
@@ -1318,7 +1581,10 @@ export class IndicatorEngine {
         return this._completeLegendValues(entry, null);
     }
 
-    _completeLegendValues(entry, values) {
+    _completeLegendValues(
+        entry: IndicatorEntry,
+        values: LegendValues | null | undefined,
+    ): Record<string, number | null> | null {
         const keys = Array.isArray(entry.outputNames) && entry.outputNames.length > 0
             ? entry.outputNames
             : Object.keys(values || {});
@@ -1333,16 +1599,16 @@ export class IndicatorEngine {
         return complete;
     }
 
-    _visibleOutputColors(entry) {
+    _visibleOutputColors(entry: IndicatorEntry): string[] {
         const outputs = Array.isArray(entry.outputNames) ? entry.outputNames : [];
         return outputs.reduce((colors, outputId, index) => {
             if (indicatorOutputVisible(entry, outputId)) colors.push(entry.colors?.[index]);
             return colors;
-        }, [] as any[]);
+        }, [] as string[]);
     }
 
 
-    _shiftTime(rawTime, shift) {
+    _shiftTime(rawTime: number, shift: number | undefined): number {
         if (!shift || shift <= 0 || !this._candles.length) return rawTime;
         // Walk the current candle array backwards N bars from rawTime. If we
         // can't find rawTime in the array, fall back to timeframe-based maths.
@@ -1366,8 +1632,10 @@ export class IndicatorEngine {
         return rawTime;
     }
 
-    _applyPointShifts(data) {
-        const shiftPoint = (point: any) => {
+    _applyPointShifts(
+        data: ShiftablePoint[] | Record<string, ShiftablePoint[]>,
+    ): ShiftablePoint[] | Record<string, ShiftablePoint[]> {
+        const shiftPoint = (point: ShiftablePoint) => {
             const shift = Number(point?.shift) || 0;
             if (shift <= 0) return point;
             return { ...point, time: this._shiftTime(this._toSec(point.time), shift) };
@@ -1375,7 +1643,7 @@ export class IndicatorEngine {
 
         if (Array.isArray(data)) return data.map(shiftPoint);
         if (data && typeof data === 'object') {
-            const shifted: Record<string, any> = {};
+            const shifted: Record<string, ShiftablePoint[]> = {};
             for (const key of Object.keys(data)) {
                 shifted[key] = Array.isArray(data[key]) ? data[key].map(shiftPoint) : data[key];
             }
@@ -1384,11 +1652,11 @@ export class IndicatorEngine {
         return data;
     }
 
-    _historyToRendererShape(history) {
+    _historyToRendererShape(history: IndicatorHistory): IndicatorPoint[] | IndicatorLines {
         const outputNames = history.outputNames || ['value'];
         const points = history.points || [];
 
-        const withTime = points.map((p: any) => {
+        const withTime = points.map(p => {
             const raw = Math.floor(Date.parse(p.time) / 1000);
             return {
                 time: this._shiftTime(raw, p.shift),
@@ -1398,34 +1666,34 @@ export class IndicatorEngine {
 
         if (outputNames.length === 1) {
             return withTime
-                .filter((p: any) => p.values[0] != null)
-                .map((p: any) => ({ time: p.time, value: Number(p.values[0]) }));
+                .filter(p => p.values[0] != null)
+                .map(p => ({ time: p.time, value: Number(p.values[0]) }));
         }
 
-        const result: Record<string, any> = {};
+        const result: IndicatorLines = {};
         for (let i = 0; i < outputNames.length; i++) {
             result[outputNames[i]] = withTime
-                .filter((p: any) => p.values[i] != null)
-                .map((p: any) => ({ time: p.time, value: Number(p.values[i]) }));
+                .filter(p => p.values[i] != null)
+                .map(p => ({ time: p.time, value: Number(p.values[i]) }));
         }
         return result;
     }
 
-    _mergeParams(settings, params) {
-        const merged: Record<string, any> = {};
-        settings.params.forEach((p: any) => {
+    _mergeParams(settings: IndicatorCatalogEntry, params: IndicatorParams | null): IndicatorParams {
+        const merged: IndicatorParams = {};
+        settings.params.forEach(p => {
             merged[p.key] = (params && params[p.key] !== undefined) ? params[p.key] : p.default;
         });
         return merged;
     }
 
-    _timeframeToEnum(tf) {
+    _timeframeToEnum(tf: unknown): number {
         // Server's CandleTimeframe enum uses minute counts as numeric values,
         // matching the numeric timeframe the client already tracks.
         return Number(tf) || 5;
     }
 
-    _formatParams(params) {
+    _formatParams(params: IndicatorParams): string {
         return Object.values(params).join(', ');
     }
 
@@ -1436,7 +1704,7 @@ export class IndicatorEngine {
     /// catalog has no measure (legacy data path), falls back to opening a
     /// fresh pane per indicator — the old behaviour.
     /// </summary>
-    _resolveSubPane(settings, mergedParams) {
+    _resolveSubPane(settings: IndicatorCatalogEntry, mergedParams: IndicatorParams): string | null {
         if (!this._paneManager) return null;
 
         const label = settings.name + ' (' + this._formatParams(mergedParams) + ')';

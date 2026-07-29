@@ -21,9 +21,54 @@ import { T } from './i18n.js';
 // library — this menu only ever talks to them through the optional _hooks
 // callbacks (onAddIndicator / onBuyAtPrice / …), never by symbol.
 
+/**
+ * The host callbacks. Every one is optional — the menu greys an entry out (or drops the
+ * action) when the embedder did not wire it, which is how the same menu serves the demo
+ * (indicators only) and the full terminal (indicators + order actions).
+ */
+export interface ChartContextMenuHooks {
+    /** Sub-pane menu: no price/order entries, plus a "Remove pane" action. */
+    paneMode?: boolean;
+    onAddIndicator?(): void;
+    onAddPane?(): void;
+    onRemovePane?(): void;
+    onBuyAtPrice?(price: number): void;
+    onSellAtPrice?(price: number): void;
+    onCancelOrdersAt?(price: number): void;
+    /** Resting orders sitting at that price level; only its length is read here. */
+    findOrdersAtPrice?(price: number): readonly unknown[];
+}
+
+/**
+ * The price series, described structurally: the terminal passes its charting library's series
+ * handle and the demo passes this package's, and pixel -> price is all the menu needs. It is
+ * nullable because a sub-pane menu (`paneMode`) has no price axis and passes null.
+ */
+export interface PriceCoordinateSource {
+    coordinateToPrice(coordinate: number): number | null;
+}
+
+/** One rendered menu row — either a divider or a clickable action. */
+interface ChartContextMenuSeparator {
+    separator: true;
+}
+interface ChartContextMenuAction {
+    separator?: false;
+    key: string;
+    label: string;
+    cls?: string;
+    disabled?: boolean;
+    action(): void;
+}
+type ChartContextMenuItem = ChartContextMenuSeparator | ChartContextMenuAction;
+
 export class ChartContextMenu {
     _container: HTMLElement | null;
-    _series: any;
+    _series: PriceCoordinateSource | null;
+    // Shell-supplied callback bag; its shape is the `hooks` parameter of init(). The field stays
+    // `any` because it is null outside the init()..dispose() window, and describing that as
+    // `ChartContextMenuHooks | null` would mean re-writing every one of the ~20 `this._hooks.x &&
+    // this._hooks.x()` guards the shell relies on.
     _hooks: any;
     _menuEl: HTMLDivElement | null;
     _onContextMenu: ((e: MouseEvent) => void) | null;
@@ -46,7 +91,7 @@ export class ChartContextMenu {
     /// Attach handlers and build the menu DOM. Idempotent — re-calls
     /// dispose() first so callers can re-init after a chart rebuild
     /// (timeframe / symbol change recreates the candle series).
-    init(containerEl, candleSeries, hooks) {
+    init(containerEl: HTMLElement | null, candleSeries: PriceCoordinateSource | null, hooks: ChartContextMenuHooks | null) {
         if (!containerEl) return;
         this.dispose();
 
@@ -77,7 +122,7 @@ export class ChartContextMenu {
     /// Update the candle series reference — chart-type-switcher swaps in a
     /// new series on each candle/line/area/bar toggle, so the coord→price
     /// conversion needs the latest one to stay accurate.
-    setCandleSeries(series) {
+    setCandleSeries(series: PriceCoordinateSource | null) {
         this._series = series;
     }
 
@@ -95,7 +140,7 @@ export class ChartContextMenu {
         this._menuEl = null;
     }
 
-    _priceAt(clientY) {
+    _priceAt(clientY: number) {
         if (!this._series || !this._container) return null;
         const rect = this._container.getBoundingClientRect();
         const y = clientY - rect.top;
@@ -107,7 +152,7 @@ export class ChartContextMenu {
         }
     }
 
-    _handleMouseDown(e) {
+    _handleMouseDown(e: MouseEvent) {
         // Only Ctrl-modified clicks. Plain right-click still pops the menu
         // via the contextmenu event. Shift / Alt left alone so they stay
         // available for drawing-tool modifiers.
@@ -131,7 +176,7 @@ export class ChartContextMenu {
             this._hooks.onSellAtPrice(price);
     }
 
-    _handleContextMenu(e) {
+    _handleContextMenu(e: MouseEvent) {
         // Ctrl+right was handled by mousedown — just suppress the browser menu.
         if (e.ctrlKey) { e.preventDefault(); return; }
 
@@ -140,7 +185,7 @@ export class ChartContextMenu {
         this._showMenu(e.clientX, e.clientY, price);
     }
 
-    _showMenu(x, y, price) {
+    _showMenu(x: number, y: number, price: number | null) {
         if (!this._menuEl) return;
 
         // i18n.js exposes `const T = { t(key, ...args) }` at script-scope.
@@ -148,7 +193,7 @@ export class ChartContextMenu {
         // it here would fall through to the identity fn and leave labels English.
         const t = (typeof T !== 'undefined' && T.t) ? T.t.bind(T) : (s: string) => s;
 
-        let items: any[];
+        let items: ChartContextMenuItem[];
         if (this._hooks.paneMode) {
             // Sub-pane menu: the same right-click affordance as the main chart,
             // scoped to the pane — add a study into THIS pane, or drop the pane.

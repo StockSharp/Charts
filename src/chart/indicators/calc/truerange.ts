@@ -2,16 +2,13 @@
 // TR[i] = max(|h-l|, |prevClose-h|, |prevClose-l|) for i >= 1. The first bar has no
 // previous candle, so TrueRange.cs is NOT formed there (IsFormed flips to true only on
 // the second candle) — StockSharp reports it as not-formed, so index 0 is emitted as null.
-//
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
-// @typedef {{time:number|string,value:number|null}} Point
+
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
- * @param {Candle[]} candles
- * @param {object} [_params]
- * @returns {Point[]}
+ * @returns {IndicatorPoint[]}
  */
-export function calcTrueRange(candles, _params) {
+export function calcTrueRange(candles: CandlePoint[], _params?: IndicatorParams) {
     if (!Array.isArray(candles) || candles.length === 0) return [];
     const n = candles.length;
     const out = new Array(n);

@@ -36,20 +36,7 @@
 // 1:1 with input candles.
 
 import { wilderWMA } from './helpers.js';
-
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
 /**
  * @typedef {{plusDI: IndicatorPoint[], minusDI: IndicatorPoint[], dx: IndicatorPoint[]}} DXSeries
@@ -61,7 +48,9 @@ import { wilderWMA } from './helpers.js';
  * @param {CandlePoint[]} candles
  * @returns {{plusDM: (number|null)[], minusDM: (number|null)[], tr: (number|null)[]}}
  */
-export function dmiRaw(candles) {
+export function dmiRaw(
+    candles: CandlePoint[],
+): { plusDM: (number | null)[]; minusDM: (number | null)[]; tr: (number | null)[] } {
     const n = candles.length;
     const plusDM = new Array(n);
     const minusDM = new Array(n);
@@ -102,7 +91,10 @@ export function dmiRaw(candles) {
  * @param {{length?: number}} [params]
  * @returns {DXSeries}
  */
-export function calcDX(candles, params) {
+export function calcDX(
+    candles: CandlePoint[],
+    params?: IndicatorParams,
+): { plusDI: IndicatorPoint[]; minusDI: IndicatorPoint[]; dx: IndicatorPoint[] } {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 14;
 
     if (!Array.isArray(candles) || candles.length === 0) {

@@ -21,21 +21,9 @@
 // (intra-candle preview) branch is not modelled — we treat every input as
 // final, which matches a closed-candle replay.
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
+import type { CandlePoint, IndicatorParams } from './types.js';
 
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
-
-function sign(x) {
+function sign(x: number) {
     if (x > 0) return 1;
     if (x < 0) return -1;
     return 0;
@@ -46,7 +34,7 @@ function sign(x) {
  * @param {{length?: number}} [params]
  * @returns {IndicatorPoint[]}
  */
-export function calcMarketMeannessIndex(candles, params) {
+export function calcMarketMeannessIndex(candles: CandlePoint[], params?: IndicatorParams) {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 200;
     if (!Array.isArray(candles) || candles.length === 0) return [];
 

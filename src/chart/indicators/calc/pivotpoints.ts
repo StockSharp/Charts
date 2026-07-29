@@ -26,35 +26,18 @@
 //   (b) Bad bars (non-finite H/L/C) emit null on all five outputs for that
 //       slot.
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+export interface PivotPointsSeries {
+    pp: IndicatorPoint[];
+    r1: IndicatorPoint[];
+    r2: IndicatorPoint[];
+    s1: IndicatorPoint[];
+    s2: IndicatorPoint[];
+}
 
-/**
- * @typedef {object} PivotPointsSeries
- * @property {IndicatorPoint[]} pp
- * @property {IndicatorPoint[]} r1
- * @property {IndicatorPoint[]} r2
- * @property {IndicatorPoint[]} s1
- * @property {IndicatorPoint[]} s2
- */
-
-/**
- * @param {CandlePoint[]} candles
- * @param {object} [_params] No tunables — accepted for registry uniformity.
- * @returns {PivotPointsSeries}
- */
-export function calcPivotPoints(candles, _params) {
+/** `_params` has no tunables — it is accepted only for registry uniformity. */
+export function calcPivotPoints(candles: CandlePoint[], _params?: IndicatorParams): PivotPointsSeries {
     if (!Array.isArray(candles) || candles.length === 0) {
         return { pp: [], r1: [], r2: [], s1: [], s2: [] };
     }

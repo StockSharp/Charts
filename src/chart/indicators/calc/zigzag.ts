@@ -31,15 +31,7 @@
 // later confirmation = #bars since the previous pivot ‒ matching MT4's
 // ZigZag drawing logic.
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
  * @typedef {object} ZigZagPoint
@@ -50,11 +42,10 @@
  */
 
 /**
- * @param {CandlePoint[]} candles
  * @param {{deviation?: number}} [params]
  * @returns {ZigZagPoint[]}
  */
-export function calcZigZag(candles, params) {
+export function calcZigZag(candles: CandlePoint[], params?: IndicatorParams) {
     // Default matches StockSharp's `_deviation = 0.001m` field initializer
     // (the value that generated the reference Tests/Resources/IndicatorsData
     // data). The terminal UI typically passes its own user-chosen deviation

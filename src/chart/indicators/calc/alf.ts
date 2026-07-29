@@ -21,26 +21,14 @@
 // .cs deviation: none. Straight numeric port. The Source-price selector
 // in .cs defaults to close on candle inputs — we use candle.close here.
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
  * @param {CandlePoint[]} candles
  * @param {{gamma?: number}} [params]
  * @returns {IndicatorPoint[]}
  */
-export function calcAdaptiveLaguerreFilter(candles, params) {
+export function calcAdaptiveLaguerreFilter(candles: CandlePoint[], params?: IndicatorParams) {
     const gamma = params && Number.isFinite(params.gamma) ? +params.gamma : 0.8;
 
     if (!Array.isArray(candles) || candles.length === 0) return [];

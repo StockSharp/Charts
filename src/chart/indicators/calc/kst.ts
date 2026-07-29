@@ -35,33 +35,19 @@
 //  31 + 15 + 9 - 2 = 53; that's roughly index 52 from zero, matching.)
 
 import { simpleMA } from './helpers.js';
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
-
-/**
- * @typedef {{kst: IndicatorPoint[], signal: IndicatorPoint[]}} KSTSeries
- */
+/** The KST line plus its signal line, each aligned 1:1 with the input candles. */
+export interface KSTSeries {
+    kst: IndicatorPoint[];
+    signal: IndicatorPoint[];
+}
 
 /**
  * Rate of Change: `(x[i] - x[i-length]) / x[i-length] * 100`.
  * First `length` entries are null (mirrors RateOfChange.cs warm-up).
- * @param {(number|null)[]} values
- * @param {number} length
- * @returns {(number|null)[]}
  */
-function rocArray(values, length) {
+function rocArray(values: ReadonlyArray<number | null | undefined>, length: number) {
     const n = values.length;
     const out = new Array(n);
     for (let i = 0; i < n; i++) out[i] = null;
@@ -76,16 +62,7 @@ function rocArray(values, length) {
     return out;
 }
 
-/**
- * @param {CandlePoint[]} candles
- * @param {{
- *   roc1Length?: number, roc2Length?: number, roc3Length?: number, roc4Length?: number,
- *   sma1Length?: number, sma2Length?: number, sma3Length?: number, sma4Length?: number,
- *   signalLength?: number
- * }} [params]
- * @returns {KSTSeries}
- */
-export function calcKST(candles, params) {
+export function calcKST(candles: CandlePoint[], params?: IndicatorParams): KSTSeries {
     const roc1Len = params && Number.isFinite(params.roc1Length) ? (params.roc1Length | 0) : 10;
     const roc2Len = params && Number.isFinite(params.roc2Length) ? (params.roc2Length | 0) : 15;
     const roc3Len = params && Number.isFinite(params.roc3Length) ? (params.roc3Length | 0) : 20;

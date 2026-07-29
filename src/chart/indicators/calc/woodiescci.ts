@@ -7,18 +7,15 @@
 // from index Length-1; signal then emits from index Length-1 + SMALength-1.
 //
 // Deviations from .cs: none.
-//
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
-// @typedef {{time:number|string,value:number|null}} Point
 
 import { calcCCI } from './cci.js';
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
- * @param {Candle[]} candles
  * @param {{length?: number, smaLength?: number}} [params]
- * @returns {{cci: Point[], signal: Point[]}}
+ * @returns {{cci: IndicatorPoint[], signal: IndicatorPoint[]}}
  */
-export function calcWoodiesCCI(candles, params) {
+export function calcWoodiesCCI(candles: CandlePoint[], params?: IndicatorParams) {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 14;
     const smaLength = params && Number.isFinite(params.smaLength) ? (params.smaLength | 0) : 6;
 
@@ -39,8 +36,9 @@ export function calcWoodiesCCI(candles, params) {
     const cciValues: number[] = [];
     const cciIndices: number[] = [];
     for (let i = 0; i < n; i++) {
-        if (cciSeries[i].value !== null) {
-            cciValues.push(cciSeries[i].value);
+        const v = cciSeries[i].value;
+        if (v !== null) {
+            cciValues.push(v);
             cciIndices.push(i);
         }
     }

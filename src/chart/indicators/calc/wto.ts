@@ -17,13 +17,11 @@
 // bars later. Use partialSeedSMA for it.
 //
 // Deviations from .cs: none.
-//
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
-// @typedef {{time:number|string,value:number|null}} Point
 
 import { partialSeedSMA } from './helpers.js';
+import type { CandlePoint, IndicatorParams } from './types.js';
 
-function emaArr(values, length) {
+function emaArr(values: (number | null)[], length: number) {
     const n = values.length;
     const out = new Array(n);
     if (n === 0 || length <= 0) { for (let i = 0; i < n; i++) out[i] = null; return out; }
@@ -50,11 +48,10 @@ function emaArr(values, length) {
 }
 
 /**
- * @param {Candle[]} candles
  * @param {{esaPeriod?: number, dPeriod?: number, averagePeriod?: number}} [params]
- * @returns {{wt1: Point[], wt2: Point[]}}
+ * @returns {{wt1: IndicatorPoint[], wt2: IndicatorPoint[]}}
  */
-export function calcWaveTrend(candles, params) {
+export function calcWaveTrend(candles: CandlePoint[], params?: IndicatorParams) {
     const esaPeriod = params && Number.isFinite(params.esaPeriod) ? (params.esaPeriod | 0) : 10;
     const dPeriod = params && Number.isFinite(params.dPeriod) ? (params.dPeriod | 0) : 14;
     const averagePeriod = params && Number.isFinite(params.averagePeriod) ? (params.averagePeriod | 0) : 3;

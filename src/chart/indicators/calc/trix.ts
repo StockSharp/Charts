@@ -23,29 +23,14 @@
 // (index 3*length-3). ROC needs one more sample after ema3 forms. So first
 // non-null Trix lands at index 3*(length-1) + 1 = 3*length - 2.
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
  * EMA over a (number|null)[] series. Counts only finite samples until seed
  * is full; once seeded, returns null on any non-finite input. Returns
  * array of (number|null), same length as input.
- * @param {(number|null)[]} values
- * @param {number} length
- * @returns {(number|null)[]}
  */
-function emaCascade(values, length) {
+function emaCascade(values: (number | null)[], length: number) {
     const n = values.length;
     const out = new Array(n);
     for (let i = 0; i < n; i++) out[i] = null;
@@ -77,11 +62,10 @@ function emaCascade(values, length) {
 }
 
 /**
- * @param {CandlePoint[]} candles
  * @param {{length?: number}} [params]
  * @returns {IndicatorPoint[]}
  */
-export function calcTrix(candles, params) {
+export function calcTrix(candles: CandlePoint[], params?: IndicatorParams) {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 14;
     if (!Array.isArray(candles) || candles.length === 0) return [];
 

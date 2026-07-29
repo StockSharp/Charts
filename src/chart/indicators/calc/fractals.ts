@@ -34,30 +34,19 @@
 // confirmed*; the actual extremum is bar i - mid. Caller can plot the
 // markers either at the confirmation bar or shift them back by `mid`.
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
-/**
- * @typedef {{time: string|number, value: number|null, shift?: number}} IndicatorPoint
- */
+/** Fractal markers carry the confirmation lag so a caller can plot at the pivot bar. */
+interface FractalPoint extends IndicatorPoint {
+    shift?: number;
+}
 
-/**
- * @typedef {{up: IndicatorPoint[], down: IndicatorPoint[]}} FractalsSeries
- */
+interface FractalsSeries {
+    up: FractalPoint[];
+    down: FractalPoint[];
+}
 
-/**
- * @param {CandlePoint[]} candles
- * @param {{length?: number}} [params]
- * @returns {FractalsSeries}
- */
-export function calcFractals(candles, params) {
+export function calcFractals(candles: CandlePoint[], params?: IndicatorParams): FractalsSeries {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 5;
     if (!Array.isArray(candles) || candles.length === 0) return { up: [], down: [] };
 

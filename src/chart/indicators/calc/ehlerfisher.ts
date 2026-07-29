@@ -32,30 +32,14 @@
 // test file uses (a) constant-series invariants and (b) a small known
 // vector locked in via numerical regression.
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+interface EhlerFisherSeries {
+    main: IndicatorPoint[];
+    trigger: IndicatorPoint[];
+}
 
-/**
- * @typedef {{main: IndicatorPoint[], trigger: IndicatorPoint[]}} EhlerFisherSeries
- */
-
-/**
- * @param {CandlePoint[]} candles
- * @param {{length?: number}} [params]
- * @returns {EhlerFisherSeries}
- */
-export function calcEhlerFisher(candles, params) {
+export function calcEhlerFisher(candles: CandlePoint[], params?: IndicatorParams): EhlerFisherSeries {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 10;
 
     if (!Array.isArray(candles) || candles.length === 0) {

@@ -19,26 +19,14 @@
 // Deviation vs .cs: none. The .cs Sum.IsFormed gates output and we mirror
 // that with `length` push count tracking.
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
  * @param {CandlePoint[]} candles
  * @param {{length?: number}} [params]
  * @returns {IndicatorPoint[]}
  */
-export function calcMoneyFlowIndex(candles, params) {
+export function calcMoneyFlowIndex(candles: CandlePoint[], params?: IndicatorParams) {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 14;
     if (!Array.isArray(candles) || candles.length === 0) return [];
 
@@ -63,7 +51,7 @@ export function calcMoneyFlowIndex(candles, params) {
         const l = c && c.low;
         const cl = c && c.close;
         const v = c && c.volume;
-        const finite = (x) => typeof x === 'number' && Number.isFinite(x);
+        const finite = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
         if (!finite(h) || !finite(l) || !finite(cl) || !finite(v)) {
             // Carry sliding windows forward by inserting a 0 to keep length aligned;
             // and emit null. This is a defensive choice — the .cs would NRE on

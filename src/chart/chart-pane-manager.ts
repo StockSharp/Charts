@@ -1,17 +1,61 @@
 // Compatibility adapter for the terminal UI. Pane rendering and scale
 // ownership live in the chart engine; this class only keeps the historical
 // pane-id lookup plus the terminal's HTML headers/context menus.
+import type {
+    ChartOptions,
+    IChartApi,
+    IPaneApi,
+    ISeriesApi,
+    PaneOptions,
+    ResolvedPriceScaleOptions,
+    SeriesDefinition,
+    SeriesOptions,
+    TimedSeriesData,
+} from '../core/chart-api.js';
 import { ChartContextMenu } from './chart-context-menu.js';
+
+/** Layout patch an engine pane accepts — every pane option except its id. */
+type PaneLayoutPatch = Omit<PaneOptions, 'id'>;
+type PaneLayoutKey = keyof PaneLayoutPatch;
+
+/**
+ * What the old sub-chart callers pass to `applyOptions`: usually a whole
+ * chart-option bag (the terminal's theme switch hands the same object to the
+ * main chart and to every pane), which is why the scale members keep their
+ * chart-wide shape. Only the pane's own layout keys and the pane-local scale
+ * margins are read; every other key is ignored.
+ */
+interface LegacyPaneChartOptions
+    extends PaneLayoutPatch, Pick<ChartOptions, 'rightPriceScale' | 'leftPriceScale'> {}
+
+/**
+ * Copies one layout key across. Key-generic because the compiler only keeps the
+ * key and its value type correlated when both flow through the same type
+ * parameter — indexing with a plain union of keys widens the write to `never`.
+ */
+function copyPaneLayoutOption<K extends PaneLayoutKey>(
+    target: PaneLayoutPatch,
+    source: LegacyPaneChartOptions,
+    key: K,
+): void {
+    const value = source[key];
+    if (value !== undefined) target[key] = value;
+}
 
 class LegacyPaneChartAdapter {
     constructor(
-        private readonly owner: any,
-        readonly nativePane: any,
+        private readonly owner: IChartApi,
+        readonly nativePane: IPaneApi,
     ) {}
 
-    addSeries(definition, options = {}) { return this.nativePane.addSeries(definition, options); }
-    adoptSeries(series) { return this.owner.moveSeries(series, this.nativePane); }
-    removeSeries(series) { this.nativePane.removeSeries(series); }
+    addSeries<TData extends TimedSeriesData, TOptions extends SeriesOptions = SeriesOptions>(
+        definition: SeriesDefinition<TData, TOptions>,
+        options: Partial<TOptions> = {},
+    ): ISeriesApi<TData, TOptions> {
+        return this.nativePane.addSeries(definition, options);
+    }
+    adoptSeries(series: ISeriesApi) { return this.owner.moveSeries(series, this.nativePane); }
+    removeSeries(series: ISeriesApi) { this.nativePane.removeSeries(series); }
     priceScale(scaleId = 'right') { return this.nativePane.priceScale(scaleId); }
     timeScale() { return this.owner.timeScale(); }
     series() { return this.nativePane.series(); }
@@ -20,10 +64,10 @@ class LegacyPaneChartAdapter {
 
     // Old callers used a sub-chart-shaped handle. Visual chart options are
     // already global on the owner; pane-local scale margins remain local.
-    applyOptions(options = {}) {
-        const paneOptions: any = {};
-        for (const key of ['height', 'minHeight', 'order', 'state']) {
-            if (options[key] !== undefined) paneOptions[key] = options[key];
+    applyOptions(options: LegacyPaneChartOptions = {}) {
+        const paneOptions: PaneLayoutPatch = {};
+        for (const key of ['height', 'minHeight', 'order', 'state'] as const) {
+            copyPaneLayoutOption(paneOptions, options, key);
         }
         if (Object.keys(paneOptions).length) this.nativePane.applyOptions(paneOptions);
         if (options.rightPriceScale?.scaleMargins) {
@@ -41,6 +85,37 @@ class LegacyPaneChartAdapter {
     takeScreenshot() { return this.owner.takeScreenshot(); }
 }
 
+/** A live pane: the engine's pane plus the terminal chrome mounted over it. */
+interface PaneEntry {
+    el: HTMLDivElement;
+    chart: LegacyPaneChartAdapter;
+    nativePane: IPaneApi;
+    label: string;
+    /** Indicator measure the pane is shared by, or null for a free-standing pane. */
+    measure: string | null;
+    ctxMenu: ChartContextMenu;
+}
+
+/** Layout of a just-removed pane, kept so restorePane() can rebuild it verbatim. */
+interface PaneSnapshot {
+    id: string;
+    label: string;
+    measure: string | null;
+    paneOptions?: Required<PaneOptions>;
+    rightPriceScale?: ResolvedPriceScaleOptions;
+    leftPriceScale?: ResolvedPriceScaleOptions;
+}
+
+/**
+ * The part of an indicator-engine entry this file reads. The engine itself is
+ * reached through the shell-owned `window._indicatorEngine` handle (`any`), so
+ * its list elements arrive untyped and are described here instead.
+ */
+interface IndicatorEntryRef {
+    id: number;
+    paneId: string | null;
+}
+
 /**
  * Terminal-UI chrome over the engine's native panes: HTML pane headers,
  * per-pane context menus, pane-id lookup and empty-pane restore. The engine
@@ -50,17 +125,17 @@ class LegacyPaneChartAdapter {
 export class ChartPaneManager {
     _containerId: string;
     _mainContainer: HTMLElement | null;
-    _panes: Map<string, any>;
-    _removedPanes: Map<string, any>;
+    _panes: Map<string, PaneEntry>;
+    _removedPanes: Map<string, PaneSnapshot>;
     _nextId: number;
-    _mainChart: any;
+    _mainChart: IChartApi | null;
     _wrapper: HTMLDivElement | null;
     _resizeObserver: ResizeObserver | null;
     _headerSyncFrame: number | null;
     _onPointerMove: (() => void) | null;
     _onContextMenu: ((event: MouseEvent) => void) | null;
 
-    constructor(containerId) {
+    constructor(containerId: string) {
         this._containerId = containerId;
         this._mainContainer = null;
         this._panes = new Map();
@@ -74,7 +149,9 @@ export class ChartPaneManager {
         this._onContextMenu = null;
     }
 
-    init(mainChart) {
+    // Nullable because the terminal can mount the chrome before (or without) a
+    // chart — the guard below is what makes that a no-op rather than a crash.
+    init(mainChart: IChartApi | null) {
         this._mainChart = mainChart;
         const chartEl = document.getElementById(this._containerId);
         if (!chartEl || !mainChart?.addPane) return;
@@ -118,7 +195,7 @@ export class ChartPaneManager {
         window._chartPaneManager = this;
     }
 
-    getPaneByMeasure(measure) {
+    getPaneByMeasure(measure: string | null) {
         if (!measure) return null;
         for (const [paneId, pane] of this._panes) {
             if (pane.measure === measure) return paneId;
@@ -126,7 +203,7 @@ export class ChartPaneManager {
         return null;
     }
 
-    addPane(label, measure, restoration: any = null) {
+    addPane(label: string, measure: string | null, restoration: PaneSnapshot | null = null) {
         if (!this._wrapper || !this._mainChart?.addPane) return null;
         let paneId = restoration?.id;
         if (paneId !== undefined
@@ -136,7 +213,7 @@ export class ChartPaneManager {
         if (paneId === undefined) {
             do { paneId = 'pane_' + this._nextId++; } while (this._panes.has(paneId));
         }
-        const restoredOptions = restoration?.paneOptions || {};
+        const restoredOptions: PaneOptions = restoration?.paneOptions || {};
         const nativePane = this._mainChart.addPane({
             id: paneId,
             height: restoredOptions.height ?? 160,
@@ -189,8 +266,8 @@ export class ChartPaneManager {
             onRemovePane: () => {
                 const engine = window._indicatorEngine;
                 if (!engine) return;
-                engine.getIndicators().filter((entry) => entry.paneId === paneId)
-                    .forEach((entry) => engine.remove(entry.id));
+                engine.getIndicators().filter((entry: IndicatorEntryRef) => entry.paneId === paneId)
+                    .forEach((entry: IndicatorEntryRef) => engine.remove(entry.id));
             },
         });
 
@@ -207,7 +284,7 @@ export class ChartPaneManager {
         return paneId;
     }
 
-    removePane(paneId) {
+    removePane(paneId: string) {
         const pane = this._panes.get(paneId);
         if (!pane) return;
         const scaleIds = pane.nativePane.priceScaleIds?.() || [];
@@ -222,24 +299,26 @@ export class ChartPaneManager {
                 : undefined,
         });
         try { pane.ctxMenu?.dispose(); } catch { /* keep releasing */ }
-        try { this._mainChart.removePane(pane.nativePane); } catch { /* already removed */ }
+        // A pane can only be in the map when addPane() ran, and that returns
+        // early unless init() stored the chart — so the handle is set here.
+        try { this._mainChart!.removePane(pane.nativePane); } catch { /* already removed */ }
         pane.el.remove();
         this._panes.delete(paneId);
         this._scheduleHeaderSync();
     }
 
     /** Recreates a recently emptied pane with the same native id and layout options. */
-    restorePane(paneId) {
+    restorePane(paneId: string) {
         const snapshot = this._removedPanes.get(paneId);
         if (!snapshot) return null;
         return this.addPane(snapshot.label, snapshot.measure, snapshot);
     }
 
-    getChart(paneId) {
+    getChart(paneId: string) {
         return this._panes.get(paneId)?.chart ?? null;
     }
 
-    setPaneTitle(paneId, label) {
+    setPaneTitle(paneId: string, label: string) {
         const pane = this._panes.get(paneId);
         if (!pane) return;
         const labelEl = pane.el.querySelector('.pane-label');
@@ -247,7 +326,7 @@ export class ChartPaneManager {
         pane.label = label;
     }
 
-    setPaneValuesHtml(paneId, html) {
+    setPaneValuesHtml(paneId: string, html: string) {
         const pane = this._panes.get(paneId);
         if (!pane) return;
         const values = pane.el.querySelector('.pane-values');

@@ -26,31 +26,14 @@
 // Output shape: `{ k, d }`, each an IndicatorPoint[] aligned to candles.
 
 import { simpleMA } from './helpers.js';
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
+interface FastStochasticSeries {
+    k: IndicatorPoint[];
+    d: IndicatorPoint[];
+}
 
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
-
-/**
- * @typedef {{k: IndicatorPoint[], d: IndicatorPoint[]}} FastStochasticSeries
- */
-
-/**
- * @param {CandlePoint[]} candles
- * @param {{kPeriod?: number, dPeriod?: number}} [params]
- * @returns {FastStochasticSeries}
- */
-export function calcFastStochastic(candles, params) {
+export function calcFastStochastic(candles: CandlePoint[], params?: IndicatorParams): FastStochasticSeries {
     const kPeriod = params && Number.isFinite(params.kPeriod) ? (params.kPeriod | 0) : 14;
     const dPeriod = params && Number.isFinite(params.dPeriod) ? (params.dPeriod | 0) : 3;
 

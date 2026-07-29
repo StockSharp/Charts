@@ -4,17 +4,15 @@
 //   upper[i] = max(high) over candles[i-length+1..i]
 //   lower[i] = min(low)  over candles[i-length+1..i]
 // First (length-1) bars are null on both series (warm-up window).
-//
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
-// @typedef {{time:number|string,value:number|null}} Point
-// @typedef {{upper: Point[], lower: Point[]}} PriceChannelsSeries
 
-/**
- * @param {Candle[]} candles
- * @param {{length?: number}} [params]
- * @returns {PriceChannelsSeries}
- */
-export function calcPriceChannels(candles, params) {
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
+
+export interface PriceChannelsSeries {
+    upper: IndicatorPoint[];
+    lower: IndicatorPoint[];
+}
+
+export function calcPriceChannels(candles: CandlePoint[], params?: IndicatorParams): PriceChannelsSeries {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 20;
     if (!Array.isArray(candles) || candles.length === 0) {
         return { upper: [], lower: [] };

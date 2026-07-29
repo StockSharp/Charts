@@ -13,22 +13,10 @@
 //
 // Warm-up: first non-null ATR lands at index `length - 1` (SMA seed of TR[0..length-1]).
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 // True range for candle i (null on any non-finite input). i===0 has no prior close.
-function trueRange(candles, i) {
+function trueRange(candles: CandlePoint[], i: number) {
     const c = candles[i];
     const h = c && c.high;
     const l = c && c.low;
@@ -47,7 +35,7 @@ function trueRange(candles, i) {
  * @param {{length?: number}} [params]
  * @returns {IndicatorPoint[]}
  */
-export function calcATR(candles, params) {
+export function calcATR(candles: CandlePoint[], params?: IndicatorParams) {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 14;
     if (!Array.isArray(candles) || candles.length === 0) return [];
 

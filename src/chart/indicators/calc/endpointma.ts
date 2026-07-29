@@ -16,26 +16,9 @@
 // behavioural change in the meantime. If you want the "true" EPMA
 // (regression endpoint) use ForecastOscillator's underlying LinearReg.
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
-
-/**
- * @param {CandlePoint[]} candles
- * @param {{length?: number}} [params]
- * @returns {IndicatorPoint[]}
- */
-export function calcEndpointMovingAverage(candles, params) {
+export function calcEndpointMovingAverage(candles: CandlePoint[], params?: IndicatorParams): IndicatorPoint[] {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 10;
 
     if (!Array.isArray(candles) || candles.length === 0) return [];

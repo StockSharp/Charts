@@ -20,41 +20,27 @@
 // (c) `IsFinal=false` (intra-bar) branch is not relevant: closed-bar batch.
 
 import { calcEMA } from './ema.js';
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
 export const GMMA_SHORT_LENGTHS = [3, 5, 8, 10, 12, 15];
 export const GMMA_LONG_LENGTHS = [30, 35, 40, 45, 50, 60];
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
+interface GuppySeries {
+    short: IndicatorPoint[][];
+    long: IndicatorPoint[][];
+}
 
 /**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
+ * `params` optionally carries { shortLengths?: number[], longLengths?: number[] }
+ * for overriding the .cs defaults if a caller wants to surface a custom fan
+ * in the UI.
  */
-
-/**
- * @typedef {{short: IndicatorPoint[][], long: IndicatorPoint[][]}} GuppySeries
- */
-
-/**
- * @param {CandlePoint[]} candles
- * @param {object} [params]   Optional: { shortLengths?: number[], longLengths?: number[] }
- *                            for overriding the .cs defaults if a caller
- *                            wants to surface a custom fan in the UI.
- * @returns {GuppySeries}
- */
-export function calcGMMA(candles, params) {
-    const shortLengths = (params && Array.isArray(params.shortLengths) && params.shortLengths.length > 0)
-        ? params.shortLengths.map(x => x | 0)
+export function calcGMMA(candles: CandlePoint[], params?: IndicatorParams): GuppySeries {
+    const shortLengths: number[] = (params && Array.isArray(params.shortLengths) && params.shortLengths.length > 0)
+        ? params.shortLengths.map((x: number) => x | 0)
         : GMMA_SHORT_LENGTHS;
-    const longLengths = (params && Array.isArray(params.longLengths) && params.longLengths.length > 0)
-        ? params.longLengths.map(x => x | 0)
+    const longLengths: number[] = (params && Array.isArray(params.longLengths) && params.longLengths.length > 0)
+        ? params.longLengths.map((x: number) => x | 0)
         : GMMA_LONG_LENGTHS;
 
     if (!Array.isArray(candles) || candles.length === 0) {

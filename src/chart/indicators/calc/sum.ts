@@ -4,16 +4,10 @@
 //   sum[i] = close[i-Length+1] + ... + close[i]
 // Warm-up: first (length-1) values null.
 // Deviations from .cs: none — straight rolling sum.
-//
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
-// @typedef {{time:number|string,value:number|null}} Point
 
-/**
- * @param {Candle[]} candles
- * @param {{length?: number}} [params]
- * @returns {Point[]}
- */
-export function calcSum(candles, params) {
+import type { CandlePoint, IndicatorParams } from './types.js';
+
+export function calcSum(candles: CandlePoint[], params?: IndicatorParams) {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 15;
 
     if (!Array.isArray(candles) || candles.length === 0) return [];

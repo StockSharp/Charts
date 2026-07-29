@@ -19,20 +19,7 @@
 // `max(fast, slow) - 1` (which is `slow - 1` for fast<slow).
 
 import { calcADL } from './adl.js';
-
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
 /**
  * Local EMA over a (number|null)[] series, SMA-seeded over the first
@@ -41,7 +28,7 @@ import { calcADL } from './adl.js';
  * @param {number} length
  * @returns {(number|null)[]}
  */
-function emaSeries(values, length) {
+function emaSeries(values: (number | null)[], length: number): (number | null)[] {
     const n = values.length;
     const out = new Array(n);
     for (let i = 0; i < n; i++) out[i] = null;
@@ -82,7 +69,7 @@ function emaSeries(values, length) {
  * @param {{fast?: number, slow?: number}} [params]
  * @returns {IndicatorPoint[]}
  */
-export function calcChaikinOscillator(candles, params) {
+export function calcChaikinOscillator(candles: CandlePoint[], params?: IndicatorParams): IndicatorPoint[] {
     const fast = params && Number.isFinite(params.fast) ? (params.fast | 0) : 3;
     const slow = params && Number.isFinite(params.slow) ? (params.slow | 0) : 10;
 

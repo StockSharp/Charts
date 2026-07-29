@@ -7,18 +7,11 @@
 //   std[i]  = sqrt( sum_{k=i-Length+1..i} (close[k] - mean[i])^2 / Length )
 // Warm-up: first (length-1) values null.
 // Deviations from .cs: none — formula 1:1.
-//
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
-// @typedef {{time:number|string,value:number|null}} Point
 
 import { simpleMA as simpleMA_SD } from './helpers.js';
+import type { CandlePoint, IndicatorParams } from './types.js';
 
-/**
- * @param {Candle[]} candles
- * @param {{length?: number}} [params]
- * @returns {Point[]}
- */
-export function calcStandardDeviation(candles, params) {
+export function calcStandardDeviation(candles: CandlePoint[], params?: IndicatorParams) {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 10;
 
     if (!Array.isArray(candles) || candles.length === 0) return [];

@@ -26,16 +26,14 @@
 //          curValue computation). Buffer caps at Length, then evicts FIFO.
 //
 // Default params per .cs ctor: Length=20, VolatilityIndex=0.2.
-//
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
-// @typedef {{time:number|string,value:number|null}} Point
+
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
- * @param {Candle[]} candles
  * @param {{length?: number, volatilityIndex?: number}} [params]
- * @returns {Point[]}
+ * @returns {IndicatorPoint[]}
  */
-export function calcVMA(candles, params) {
+export function calcVMA(candles: CandlePoint[], params?: IndicatorParams) {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 20;
     const volatilityIndex = params && Number.isFinite(params.volatilityIndex) ? +params.volatilityIndex : 0.2;
     if (!Array.isArray(candles) || candles.length === 0) return [];
@@ -64,7 +62,7 @@ export function calcVMA(candles, params) {
     let isInitialized = false;
     let prevFinalValue = 0;
 
-    function processStdDev(newValue) {
+    function processStdDev(newValue: number) {
         // SMA step.
         stdBuf.push(newValue);
         stdSum += newValue;

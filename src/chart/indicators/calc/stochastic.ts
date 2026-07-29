@@ -12,31 +12,10 @@
 // consumes `data.k` and `data.d`.
 
 import { simpleMA } from './helpers.js';
+import type { CandlePoint, IndicatorParams } from './types.js';
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
-
-/**
- * @typedef {{k: IndicatorPoint[], d: IndicatorPoint[]}} StochasticSeries
- */
-
-/**
- * @param {CandlePoint[]} candles
- * @param {{kPeriod?: number, dPeriod?: number, smooth?: number}} [params]
- * @returns {StochasticSeries}
- */
-export function calcStochastic(candles, params) {
+// params: kPeriod / dPeriod / smooth. Returns the two lines as { k, d }.
+export function calcStochastic(candles: CandlePoint[], params?: IndicatorParams) {
     const kPeriod = params && Number.isFinite(params.kPeriod) ? (params.kPeriod | 0) : 14;
     const dPeriod = params && Number.isFinite(params.dPeriod) ? (params.dPeriod | 0) : 3;
     const smooth = params && Number.isFinite(params.smooth) ? (params.smooth | 0) : 1;

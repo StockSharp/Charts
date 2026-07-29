@@ -11,26 +11,14 @@
 // `value: null` to keep the chart series aligned 1:1 with the candle array.
 // No warm-up window: IsFormed becomes true on the first final candle.
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
  * @param {CandlePoint[]} candles
  * @param {object} [_params]  Unused; kept for signature parity.
  * @returns {IndicatorPoint[]}
  */
-export function calcMarketFacilitationIndex(candles, _params) {
+export function calcMarketFacilitationIndex(candles: CandlePoint[], _params?: IndicatorParams) {
     if (!Array.isArray(candles) || candles.length === 0) return [];
     const n = candles.length;
     const out = new Array(n);

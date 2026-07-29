@@ -21,20 +21,7 @@
 
 import { wilderWMA } from './helpers.js';
 import { dmiRaw } from './dx.js';
-
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
  * @typedef {{adx: IndicatorPoint[], dx: IndicatorPoint[], plusDI: IndicatorPoint[], minusDI: IndicatorPoint[]}} ADXSeries
@@ -45,7 +32,7 @@ import { dmiRaw } from './dx.js';
  * @param {{length?: number}} [params]
  * @returns {ADXSeries}
  */
-export function calcADX(candles, params) {
+export function calcADX(candles: CandlePoint[], params?: IndicatorParams) {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 14;
 
     if (!Array.isArray(candles) || candles.length === 0) {

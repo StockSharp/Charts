@@ -23,6 +23,8 @@
 //
 // Default Length = 14, matching the .cs constructor.
 
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
+
 /**
  * @typedef {object} CandlePoint
  * @property {string|number} time
@@ -42,7 +44,8 @@
  * @param {{length?: number}} [params]
  * @returns {IndicatorPoint[]}
  */
-export function calcEOM(candles, params) {
+
+export function calcEOM(candles: CandlePoint[], params?: IndicatorParams): IndicatorPoint[] {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 14;
     if (!Array.isArray(candles) || candles.length === 0) return [];
 
@@ -69,7 +72,7 @@ export function calcEOM(candles, params) {
     // trends rather than staying a bounded SMA. The buffer itself is windowed.
     let prevHigh = 0;
     let prevLow = 0;
-    const buf = [];
+    const buf: number[] = [];
     let bufSum = 0;
 
     for (let i = 0; i < n; i++) {
@@ -89,7 +92,7 @@ export function calcEOM(candles, params) {
             const emv = midMove * cl / v;
             buf.push(emv);
             bufSum += emv;
-            if (buf.length > length) bufSum -= buf.shift();
+            if (buf.length > length) bufSum -= buf.shift()!;
             if (buf.length >= length) {
                 // IsFormed -> emit and, like the .cs, return WITHOUT updating _prev.
                 out[i] = { time: c.time, value: bufSum / length };

@@ -39,29 +39,15 @@
 //   (b) Output points carry `shift` (bars back from confirmation to the
 //       actual peak), same convention as our zigzag.js.
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
-/**
- * @typedef {object} PeakPoint
- * @property {string|number} time
- * @property {number|null} value   peak high price, or null if no peak here
- * @property {number} [shift]      bars back to the actual peak bar
- */
+/** One output point: `value` is the peak high price (null when this bar is not a peak). */
+export interface PeakPoint extends IndicatorPoint {
+    /** Bars back from the confirmation bar to the actual peak bar. */
+    shift?: number;
+}
 
-/**
- * @param {CandlePoint[]} candles
- * @param {{deviation?: number}} [params]
- * @returns {PeakPoint[]}
- */
-export function calcPeak(candles, params) {
+export function calcPeak(candles: CandlePoint[], params?: IndicatorParams): PeakPoint[] {
     const deviation = params && Number.isFinite(params.deviation) ? +params.deviation : 0.001;
     if (!Array.isArray(candles) || candles.length === 0) return [];
 

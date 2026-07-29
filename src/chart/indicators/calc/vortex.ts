@@ -7,16 +7,14 @@
 //
 // Deviations from .cs: none — when sums of TR is 0 we emit 0 to match the
 // .cs behaviour at extreme zero-range conditions.
-//
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
-// @typedef {{time:number|string,value:number|null}} Point
+
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
- * @param {Candle[]} candles
  * @param {{length?: number}} [params]
- * @returns {{viPlus: Point[], viMinus: Point[]}}
+ * @returns {{viPlus: IndicatorPoint[], viMinus: IndicatorPoint[]}}
  */
-export function calcVortex(candles, params) {
+export function calcVortex(candles: CandlePoint[], params?: IndicatorParams) {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 14;
     if (!Array.isArray(candles) || candles.length === 0) {
         return { viPlus: [], viMinus: [] };

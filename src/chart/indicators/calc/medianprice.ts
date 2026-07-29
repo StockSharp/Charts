@@ -8,26 +8,14 @@
 // null for that bar (defensive — the .cs would still compute on whatever
 // the candle exposes, but JS arrays can carry undefined / NaN).
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
  * @param {CandlePoint[]} candles
  * @param {object} [_params]  Unused; kept for signature parity with other calcs.
  * @returns {IndicatorPoint[]}
  */
-export function calcMedianPrice(candles, _params) {
+export function calcMedianPrice(candles: CandlePoint[], _params?: IndicatorParams) {
     if (!Array.isArray(candles) || candles.length === 0) return [];
     const n = candles.length;
     const out = new Array(n);

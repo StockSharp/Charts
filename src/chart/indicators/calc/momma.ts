@@ -27,19 +27,7 @@
 //   2. After the first MomMA push, `firstBuffer = Buffer[0]` is the oldest
 //      of the now-`length` items.
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
  * @param {CandlePoint[]} candles
@@ -47,7 +35,7 @@
  *   `momentumPeriod` is accepted for API parity with .cs but unused in math.
  * @returns {IndicatorPoint[]}
  */
-export function calcMomentumOfMovingAverage(candles, params) {
+export function calcMomentumOfMovingAverage(candles: CandlePoint[], params?: IndicatorParams) {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 14;
     if (!Array.isArray(candles) || candles.length === 0) return [];
 
@@ -62,7 +50,7 @@ export function calcMomentumOfMovingAverage(candles, params) {
     // running sum maintained for the SMA result.
     const buf: number[] = [];
     let sum = 0;
-    function push(v) {
+    function push(v: number) {
         buf.push(v);
         sum += v;
         if (buf.length > length) {

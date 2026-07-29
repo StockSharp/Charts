@@ -3,14 +3,72 @@ import { T } from './i18n.js';
 import { ChartPaneManager } from './chart-pane-manager.js';
 import { TerminalUtils } from './utils.js';
 
+/**
+ * A bar as the legend reads it. Every price field is optional on purpose: the crosshair
+ * payload carries one entry per series, and a line/histogram/whitespace point has no OHLC —
+ * which is exactly why `_onCrosshairMove` finite-checks a candidate before accepting it.
+ */
+export interface LegendBar {
+    time: number;
+    open?: number;
+    high?: number;
+    low?: number;
+    close?: number;
+    volume?: number;
+}
+
+/** The per-series bar snapshot the host attaches to a crosshair event, keyed by series handle. */
+export type LegendSeriesData = ReadonlyMap<unknown, LegendBar>;
+
+/** The crosshair payload, reduced to the three fields this legend reads. */
+export interface LegendCrosshairParam {
+    time?: number | null;
+    point?: { x: number; y: number } | null;
+    seriesData?: LegendSeriesData;
+}
+
+/**
+ * The host chart, described structurally rather than imported: this legend is the same code
+ * the web terminal runs, where the chart handle comes from the terminal's own charting stack,
+ * while the demo mounts it on this package's engine. Both expose these two members.
+ */
+export interface LegendChart {
+    subscribeCrosshairMove(handler: (param: LegendCrosshairParam) => void): void;
+    clearCrosshairPosition?(): void;
+}
+
+/** One indicator row as the indicator engine hands it to the legend. */
+export interface LegendIndicatorValue {
+    id: number;
+    type: string;
+    name: string;
+    /** Output name -> value on the hovered bar; null where the study is sparse there. */
+    values: Record<string, number | null | undefined>;
+    /** Line colours, positionally aligned with `Object.keys(values)`. */
+    colors: readonly string[];
+    /** null = overlay on the main chart; anything else names the sub-pane it lives in. */
+    paneId: string | null;
+}
+
+/** The slice of the indicator engine the legend talks to — same structural reasoning as LegendChart. */
+export interface LegendIndicatorEngine {
+    onChange: (() => void) | null;
+    getIndicators(): readonly unknown[];
+    getValuesAt(time: number | null | undefined, seriesData?: LegendSeriesData): readonly LegendIndicatorValue[];
+    remove(id: number): void;
+}
+
 export class ChartLegend {
     _el: HTMLElement | null;
+    // Host-owned chart handle, null until init(). The contract it has to satisfy is spelled out
+    // on the `init` parameter (LegendChart); the field itself stays loose because the callbacks
+    // registered in init() read it outside the reach of the `if (!this._chart) return` guard.
     _chart: any;
-    _rawCandles: any[];
-    _indicatorEngine: any;
+    _rawCandles: readonly LegendBar[];
+    _indicatorEngine: LegendIndicatorEngine | null;
     _isHovered: boolean = false;
     _lastIndSignature: string | undefined;
-    _lastSubPaneIds: Set<any> | undefined;
+    _lastSubPaneIds: Set<string | null> | undefined;
     onEditIndicator: ((id: number, type: string) => void) | null = null;
     onChartTypeChange: ((type: string) => void) | null = null;
     _currentChartType: string = 'candle';
@@ -22,7 +80,7 @@ export class ChartLegend {
         this._indicatorEngine = null;
     }
 
-    init(legendId, chart) {
+    init(legendId: string, chart: LegendChart) {
         this._el = document.getElementById(legendId);
         this._chart = chart;
         if (!this._el || !this._chart) return;
@@ -45,7 +103,7 @@ export class ChartLegend {
         });
         this._el.addEventListener('mouseleave', () => { this._isHovered = false; });
 
-        this._chart.subscribeCrosshairMove((param) => {
+        this._chart.subscribeCrosshairMove((param: LegendCrosshairParam) => {
             this._onCrosshairMove(param);
         });
 
@@ -122,7 +180,7 @@ export class ChartLegend {
         });
     }
 
-    setChartType(type) {
+    setChartType(type: string) {
         this._currentChartType = type;
         // Repaint legend so the toggle button reflects the new type.
         if (this._rawCandles.length > 0) {
@@ -130,7 +188,7 @@ export class ChartLegend {
         }
     }
 
-    setRawCandles(candles) {
+    setRawCandles(candles: readonly LegendBar[] | null | undefined) {
         this._rawCandles = candles || [];
         // Once the first batch of candles lands we can paint the legend even
         // if the user hasn't hovered — guarantees the × / ✏ buttons exist
@@ -140,7 +198,7 @@ export class ChartLegend {
         }
     }
 
-    setIndicatorEngine(engine) {
+    setIndicatorEngine(engine: LegendIndicatorEngine | null) {
         this._indicatorEngine = engine;
         // Re-render the indicator strip whenever the set of active indicators
         // changes — add() / remove() / replaceParams() all fire onChange. Prior
@@ -174,7 +232,7 @@ export class ChartLegend {
         }
     }
 
-    _onCrosshairMove(param) {
+    _onCrosshairMove(param: LegendCrosshairParam) {
         if (!this._el) return;
 
         if (param.time == null || param.point == null) {
@@ -209,10 +267,12 @@ export class ChartLegend {
         this._renderIndicators(time, param.seriesData);
     }
 
-    _renderOHLCV(candle) {
+    _renderOHLCV(candle: LegendBar) {
         if (!this._el) return;
 
-        const isUp = candle.close >= candle.open;
+        // The assertions only stand in for LegendBar's optional prices: a bar missing either
+        // side compares `undefined >= …` → false at runtime, i.e. the "down" colouring below.
+        const isUp = candle.close! >= candle.open!;
         const cls = isUp ? 'legend-up' : 'legend-down';
         // Dynamic precision: для TWT/IMEX (~0.44) фиксированный toFixed(2)
         // схлопывал OHLC в один и тот же "0.44" → юзеру казалось что свечи
@@ -228,7 +288,7 @@ export class ChartLegend {
         };
         const refPrice = (candle.close ?? candle.open ?? 1);
         const prec = precFor(refPrice);
-        const fmt = (v) => v !== undefined && v !== null ? v.toFixed(prec) : '--';
+        const fmt = (v: number | null | undefined) => v !== undefined && v !== null ? v.toFixed(prec) : '--';
 
         let html = `<span class="legend-item legend-time">${this._formatTime(candle.time)}</span>`;
         html += `<span class="legend-item">O <span class="${cls}">${fmt(candle.open)}</span></span>`;
@@ -271,7 +331,7 @@ export class ChartLegend {
         }
     }
 
-    _renderIndicators(time, seriesData?) {
+    _renderIndicators(time: number | null | undefined, seriesData?: LegendSeriesData) {
         if (!this._indicatorEngine || !this._el) return;
         // Freeze updates while the cursor is over the legend row — see init().
         if (this._isHovered) return;
@@ -300,7 +360,9 @@ export class ChartLegend {
             for (const ind of values) {
                 const row = document.createElement('span');
                 row.className = 'legend-indicator';
-                row.dataset.indId = ind.id;
+                // `dataset` is a DOMStringMap: the id is numeric, so the stringification the
+                // DOM binding was doing implicitly is now spelled out (same value either way).
+                row.dataset.indId = String(ind.id);
 
                 // Multi-output indicators (Ichimoku → 5 values, MACD → 3, …)
                 // used to spell every inner series name inline:
@@ -335,14 +397,14 @@ export class ChartLegend {
 
                 const edit = document.createElement('span');
                 edit.className = 'legend-edit-btn';
-                edit.dataset.indId = ind.id;
+                edit.dataset.indId = String(ind.id);
                 edit.dataset.indType = ind.type;
                 edit.title = T.t('Edit');
                 edit.innerHTML = '&#9998;';
 
                 const remove = document.createElement('span');
                 remove.className = 'legend-remove-btn';
-                remove.dataset.indId = ind.id;
+                remove.dataset.indId = String(ind.id);
                 remove.title = T.t('Remove');
                 remove.innerHTML = '&times;';
 
@@ -386,11 +448,11 @@ export class ChartLegend {
     /// render side by side. No edit/remove buttons here — those live on
     /// the main legend for now; sub-pane close still via the ×.
     /// </summary>
-    _paintSubPaneValues(subValues) {
+    _paintSubPaneValues(subValues: readonly LegendIndicatorValue[]) {
         const paneMgr = window._chartPaneManager;
         if (!paneMgr) return;
 
-        const groups: Map<any, any[]> = new Map();
+        const groups: Map<string | null, LegendIndicatorValue[]> = new Map();
         for (const v of subValues) {
             if (!groups.has(v.paneId)) groups.set(v.paneId, []);
             groups.get(v.paneId)!.push(v);
@@ -399,7 +461,7 @@ export class ChartLegend {
         // Clear panes that no longer have anything — so removing the last
         // indicator from a pane (before the pane itself is destroyed)
         // doesn't leave stale text in the header.
-        for (const paneId of (this._lastSubPaneIds || new Set())) {
+        for (const paneId of (this._lastSubPaneIds || new Set<string | null>())) {
             if (!groups.has(paneId)) paneMgr.setPaneValuesHtml(paneId, '');
         }
         this._lastSubPaneIds = new Set(groups.keys());
@@ -407,7 +469,7 @@ export class ChartLegend {
         const esc = (s: any) => String(s).replace(/[&<>"']/g, c => (({
             '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
         } as Record<string, string>))[c]);
-        const fmt = (n) => n == null ? '' : TerminalUtils.formatPrice(n);
+        const fmt = (n: number | null | undefined) => n == null ? '' : TerminalUtils.formatPrice(n);
 
         for (const [paneId, inds] of groups) {
             const groupsHtml: string[] = [];
@@ -441,14 +503,14 @@ export class ChartLegend {
         }
     }
 
-    _formatTime(t) {
+    _formatTime(t: number | null | undefined) {
         if (t === undefined || t === null) return '';
         const d = new Date(t * 1000);
-        const pad = (n) => n < 10 ? '0' + n : '' + n;
+        const pad = (n: number) => n < 10 ? '0' + n : '' + n;
         return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
     }
 
-    _formatVol(v) {
+    _formatVol(v: number | null | undefined) {
         if (v == null || !isFinite(v)) return '--';
         if (v >= 1e9) return (v / 1e9).toFixed(1) + 'B';
         if (v >= 1e6) return (v / 1e6).toFixed(1) + 'M';

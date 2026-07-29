@@ -30,30 +30,26 @@
 // where averages[i] is the SMA series for lengths[i]. Each series has
 // length == candles.length; first (lengths[i] - 1) entries are null.
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
  * @typedef {{lengths: number[], averages: IndicatorPoint[][]}} MARibbonSeries
  */
+
+/** One cascade stage: a partial-seed SMA of window `L` with its running sum. */
+interface RibbonStage {
+    L: number;
+    buf: number[];
+    sum: number;
+    formed: boolean;
+}
 
 /**
  * @param {CandlePoint[]} candles
  * @param {{shortPeriod?: number, longPeriod?: number, ribbonCount?: number}} [params]
  * @returns {MARibbonSeries}
  */
-export function calcMovingAverageRibbon(candles, params) {
+export function calcMovingAverageRibbon(candles: CandlePoint[], params?: IndicatorParams) {
     const shortPeriod = params && Number.isFinite(params.shortPeriod) ? (params.shortPeriod | 0) : 10;
     const longPeriod = params && Number.isFinite(params.longPeriod) ? (params.longPeriod | 0) : 100;
     const ribbonCount = params && Number.isFinite(params.ribbonCount) ? (params.ribbonCount | 0) : 10;
@@ -77,11 +73,11 @@ export function calcMovingAverageRibbon(candles, params) {
     // one per ribbon length. Post-form the value equals a windowed SMA; the
     // partial-seed phase is never emitted (gated on `formed`) nor fed downstream
     // (the cascade only advances once a stage is formed).
-    const state = lengths.map((L) => ({ L, buf: [], sum: 0, formed: false }));
-    const pushSMA = (st, v) => {
+    const state: RibbonStage[] = lengths.map((L: number) => ({ L, buf: [], sum: 0, formed: false }));
+    const pushSMA = (st: RibbonStage, v: number) => {
         st.buf.push(v);
         st.sum += v;
-        if (st.buf.length > st.L) st.sum -= st.buf.shift();
+        if (st.buf.length > st.L) st.sum -= st.buf.shift()!;
         st.formed = st.buf.length === st.L;
         return st.sum / st.L;
     };

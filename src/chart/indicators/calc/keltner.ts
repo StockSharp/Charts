@@ -18,31 +18,16 @@
 // at bar length-1, so we emit middle/upper/lower from bar length-1 onward.
 
 import { partialSeedEMA, csATR } from './helpers.js';
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
+/** The three Keltner lines, each aligned 1:1 with the input candles. */
+export interface KeltnerSeries {
+    middle: IndicatorPoint[];
+    upper: IndicatorPoint[];
+    lower: IndicatorPoint[];
+}
 
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
-
-/**
- * @typedef {{middle: IndicatorPoint[], upper: IndicatorPoint[], lower: IndicatorPoint[]}} KeltnerSeries
- */
-
-/**
- * @param {CandlePoint[]} candles
- * @param {{length?: number, multiplier?: number}} [params]
- * @returns {KeltnerSeries}
- */
-export function calcKeltnerChannels(candles, params) {
+export function calcKeltnerChannels(candles: CandlePoint[], params?: IndicatorParams): KeltnerSeries {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 20;
     const multiplier = params && Number.isFinite(params.multiplier) ? +params.multiplier : 2;
 

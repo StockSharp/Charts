@@ -7,6 +7,7 @@
     "src/index.ts",
     "src/core/**/*.ts",
     "src/series-spacing.ts",
+    "src/chart/**/*.ts",
     "tests/browser/fixtures/custom-primitive-entry.ts",
     "tests/types/**/*.ts"
   ]

@@ -46,31 +46,15 @@
 //     batches of closed bars, so we always take the IsFinal branch.
 
 import { csATR } from './helpers.js';
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
+/** The two Kase Peak Oscillator lines, each aligned 1:1 with the input candles. */
+export interface KasePeakOscillatorSeries {
+    shortTerm: IndicatorPoint[];
+    longTerm: IndicatorPoint[];
+}
 
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
-
-/**
- * @typedef {{shortTerm: IndicatorPoint[], longTerm: IndicatorPoint[]}} KasePeakOscillatorSeries
- */
-
-/**
- * @param {CandlePoint[]} candles
- * @param {{shortPeriod?: number, longPeriod?: number, atrLength?: number}} [params]
- * @returns {KasePeakOscillatorSeries}
- */
-export function calcKasePeakOscillator(candles, params) {
+export function calcKasePeakOscillator(candles: CandlePoint[], params?: IndicatorParams): KasePeakOscillatorSeries {
     // ATR length hardcoded in .cs to 10; allow override here for testing.
     const atrLength = params && Number.isFinite(params.atrLength) ? (params.atrLength | 0) : 10;
     // ShortTerm/LongTerm are KasePeakOscillatorPart (DecimalLengthIndicator)

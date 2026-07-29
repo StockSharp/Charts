@@ -8,31 +8,15 @@
 // (meaning ±1%).
 
 import { simpleMA } from './helpers.js';
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
+interface EnvelopeSeries {
+    upper: IndicatorPoint[];
+    middle: IndicatorPoint[];
+    lower: IndicatorPoint[];
+}
 
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
-
-/**
- * @typedef {{upper: IndicatorPoint[], middle: IndicatorPoint[], lower: IndicatorPoint[]}} EnvelopeSeries
- */
-
-/**
- * @param {CandlePoint[]} candles
- * @param {{length?: number, percent?: number}} [params]
- * @returns {EnvelopeSeries}
- */
-export function calcEnvelope(candles, params) {
+export function calcEnvelope(candles: CandlePoint[], params?: IndicatorParams): EnvelopeSeries {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 20;
     const percent = params && Number.isFinite(params.percent) ? +params.percent : 1.0;
 

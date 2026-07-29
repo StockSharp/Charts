@@ -22,25 +22,13 @@
 // (b) HVR output is unitless (a ratio); the .cs labels its Measure as
 //     Percent, but the value itself is not multiplied by 100. We follow.
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
 // Population standard deviation of `values` over a trailing window of length
 // `len`. Mirrors StockSharp's StandardDeviation: emits null until the window
 // is full, then sqrt(Σ(x - mean)^2 / len). Any non-finite sample in the
 // window emits null for that output slot.
-function popStdDev(values, len) {
+function popStdDev(values: ReadonlyArray<number | null | undefined>, len: number) {
     const n = values.length;
     const out = new Array(n);
     if (len <= 0) { for (let i = 0; i < n; i++) out[i] = null; return out; }
@@ -58,7 +46,8 @@ function popStdDev(values, len) {
         const mean = sum / len;
         let acc = 0;
         for (let k = i - len + 1; k <= i; k++) {
-            const d = values[k] - mean;
+            // Every sample in this window was validated as finite by the loop above.
+            const d = (values[k] as number) - mean;
             acc += d * d;
         }
         out[i] = Math.sqrt(acc / len);
@@ -66,12 +55,7 @@ function popStdDev(values, len) {
     return out;
 }
 
-/**
- * @param {CandlePoint[]} candles
- * @param {{shortPeriod?: number, longPeriod?: number}} [params]
- * @returns {IndicatorPoint[]}
- */
-export function calcHistoricalVolatilityRatio(candles, params) {
+export function calcHistoricalVolatilityRatio(candles: CandlePoint[], params?: IndicatorParams): IndicatorPoint[] {
     const shortPeriod = params && Number.isFinite(params.shortPeriod) ? (params.shortPeriod | 0) : 5;
     const longPeriod = params && Number.isFinite(params.longPeriod) ? (params.longPeriod | 0) : 20;
 

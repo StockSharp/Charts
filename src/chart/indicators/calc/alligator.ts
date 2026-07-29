@@ -10,25 +10,12 @@
 // line with length L and shift S lands at index (L-1)+S.
 
 import { smoothedMA } from './helpers.js';
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 // AlligatorLine.cs delegates to SmoothedMovingAverage (NOT WilderMA): the
 // warm-up emits Buffer.Sum / Length from bar 0 instead of (prev*(n-1)+x)/n
 // (i.e. divisor is fixed at Length, even before the buffer fills). Use the
 // matching helper so warm-up values line up with the StockSharp reference.
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
-
 /**
  * @typedef {{jaw: IndicatorPoint[], teeth: IndicatorPoint[], lips: IndicatorPoint[]}} AlligatorSeries
  */
@@ -41,7 +28,7 @@ import { smoothedMA } from './helpers.js';
  * @param {number} shift
  * @returns {IndicatorPoint[]}
  */
-function buildLine(candles, medians, length, shift) {
+function buildLine(candles: CandlePoint[], medians: number[], length: number, shift: number) {
     const n = candles.length;
     const out = new Array(n);
     const smma = smoothedMA(medians, length);
@@ -69,7 +56,7 @@ function buildLine(candles, medians, length, shift) {
  * @param {{jawLength?: number, jawShift?: number, teethLength?: number, teethShift?: number, lipsLength?: number, lipsShift?: number}} [params]
  * @returns {AlligatorSeries}
  */
-export function calcAlligator(candles, params) {
+export function calcAlligator(candles: CandlePoint[], params?: IndicatorParams) {
     const jawLength = params && Number.isFinite(params.jawLength) ? (params.jawLength | 0) : 13;
     const jawShift = params && Number.isFinite(params.jawShift) ? (params.jawShift | 0) : 8;
     const teethLength = params && Number.isFinite(params.teethLength) ? (params.teethLength | 0) : 8;

@@ -23,27 +23,14 @@
 //       emit null there.
 
 import { simpleMA } from './helpers.js';
-
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
  * @param {CandlePoint[]} candles
  * @param {{shortPeriod?: number, longPeriod?: number}} [params]
  * @returns {IndicatorPoint[]}
  */
-export function calcOscillatorOfMovingAverage(candles, params) {
+export function calcOscillatorOfMovingAverage(candles: CandlePoint[], params?: IndicatorParams) {
     const shortPeriod = params && Number.isFinite(params.shortPeriod) ? (params.shortPeriod | 0) : 10;
     const longPeriod = params && Number.isFinite(params.longPeriod) ? (params.longPeriod | 0) : 30;
 

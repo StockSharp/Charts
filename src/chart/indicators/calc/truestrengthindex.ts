@@ -11,9 +11,7 @@
 //
 // Defaults: firstLength=25, secondLength=13, signalLength=7 per .cs ctor.
 //
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
-// @typedef {{time:number|string,value:number|null}} Point
-// @typedef {{tsi: Point[], signal: Point[]}} TSISeries
+// @typedef {{tsi: IndicatorPoint[], signal: IndicatorPoint[]}} TSISeries
 
 /**
  * EMA matching the C# `ExponentialMovingAverage` partial-seed semantics:
@@ -23,17 +21,17 @@
  * shared partialSeedEMA helper.
  */
 import { partialSeedEMA } from './helpers.js';
+import type { CandlePoint, IndicatorParams } from './types.js';
 
-function emaArray(values, length) {
+function emaArray(values: (number | null)[], length: number) {
     return partialSeedEMA(values, length);
 }
 
 /**
- * @param {Candle[]} candles
  * @param {{firstLength?: number, secondLength?: number, signalLength?: number}} [params]
  * @returns {TSISeries}
  */
-export function calcTrueStrengthIndex(candles, params) {
+export function calcTrueStrengthIndex(candles: CandlePoint[], params?: IndicatorParams) {
     const firstLength  = params && Number.isFinite(params.firstLength)  ? (params.firstLength  | 0) : 25;
     const secondLength = params && Number.isFinite(params.secondLength) ? (params.secondLength | 0) : 13;
     const signalLength = params && Number.isFinite(params.signalLength) ? (params.signalLength | 0) : 7;

@@ -24,51 +24,36 @@
 // becomes a full trailing `[i-length+1 .. i]` window once `length` bars exist.
 // We reproduce that: the window for bar `i` spans `[max(0, i-length+1) .. i]`.
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
-
-/**
- * @typedef {{
- *   levels: number[],
- *   l236: IndicatorPoint[],
- *   l382: IndicatorPoint[],
- *   l500: IndicatorPoint[],
- *   l618: IndicatorPoint[],
- *   l786: IndicatorPoint[]
- * }} FibonacciRetracementSeries
- */
+/** One line per retracement ratio, in FIBO_LEVELS order. */
+export interface FibonacciRetracementSeries {
+    levels: number[];
+    l236: IndicatorPoint[];
+    l382: IndicatorPoint[];
+    l500: IndicatorPoint[];
+    l618: IndicatorPoint[];
+    l786: IndicatorPoint[];
+}
 
 export const FIBO_LEVELS = [0.236, 0.382, 0.5, 0.618, 0.786];
-export const FIBO_KEYS = ['l236', 'l382', 'l500', 'l618', 'l786'];
+// `as const` so indexing the series by one of these keys resolves to a line rather than to
+// `any` — the ratios and the key order are fixed by the indicator's definition anyway.
+export const FIBO_KEYS = ['l236', 'l382', 'l500', 'l618', 'l786'] as const;
 
-/**
- * @param {CandlePoint[]} candles
- * @param {{length?: number}} [params]
- * @returns {FibonacciRetracementSeries}
- */
-export function calcFibonacciRetracement(candles, params) {
+export function calcFibonacciRetracement(candles: CandlePoint[], params?: IndicatorParams): FibonacciRetracementSeries {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 20;
 
-    const empty = { levels: FIBO_LEVELS.slice() };
+    // Built key-by-key from FIBO_KEYS, so the object is only complete after the loop — hence
+    // the assertion on the seed rather than a literal listing all five lines twice.
+    const empty = { levels: FIBO_LEVELS.slice() } as FibonacciRetracementSeries;
     for (const k of FIBO_KEYS) empty[k] = [];
     if (!Array.isArray(candles) || candles.length === 0) return empty;
 
     const n = candles.length;
-    /** @type {FibonacciRetracementSeries} */
-    const out = { levels: FIBO_LEVELS.slice() };
+    const out = { levels: FIBO_LEVELS.slice() } as FibonacciRetracementSeries;
     for (const k of FIBO_KEYS) {
-        const a = new Array(n);
+        const a: IndicatorPoint[] = new Array(n);
         for (let i = 0; i < n; i++) a[i] = { time: candles[i].time, value: null };
         out[k] = a;
     }

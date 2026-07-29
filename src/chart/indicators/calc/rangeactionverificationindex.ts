@@ -6,18 +6,11 @@
 // Returns absolute value (per .cs `(... ).Abs()`). When long-SMA is zero,
 // output is null (.cs emits empty value).
 // Deviations from .cs: none — formula is straight 1:1.
-//
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
-// @typedef {{time:number|string,value:number|null}} Point
 
 import { simpleMA as simpleMA_RAVI } from './helpers.js';
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
-/**
- * @param {Candle[]} candles
- * @param {{shortLength?: number, longLength?: number}} [params]
- * @returns {Point[]}
- */
-export function calcRangeActionVerificationIndex(candles, params) {
+export function calcRangeActionVerificationIndex(candles: CandlePoint[], params?: IndicatorParams): IndicatorPoint[] {
     const shortLen = params && Number.isFinite(params.shortLength) ? (params.shortLength | 0) : 7;
     const longLen = params && Number.isFinite(params.longLength) ? (params.longLength | 0) : 65;
 

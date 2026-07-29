@@ -20,20 +20,7 @@
 // bb.js convention already in this repo.
 
 import { simpleMA } from './helpers.js';
-
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
  * @typedef {{ma: IndicatorPoint[], upper: IndicatorPoint[], lower: IndicatorPoint[]}} APZSeries
@@ -44,7 +31,7 @@ import { simpleMA } from './helpers.js';
  * @param {{period?: number, bandPercentage?: number}} [params]
  * @returns {APZSeries}
  */
-export function calcAdaptivePriceZone(candles, params) {
+export function calcAdaptivePriceZone(candles: CandlePoint[], params?: IndicatorParams) {
     const period = params && Number.isFinite(params.period) ? (params.period | 0) : 5;
     const bandPercentage = params && Number.isFinite(params.bandPercentage)
         ? +params.bandPercentage : 2;

@@ -38,20 +38,6 @@
 // (number|null)[]-aware Wilder RSI helper below.
 
 /**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
-
-/**
  * RSI over a (number|null)[] series — same Wilder smoothing as
  * calc/rsi.js but tolerates a leading null prefix (skips it and seeds
  * from the first run of `length` consecutive finite samples). Needed
@@ -66,6 +52,7 @@
  * @returns {(number|null)[]}
  */
 import { smoothedMA } from './helpers.js';
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
 // RSI over a (number|null)[] series matching the SMMA semantics of
 // StockSharp's RelativeStrengthIndex.cs. The first finite element is
@@ -77,7 +64,7 @@ import { smoothedMA } from './helpers.js';
 // Output is aligned 1:1 with the input series — out[i] is the RSI for
 // values[i] using values[0..i] only. Slots before the first valid
 // consumable index (where the input is non-finite) propagate null.
-function rsiOverArray(values, length) {
+function rsiOverArray(values: (number | null)[], length: number): (number | null)[] {
     const n = values.length;
     const out = new Array(n);
     for (let i = 0; i < n; i++) out[i] = null;
@@ -144,7 +131,7 @@ function rsiOverArray(values, length) {
  * @param {number} length
  * @returns {(number|null)[]}
  */
-function rocSeries(closes, length) {
+function rocSeries(closes: (number | null)[], length: number): (number | null)[] {
     const n = closes.length;
     const out = new Array(n);
     for (let i = 0; i < n; i++) out[i] = null;
@@ -167,7 +154,7 @@ function rocSeries(closes, length) {
  * @param {(number|null)[]} closes
  * @returns {(number|null)[]}
  */
-function streakSeries(closes) {
+function streakSeries(closes: (number | null)[]): (number | null)[] {
     const n = closes.length;
     const out = new Array(n);
     let prevPrice: number | null = null;
@@ -202,7 +189,10 @@ function streakSeries(closes) {
  * @param {{rsiLength?: number, streakLength?: number, rocLength?: number}} [params]
  * @returns {{rsi: IndicatorPoint[], updown: IndicatorPoint[], rocrsi: IndicatorPoint[], crsi: IndicatorPoint[]}}
  */
-export function calcConnorsRSI(candles, params) {
+export function calcConnorsRSI(
+    candles: CandlePoint[],
+    params?: IndicatorParams,
+): { rsi: IndicatorPoint[]; updown: IndicatorPoint[]; rocrsi: IndicatorPoint[]; crsi: IndicatorPoint[] } {
     const rsiLength = params && Number.isFinite(params.rsiLength) ? (params.rsiLength | 0) : 3;
     const streakLength = params && Number.isFinite(params.streakLength) ? (params.streakLength | 0) : 2;
     const rocLength = params && Number.isFinite(params.rocLength) ? (params.rocLength | 0) : 100;

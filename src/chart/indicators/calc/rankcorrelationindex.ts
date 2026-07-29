@@ -7,21 +7,16 @@
 // Warm-up: first (length-1) values null.
 // Deviations from .cs: none — same tie-handling, same Pearson-of-ranks
 // computation.
-//
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
-// @typedef {{time:number|string,value:number|null}} Point
 
-/**
- * Build rank array with average rank for ties — direct port of .cs GetRanks.
- * @param {number[]} values
- * @returns {number[]}
- */
-function ranksWithTies(values) {
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
+
+/** Build rank array with average rank for ties — direct port of .cs GetRanks. */
+function ranksWithTies(values: number[]): number[] {
     const n = values.length;
-    const ranks = new Array(n);
-    const indices = new Array(n);
+    const ranks: number[] = new Array(n);
+    const indices: number[] = new Array(n);
     for (let i = 0; i < n; i++) indices[i] = i;
-    indices.sort((a, b) => values[a] - values[b]);
+    indices.sort((a: number, b: number) => values[a] - values[b]);
 
     for (let i = 0; i < n; ) {
         let j = i;
@@ -40,7 +35,7 @@ function ranksWithTies(values) {
     return ranks;
 }
 
-function pearsonOfRanks(r1, r2) {
+function pearsonOfRanks(r1: number[], r2: number[]): number {
     const n = r1.length;
     if (n <= 1) return 0;
     let m1 = 0;
@@ -62,12 +57,7 @@ function pearsonOfRanks(r1, r2) {
     return num / den;
 }
 
-/**
- * @param {Candle[]} candles
- * @param {{length?: number}} [params]
- * @returns {Point[]}
- */
-export function calcRankCorrelationIndex(candles, params) {
+export function calcRankCorrelationIndex(candles: CandlePoint[], params?: IndicatorParams): IndicatorPoint[] {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 14;
 
     if (!Array.isArray(candles) || candles.length === 0) return [];

@@ -13,26 +13,14 @@
 // `_ema1.NumValuesToInitialize + _ema2.NumValuesToInitialize - 1`
 // (= length + length - 1 = 2*length - 1, i.e. index 2*length-2).
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
 /**
  * @param {CandlePoint[]} candles
  * @param {{length?: number}} [params]
  * @returns {IndicatorPoint[]}
  */
-export function calcDEMA(candles, params) {
+export function calcDEMA(candles: CandlePoint[], params?: IndicatorParams): IndicatorPoint[] {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 32;
     if (!Array.isArray(candles) || candles.length === 0) return [];
 

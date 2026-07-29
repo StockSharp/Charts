@@ -14,6 +14,7 @@ import {
     createIndicatorCatalogController,
 } from './indicator-dialog.js';
 import { ChartTypeSwitcher } from './chart-type-switcher.js';
+import type { ChartOptions, OrderPlace } from '../core/chart-api.js';
 import { TerminalUtils } from './utils.js';
 import { T } from './i18n.js';
 import { IndicatorController } from '../workspace/indicator-controller.js';
@@ -46,12 +47,17 @@ function boot() {
     // Light / dark chart palettes. The page chrome re-themes automatically via
     // terminal.css's [data-bs-theme] CSS vars; the chart canvases (main chart +
     // every sub-pane) are re-coloured explicitly by applyTheme().
-    const THEMES: any = {
+    interface ChartPalette {
+        surf: string; text: string; grid: string; border: string;
+        cross: string; crossLabel: string; up: string; down: string;
+    }
+    type ThemeName = 'dark' | 'light';
+    const THEMES: Record<ThemeName, ChartPalette> = {
         dark:  { surf: '#131820', text: '#8b97a7', grid: 'rgba(30,38,51,0.4)',  border: '#1e2633', cross: 'rgba(74,158,255,0.30)', crossLabel: '#4a9eff', up: '#00c853', down: '#ff3d57' },
         light: { surf: '#ffffff', text: '#5b6b7f', grid: 'rgba(148,163,184,0.28)', border: '#e2e8f0', cross: 'rgba(217,119,6,0.35)',  crossLabel: '#d97706', up: '#16a34a', down: '#dc2626' },
     };
-    let themeName = 'dark';
-    const chartTheme = (p: any) => ({
+    let themeName: ThemeName = 'dark';
+    const chartTheme = (p: ChartPalette) => ({
         layout: { background: { type: 'solid', color: p.surf }, textColor: p.text, fontFamily: "'IBM Plex Mono','Consolas',monospace", fontSize: 11, attributionLogo: false },
         grid: { vertLines: { color: p.grid }, horzLines: { color: p.grid } },
         rightPriceScale: { borderColor: p.border },
@@ -198,7 +204,10 @@ function boot() {
     function applyTheme() {
         const p = THEMES[themeName];
         document.documentElement.setAttribute('data-bs-theme', themeName);
-        const opts = chartTheme(p);
+        // One engine option bag goes to the main chart and to every sub-pane adapter, each
+        // reading only the keys it owns. The annotation sits on the variable, not on
+        // chartTheme's return, so keys the engine ignores stay in the literal untouched.
+        const opts: ChartOptions = chartTheme(p);
         chart.applyOptions(opts);
         candleSeries.applyOptions({ upColor: p.up, downColor: p.down, wickUpColor: p.up, wickDownColor: p.down });
         paneManager.getPanes().forEach((id: string) => { const c = paneManager.getChart(id); if (c) c.applyOptions(opts); });
@@ -274,7 +283,7 @@ function boot() {
         // order — the demo (the host) catches the signal and creates the line, choosing the side from
         // the mouse button (Ctrl + LEFT → Buy / green, Ctrl + RIGHT → Sell / red).
         chart.setOrderPlacement({ modifier: 'ctrl' });
-        chart.subscribeOrderPlace((e) => {
+        chart.subscribeOrderPlace((e: OrderPlace) => {
             const price = snap(e.price);
             if (e.button === 2) addOrder(price, 'Sell', SELL);
             else addOrder(price, 'Buy', BUY);

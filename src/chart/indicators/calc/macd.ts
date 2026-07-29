@@ -7,19 +7,7 @@
 // counting from the first non-null macd sample, so its warm-up stacks
 // on top of the slow-EMA warm-up.
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
  * @typedef {{macd: IndicatorPoint[], signal: IndicatorPoint[], histogram: IndicatorPoint[]}} MACDSeries
@@ -35,7 +23,7 @@
  * @param {number} length
  * @returns {(number|null)[]}
  */
-function emaArray(values, length) {
+function emaArray(values: ReadonlyArray<number | null>, length: number) {
     const n = values.length;
     const out = new Array(n);
     if (n === 0 || length <= 0) {
@@ -83,7 +71,7 @@ function emaArray(values, length) {
  * @param {{fastLength?: number, slowLength?: number, signalLength?: number}} [params]
  * @returns {MACDSeries}
  */
-export function calcMACD(candles, params) {
+export function calcMACD(candles: CandlePoint[], params?: IndicatorParams) {
     const fastLength = params && Number.isFinite(params.fastLength) ? (params.fastLength | 0) : 12;
     const slowLength = params && Number.isFinite(params.slowLength) ? (params.slowLength | 0) : 26;
     const signalLength = params && Number.isFinite(params.signalLength) ? (params.signalLength | 0) : 9;

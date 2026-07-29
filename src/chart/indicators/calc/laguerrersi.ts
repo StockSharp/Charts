@@ -26,26 +26,9 @@
 // — every candle emits a value starting from index 0. We mirror that
 // behaviour: no null padding at the head.
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
-
-/**
- * @param {CandlePoint[]} candles
- * @param {{gamma?: number}} [params]
- * @returns {IndicatorPoint[]}
- */
-export function calcLaguerreRSI(candles, params) {
+export function calcLaguerreRSI(candles: CandlePoint[], params?: IndicatorParams): IndicatorPoint[] {
     if (!Array.isArray(candles) || candles.length === 0) return [];
     const n = candles.length;
 

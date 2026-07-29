@@ -17,27 +17,9 @@
 // for the SMA convention (null until length-1).
 
 import { simpleMA } from './helpers.js';
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
-
-/**
- * @param {CandlePoint[]} candles
- * @param {{shortPeriod?: number, longPeriod?: number}} [params]
- * @returns {IndicatorPoint[]}
- */
-export function calcElliotWaveOscillator(candles, params) {
+export function calcElliotWaveOscillator(candles: CandlePoint[], params?: IndicatorParams): IndicatorPoint[] {
     const shortPeriod = params && Number.isFinite(params.shortPeriod) ? (params.shortPeriod | 0) : 5;
     const longPeriod = params && Number.isFinite(params.longPeriod) ? (params.longPeriod | 0) : 34;
 

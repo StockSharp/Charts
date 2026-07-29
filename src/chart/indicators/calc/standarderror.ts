@@ -9,16 +9,10 @@
 //   - Length == 1: not used; warm-up returns null.
 // Warm-up: first (length-1) values null.
 // Deviations from .cs: none — formula 1:1.
-//
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
-// @typedef {{time:number|string,value:number|null}} Point
 
-/**
- * @param {Candle[]} candles
- * @param {{length?: number}} [params]
- * @returns {Point[]}
- */
-export function calcStandardError(candles, params) {
+import type { CandlePoint, IndicatorParams } from './types.js';
+
+export function calcStandardError(candles: CandlePoint[], params?: IndicatorParams) {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 10;
 
     if (!Array.isArray(candles) || candles.length === 0) return [];

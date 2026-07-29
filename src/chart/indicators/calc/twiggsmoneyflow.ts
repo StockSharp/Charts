@@ -10,16 +10,10 @@
 // (.cs does NOT multiply by 100; returns null when tmf == 0.)
 //
 // Default length = 21.
-//
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
-// @typedef {{time:number|string,value:number|null}} Point
 
-/**
- * @param {(number|null)[]} values
- * @param {number} length
- * @returns {(number|null)[]}
- */
-function emaArray(values, length) {
+import type { CandlePoint, IndicatorParams } from './types.js';
+
+function emaArray(values: (number | null)[], length: number) {
     const n = values.length;
     const out = new Array(n);
     if (n === 0 || length <= 0) {
@@ -50,11 +44,10 @@ function emaArray(values, length) {
 }
 
 /**
- * @param {Candle[]} candles
  * @param {{length?: number}} [params]
- * @returns {Point[]}
+ * @returns {IndicatorPoint[]}
  */
-export function calcTwiggsMoneyFlow(candles, params) {
+export function calcTwiggsMoneyFlow(candles: CandlePoint[], params?: IndicatorParams) {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 21;
     if (!Array.isArray(candles) || candles.length === 0) return [];
     const n = candles.length;

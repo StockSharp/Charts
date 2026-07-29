@@ -15,31 +15,14 @@
 
 import { calcBullPower } from './bullpower.js';
 import { calcBearPower } from './bearpower.js';
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
+interface ElderRaySeries {
+    bull: IndicatorPoint[];
+    bear: IndicatorPoint[];
+}
 
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
-
-/**
- * @typedef {{bull: IndicatorPoint[], bear: IndicatorPoint[]}} ElderRaySeries
- */
-
-/**
- * @param {CandlePoint[]} candles
- * @param {{length?: number}} [params]
- * @returns {ElderRaySeries}
- */
-export function calcElderRay(candles, params) {
+export function calcElderRay(candles: CandlePoint[], params?: IndicatorParams): ElderRaySeries {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 13;
 
     if (!Array.isArray(candles) || candles.length === 0) {

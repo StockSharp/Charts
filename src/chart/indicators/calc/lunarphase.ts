@@ -1,4 +1,5 @@
 import { lunarPhaseFromMilliseconds } from '../../../indicators/math/lunar-phase.js';
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
 // Lunar Phase indicator (Algo.Indicators/LunarPhase.cs).
 // Emits an integer 0..7 per candle, derived from the candle's timestamp.
@@ -33,27 +34,11 @@ import { lunarPhaseFromMilliseconds } from '../../../indicators/math/lunar-phase
 // note applies here too.
 
 /**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
-
-/**
  * Parse a candle.time value to a millisecond UTC timestamp. Accepts
  * numbers (ms or s — heuristic), Date instances, and ISO strings.
  * Returns NaN on unparseable input.
- * @param {string|number|Date} t
- * @returns {number}
  */
-function timeToMs(t) {
+function timeToMs(t: string | number | Date): number {
     if (t instanceof Date) return t.getTime();
     if (typeof t === 'number') {
         // Heuristic: seconds-since-epoch fits within ~10 digits for "modern"
@@ -68,24 +53,16 @@ function timeToMs(t) {
     return NaN;
 }
 
-/**
- * Compute the lunar phase 0..7 for a given UTC ms timestamp.
- * @param {number} ms
- * @returns {number|null}
- */
+/** Compute the lunar phase 0..7 for a given UTC ms timestamp. */
 // Exported under a leading-underscore name to make it explicit that
 // callers outside the test suite shouldn't rely on it — calcLunarPhase
 // is the supported public surface.
-export function _lunarPhaseFromMs(ms) {
+export function _lunarPhaseFromMs(ms: number): number | null {
     return lunarPhaseFromMilliseconds(ms);
 }
 
-/**
- * @param {CandlePoint[]} candles
- * @param {object} [_params] unused
- * @returns {IndicatorPoint[]}
- */
-export function calcLunarPhase(candles, _params) {
+/** @param _params unused */
+export function calcLunarPhase(candles: CandlePoint[], _params?: IndicatorParams): IndicatorPoint[] {
     if (!Array.isArray(candles) || candles.length === 0) return [];
     const n = candles.length;
     const out = new Array(n);

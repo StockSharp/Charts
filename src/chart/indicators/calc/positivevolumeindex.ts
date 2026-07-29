@@ -5,16 +5,10 @@
 //                pvi += pvi * (close - prevClose) / prevClose
 //            else: pvi unchanged.
 // Mirror image of NVI (see nvi.js).
-//
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
-// @typedef {{time:number|string,value:number|null}} Point
 
-/**
- * @param {Candle[]} candles
- * @param {object} [_params]
- * @returns {Point[]}
- */
-export function calcPositiveVolumeIndex(candles, _params) {
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
+
+export function calcPositiveVolumeIndex(candles: CandlePoint[], _params?: IndicatorParams): IndicatorPoint[] {
     if (!Array.isArray(candles) || candles.length === 0) return [];
 
     const n = candles.length;

@@ -24,26 +24,14 @@
 //          buffer[max(0, 3-1-2)] = buffer[0] = SMA[2]
 //          DPO[4] = close[4] - SMA[2]   (SMA over close[0..2])
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
 /**
  * @param {CandlePoint[]} candles
  * @param {{length?: number}} [params]
  * @returns {IndicatorPoint[]}
  */
-export function calcDPO(candles, params) {
+export function calcDPO(candles: CandlePoint[], params?: IndicatorParams): IndicatorPoint[] {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 3;
     if (!Array.isArray(candles) || candles.length === 0) return [];
 

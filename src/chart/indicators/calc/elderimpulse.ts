@@ -39,33 +39,20 @@
 //   + 1` instead of `max(emaFormedBar, macdFormedBar)`). This is the
 //   only difference; subsequent bars match the .cs exactly.
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null, state?: string}} ElderPoint
- */
-
 // StockSharp EMA/MACD emit partial (Buffer.Sum/Length) values during warm-up, and
 // ElderImpulse reads their GetCurrentValue() — the last emitted value, partials
 // included — as the previous EMA/MACD. So we seed the EMAs partially (non-null from
 // bar 0), not with an SMA seed that nulls the warm-up, or the previous-MACD comparison
 // on the first formed bar would be wrong.
 import { partialSeedEMA } from './helpers.js';
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
-/**
- * @param {CandlePoint[]} candles
- * @param {{emaLength?: number, fastLength?: number, slowLength?: number}} [params]
- * @returns {ElderPoint[]}
- */
-export function calcElderImpulse(candles, params) {
+/** Elder Impulse adds the colour band on top of the numeric -1/0/+1 value. */
+interface ElderPoint extends IndicatorPoint {
+    state?: string;
+}
+
+export function calcElderImpulse(candles: CandlePoint[], params?: IndicatorParams): ElderPoint[] {
     const emaLen = params && Number.isFinite(params.emaLength) ? (params.emaLength | 0) : 13;
     const fastLen = params && Number.isFinite(params.fastLength) ? (params.fastLength | 0) : 12;
     const slowLen = params && Number.isFinite(params.slowLength) ? (params.slowLength | 0) : 26;

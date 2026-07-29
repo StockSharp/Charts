@@ -32,20 +32,7 @@
 //   * EMA warm-up matches calcEMA: SMA-seed at index = Length-1.
 
 import { simpleMA, smoothedMA } from './helpers.js';
-
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
 /**
  * @typedef {{composite: IndicatorPoint[], sma: IndicatorPoint[]}} CompositeMomentumSeries
@@ -61,7 +48,7 @@ import { simpleMA, smoothedMA } from './helpers.js';
  * @param {number} length
  * @returns {(number|null)[]}
  */
-function rocArray(values, length) {
+function rocArray(values: (number | null)[], length: number): (number | null)[] {
     const n = values.length;
     const out = new Array(n);
     for (let i = 0; i < n; i++) out[i] = null;
@@ -85,7 +72,7 @@ function rocArray(values, length) {
  * @param {number} length
  * @returns {(number|null)[]}
  */
-function emaArray(values, length) {
+function emaArray(values: (number | null)[], length: number): (number | null)[] {
     const n = values.length;
     const out = new Array(n);
     if (n === 0 || length <= 0) {
@@ -127,7 +114,7 @@ function emaArray(values, length) {
  * @param {number} length
  * @returns {(number|null)[]}
  */
-function rsiArray(values, length) {
+function rsiArray(values: (number | null)[], length: number): (number | null)[] {
     const n = values.length;
     const out = new Array(n);
     for (let i = 0; i < n; i++) out[i] = null;
@@ -165,7 +152,10 @@ function rsiArray(values, length) {
  * @param {{shortRocLength?: number, longRocLength?: number, rsiLength?: number, fastLength?: number, slowLength?: number, smaLength?: number}} [params]
  * @returns {CompositeMomentumSeries}
  */
-export function calcCompositeMomentum(candles, params) {
+export function calcCompositeMomentum(
+    candles: CandlePoint[],
+    params?: IndicatorParams,
+): { composite: IndicatorPoint[]; sma: IndicatorPoint[] } {
     const shortRocLen = params && Number.isFinite(params.shortRocLength) ? (params.shortRocLength | 0) : 14;
     const longRocLen  = params && Number.isFinite(params.longRocLength)  ? (params.longRocLength  | 0) : 28;
     const rsiLen      = params && Number.isFinite(params.rsiLength)      ? (params.rsiLength      | 0) : 14;

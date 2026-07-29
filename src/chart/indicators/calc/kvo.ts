@@ -29,32 +29,20 @@
 //   * .cs initial _prevHlc = 0; the very first candle compares hlc > 0 →
 //     usually +1 for any real instrument. Reproduced as-is.
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
-
-/**
- * @typedef {{shortEma: IndicatorPoint[], longEma: IndicatorPoint[], oscillator: IndicatorPoint[]}} KVOSeries
- */
+/** The two KVO EMAs plus their difference, each aligned 1:1 with the input candles. */
+export interface KVOSeries {
+    shortEma: IndicatorPoint[];
+    longEma: IndicatorPoint[];
+    oscillator: IndicatorPoint[];
+}
 
 /**
  * EMA with SMA seed (length-1 nulls, then EMA recurrence). Inputs that
  * are null/NaN emit null but do not poison the running EMA after seed.
- * @param {(number|null)[]} values
- * @param {number} length
- * @returns {(number|null)[]}
  */
-function emaArray(values, length) {
+function emaArray(values: ReadonlyArray<number | null | undefined>, length: number) {
     const n = values.length;
     const out = new Array(n);
     for (let i = 0; i < n; i++) out[i] = null;
@@ -87,12 +75,7 @@ function emaArray(values, length) {
     return out;
 }
 
-/**
- * @param {CandlePoint[]} candles
- * @param {{shortPeriod?: number, longPeriod?: number}} [params]
- * @returns {KVOSeries}
- */
-export function calcKVO(candles, params) {
+export function calcKVO(candles: CandlePoint[], params?: IndicatorParams): KVOSeries {
     const shortLen = params && Number.isFinite(params.shortPeriod) ? (params.shortPeriod | 0) : 34;
     const longLen  = params && Number.isFinite(params.longPeriod)  ? (params.longPeriod  | 0) : 55;
     if (!Array.isArray(candles) || candles.length === 0) {

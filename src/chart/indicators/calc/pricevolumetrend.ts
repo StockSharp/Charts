@@ -3,16 +3,10 @@
 //   First bar: emit null (no previous close to compute pct change).
 //   Subsequent: pvt = prevPvt + volume * (close - prevClose) / prevClose.
 //   pvt seed = 0 (per .cs Reset).
-//
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
-// @typedef {{time:number|string,value:number|null}} Point
 
-/**
- * @param {Candle[]} candles
- * @param {object} [_params]
- * @returns {Point[]}
- */
-export function calcPriceVolumeTrend(candles, _params) {
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
+
+export function calcPriceVolumeTrend(candles: CandlePoint[], _params?: IndicatorParams): IndicatorPoint[] {
     if (!Array.isArray(candles) || candles.length === 0) return [];
     const n = candles.length;
     const out = new Array(n);

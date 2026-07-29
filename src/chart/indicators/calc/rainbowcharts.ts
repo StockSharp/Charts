@@ -12,16 +12,19 @@
 
 import { simpleMA as simpleMA_RC } from './helpers.js';
 
+import type { CandlePoint, IndicatorLines, IndicatorParams } from './types.js';
+
 /**
  * @param {Candle[]} candles
  * @param {{lines?: number}} [params]
  * @returns {Object<string, Point[]>}
  */
-export function calcRainbowCharts(candles, params) {
+
+export function calcRainbowCharts(candles: CandlePoint[], params?: IndicatorParams) {
     const lines = params && Number.isFinite(params.lines) ? Math.max(1, params.lines | 0) : 10;
 
     if (!Array.isArray(candles) || candles.length === 0) {
-        const empty = {};
+        const empty: IndicatorLines = {};
         for (let i = 1; i < lines; i++) empty['sma' + i] = [];
         return empty;
     }
@@ -30,7 +33,7 @@ export function calcRainbowCharts(candles, params) {
     const closes = new Array(n);
     for (let i = 0; i < n; i++) closes[i] = candles[i] && candles[i].close;
 
-    const out = {};
+    const out: IndicatorLines = {};
     for (let k = 1; k < lines; k++) {
         const ma = simpleMA_RC(closes, k * 2);
         const series = new Array(n);

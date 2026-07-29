@@ -3,14 +3,10 @@
 // ROC[i]      = momentum[i] / close[i-Length] * 100,
 // emitted only when Length+1 closes are available AND close[i-Length] != 0.
 // Deviations from .cs: none — formula is straight 1:1.
-//
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
-// @typedef {{time:number|string,value:number|null}} Point
-//
-// @param {Candle[]} candles
-// @param {{length?: number}} [params]
-// @returns {Point[]}
-export function calcRateOfChange(candles, params) {
+
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
+
+export function calcRateOfChange(candles: CandlePoint[], params?: IndicatorParams): IndicatorPoint[] {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 12;
     if (!Array.isArray(candles) || candles.length === 0) return [];
 

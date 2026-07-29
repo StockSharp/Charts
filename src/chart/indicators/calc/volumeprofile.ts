@@ -14,16 +14,16 @@
 // available; we use close-price total-volume buckets unconditionally
 // because client-side candle data lacks per-trade PriceLevels.
 //
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
 // @typedef {{price:number,volume:number}} Bucket
-// @typedef {{time:number|string,value:number|null,buckets:Bucket[]}} Point
+// @typedef {{time:number|string,value:number|null,buckets:Bucket[]}} ProfilePoint
+
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
- * @param {Candle[]} candles
  * @param {{step?: number}} [params]
- * @returns {Point[]}
+ * @returns {ProfilePoint[]}
  */
-export function calcVolumeProfile(candles, params) {
+export function calcVolumeProfile(candles: CandlePoint[], params?: IndicatorParams) {
     const step = params && Number.isFinite(params.step) && params.step > 0 ? +params.step : 1;
     if (!Array.isArray(candles) || candles.length === 0) return [];
 

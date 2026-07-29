@@ -16,16 +16,15 @@
 // signal[i] = (rvi[i-3] + 2*rvi[i-2] + 2*rvi[i-1] + rvi[i]) / 6
 // Both series same length as input; null in warm-up.
 // Deviations from .cs: none — formula and weights match 1:1.
-//
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
-// @typedef {{time:number|string,value:number|null}} Point
 
-/**
- * @param {Candle[]} candles
- * @param {{length?: number, signalLength?: number}} [params]
- * @returns {{rvi: Point[], signal: Point[]}}
- */
-export function calcRelativeVigorIndex(candles, params) {
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
+
+export interface RelativeVigorIndexSeries {
+    rvi: IndicatorPoint[];
+    signal: IndicatorPoint[];
+}
+
+export function calcRelativeVigorIndex(candles: CandlePoint[], params?: IndicatorParams): RelativeVigorIndexSeries {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 4;
     const signalLength = params && Number.isFinite(params.signalLength) ? (params.signalLength | 0) : 4;
 
@@ -87,7 +86,7 @@ export function calcRelativeVigorIndex(candles, params) {
     return { rvi, signal };
 }
 
-function finiteCandle(c) {
+function finiteCandle(c: CandlePoint): boolean {
     return c &&
         typeof c.open === 'number' && Number.isFinite(c.open) &&
         typeof c.high === 'number' && Number.isFinite(c.high) &&

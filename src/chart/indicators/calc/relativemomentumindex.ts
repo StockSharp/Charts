@@ -9,18 +9,11 @@
 // closes), then SMA needs `Length` momentum values, so first non-null lands
 // at index M + Length - 1.
 // Deviations from .cs: none — formula is straight 1:1.
-//
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
-// @typedef {{time:number|string,value:number|null}} Point
 
 import { simpleMA as simpleMA_RMI } from './helpers.js';
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
-/**
- * @param {Candle[]} candles
- * @param {{length?: number, momentum?: number, momentumPeriod?: number}} [params]
- * @returns {Point[]}
- */
-export function calcRelativeMomentumIndex(candles, params) {
+export function calcRelativeMomentumIndex(candles: CandlePoint[], params?: IndicatorParams): IndicatorPoint[] {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 14;
     const momentumPeriod = params && Number.isFinite(params.momentum)
         ? (params.momentum | 0)

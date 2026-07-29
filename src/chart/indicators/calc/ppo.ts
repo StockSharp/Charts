@@ -11,19 +11,20 @@
 //   histogram= ppo - signal
 //
 // Defaults: shortLength=12, longLength=26, signalLength=9.
-//
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
-// @typedef {{time:number|string,value:number|null}} Point
-// @typedef {{ppo: Point[], signal: Point[], histogram: Point[]}} PPOSeries
+
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
+
+export interface PPOSeries {
+    ppo: IndicatorPoint[];
+    signal: IndicatorPoint[];
+    histogram: IndicatorPoint[];
+}
 
 /**
  * EMA-of-(number|null)[] returning same-length (number|null)[]. Seed with SMA
  * of first `length` valid values (matches macd.js / ema.js convention).
- * @param {(number|null)[]} values
- * @param {number} length
- * @returns {(number|null)[]}
  */
-function emaArray(values, length) {
+function emaArray(values: (number | null)[], length: number): (number | null)[] {
     const n = values.length;
     const out = new Array(n);
     if (n === 0 || length <= 0) {
@@ -55,12 +56,7 @@ function emaArray(values, length) {
     return out;
 }
 
-/**
- * @param {Candle[]} candles
- * @param {{shortLength?: number, longLength?: number, signalLength?: number}} [params]
- * @returns {PPOSeries}
- */
-export function calcPPO(candles, params) {
+export function calcPPO(candles: CandlePoint[], params?: IndicatorParams): PPOSeries {
     const shortLength  = params && Number.isFinite(params.shortLength)  ? (params.shortLength  | 0) : 12;
     const longLength   = params && Number.isFinite(params.longLength)   ? (params.longLength   | 0) : 26;
     const signalLength = params && Number.isFinite(params.signalLength) ? (params.signalLength | 0) : 9;
@@ -94,7 +90,7 @@ export function calcPPO(candles, params) {
         signal[i] = { time: t, value: signalRaw[i] };
         histogram[i] = {
             time: t,
-            value: (ppoRaw[i] === null || signalRaw[i] === null) ? null : ppoRaw[i] - signalRaw[i],
+            value: (ppoRaw[i] === null || signalRaw[i] === null) ? null : ppoRaw[i] - signalRaw[i]!,
         };
     }
 

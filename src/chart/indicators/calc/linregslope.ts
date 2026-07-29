@@ -16,28 +16,10 @@
 // JS port matches the surrounding code style and emits `null` until
 // Buffer.Count >= Length (the .NET IsFormed gate).
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
-
-/**
- * Compute least-squares slope over `length` closes ending at `endIdx`.
- * @param {(number|null)[]} closes
- * @param {number} endIdx
- * @param {number} length
- * @returns {number|null}
- */
-function lrSlope(closes, endIdx, length) {
+/** Compute least-squares slope over `length` closes ending at `endIdx`. */
+function lrSlope(closes: ReadonlyArray<number | null | undefined>, endIdx: number, length: number): number | null {
     let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
     for (let k = 0; k < length; k++) {
         const y = closes[endIdx - length + 1 + k];
@@ -52,13 +34,8 @@ function lrSlope(closes, endIdx, length) {
     return (length * sumXY - sumX * sumY) / divisor;
 }
 
-/**
- * Linear regression slope over `length` closes.
- * @param {CandlePoint[]} candles
- * @param {{length?: number}} [params]
- * @returns {IndicatorPoint[]}
- */
-export function calcLinearRegSlope(candles, params) {
+/** Linear regression slope over `length` closes. */
+export function calcLinearRegSlope(candles: CandlePoint[], params?: IndicatorParams): IndicatorPoint[] {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 11;
     if (!Array.isArray(candles) || candles.length === 0) return [];
 

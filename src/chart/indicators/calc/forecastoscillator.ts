@@ -18,26 +18,9 @@
 // When close[i] is zero or non-finite, FOSC is set to null to avoid
 // the div-by-zero on the percent calculation (the .cs would throw).
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
-
-/**
- * @param {CandlePoint[]} candles
- * @param {{length?: number}} [params]
- * @returns {IndicatorPoint[]}
- */
-export function calcForecastOscillator(candles, params) {
+export function calcForecastOscillator(candles: CandlePoint[], params?: IndicatorParams): IndicatorPoint[] {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 14;
 
     if (!Array.isArray(candles) || candles.length === 0) return [];

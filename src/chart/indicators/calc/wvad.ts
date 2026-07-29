@@ -3,16 +3,13 @@
 // If high == low the bar contributes 0. .cs has wvad start at 0.
 //
 // Deviations from .cs: none.
-//
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
-// @typedef {{time:number|string,value:number|null}} Point
+
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
- * @param {Candle[]} candles
- * @param {{}} [_params]
- * @returns {Point[]}
+ * @returns {IndicatorPoint[]}
  */
-export function calcWVAD(candles, _params) {
+export function calcWVAD(candles: CandlePoint[], _params?: IndicatorParams) {
     if (!Array.isArray(candles) || candles.length === 0) return [];
     const n = candles.length;
     const out = new Array(n);

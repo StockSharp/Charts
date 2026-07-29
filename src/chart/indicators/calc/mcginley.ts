@@ -11,6 +11,8 @@
 
 import { simpleMA } from './helpers.js';
 
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
+
 /**
  * @typedef {object} CandlePoint
  * @property {string|number} time
@@ -30,7 +32,8 @@ import { simpleMA } from './helpers.js';
  * @param {{length?: number}} [params]
  * @returns {IndicatorPoint[]}
  */
-export function calcMcGinleyDynamic(candles, params) {
+
+export function calcMcGinleyDynamic(candles: CandlePoint[], params?: IndicatorParams): IndicatorPoint[] {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 14;
     if (!Array.isArray(candles) || candles.length === 0) return [];
 
@@ -75,7 +78,7 @@ export function calcMcGinleyDynamic(candles, params) {
             out[i] = { time: candles[i].time, value: null };
             continue;
         }
-        const md = prev + (price - prev) / denom;
+        const md: number = prev + (price - prev) / denom;
         out[i] = { time: candles[i].time, value: md };
         prev = md;
     }

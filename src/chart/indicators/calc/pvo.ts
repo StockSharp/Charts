@@ -12,11 +12,16 @@
 // are formed.
 //
 // Deviations from .cs: none.
-//
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
-// @typedef {{time:number|string,value:number|null}} Point
 
-function emaArr(values, length) {
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
+
+export interface PVOSeries {
+    shortEma: IndicatorPoint[];
+    longEma: IndicatorPoint[];
+    pvo: IndicatorPoint[];
+}
+
+function emaArr(values: (number | null | undefined)[], length: number): (number | null)[] {
     const n = values.length;
     const out = new Array(n);
     if (n === 0 || length <= 0) { for (let i = 0; i < n; i++) out[i] = null; return out; }
@@ -42,12 +47,7 @@ function emaArr(values, length) {
     return out;
 }
 
-/**
- * @param {Candle[]} candles
- * @param {{shortPeriod?: number, longPeriod?: number}} [params]
- * @returns {{shortEma: Point[], longEma: Point[], pvo: Point[]}}
- */
-export function calcPVO(candles, params) {
+export function calcPVO(candles: CandlePoint[], params?: IndicatorParams): PVOSeries {
     const shortPeriod = params && Number.isFinite(params.shortPeriod) ? (params.shortPeriod | 0) : 12;
     const longPeriod = params && Number.isFinite(params.longPeriod) ? (params.longPeriod | 0) : 26;
     if (!Array.isArray(candles) || candles.length === 0) {
@@ -73,7 +73,7 @@ export function calcPVO(candles, params) {
         } else if (l[i] === 0) {
             pvo[i] = { time: t, value: 0 };
         } else {
-            pvo[i] = { time: t, value: (s[i] - l[i]) / l[i] * 100 };
+            pvo[i] = { time: t, value: (s[i]! - l[i]!) / l[i]! * 100 };
         }
     }
     return { shortEma, longEma, pvo };

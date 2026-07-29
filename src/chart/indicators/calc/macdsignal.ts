@@ -18,20 +18,7 @@
 // signal=9.
 
 import { calcMACD } from './macd.js';
-
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
  * @typedef {{macd: IndicatorPoint[], signal: IndicatorPoint[]}} MACDSignalSeries
@@ -42,7 +29,7 @@ import { calcMACD } from './macd.js';
  * @param {{longLength?: number, shortLength?: number, signalLength?: number}} [params]
  * @returns {MACDSignalSeries}
  */
-export function calcMovingAverageConvergenceDivergenceSignal(candles, params) {
+export function calcMovingAverageConvergenceDivergenceSignal(candles: CandlePoint[], params?: IndicatorParams) {
     const longLength = params && Number.isFinite(params.longLength) ? (params.longLength | 0) : 26;
     const shortLength = params && Number.isFinite(params.shortLength) ? (params.shortLength | 0) : 12;
     const signalLength = params && Number.isFinite(params.signalLength) ? (params.signalLength | 0) : 9;

@@ -9,27 +9,9 @@
 // Alligator / RSI). We just delegate to helpers.wilderMA on closes.
 
 import { wilderMA } from './helpers.js';
+import type { CandlePoint, IndicatorParams } from './types.js';
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
-
-/**
- * @param {CandlePoint[]} candles
- * @param {{length?: number}} [params]
- * @returns {IndicatorPoint[]}
- */
-export function calcSMMA(candles, params) {
+export function calcSMMA(candles: CandlePoint[], params?: IndicatorParams) {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 32;
     if (!Array.isArray(candles) || candles.length === 0) return [];
 

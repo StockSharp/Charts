@@ -8,15 +8,11 @@
 // IsFormed. We mirror that: emit values from index 0.
 // Deviations from .cs: none — same indices, same period.
 //
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
-// @typedef {{time:number|string,value:number|null}} Point
+// Returns the two lines under the `sine` / `leadsine` keys.
 
-/**
- * @param {Candle[]} candles
- * @param {{length?: number}} [params]
- * @returns {{sine: Point[], leadsine: Point[]}}
- */
-export function calcSineWave(candles, params) {
+import type { CandlePoint, IndicatorParams } from './types.js';
+
+export function calcSineWave(candles: CandlePoint[], params?: IndicatorParams) {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 14;
 
     if (!Array.isArray(candles) || candles.length === 0) {

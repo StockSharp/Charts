@@ -36,20 +36,7 @@
 // aligned 1:1 with input candles.
 
 import { simpleMA, smoothedMA, partialSeedSMA } from './helpers.js';
-
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
 /**
  * @typedef {{composite: IndicatorPoint[], fastSma: IndicatorPoint[], slowSma: IndicatorPoint[]}} CBCISeries
@@ -63,7 +50,7 @@ import { simpleMA, smoothedMA, partialSeedSMA } from './helpers.js';
  * @param {number} length
  * @returns {(number|null)[]}
  */
-function partialRsi(closes, length) {
+function partialRsi(closes: (number | null)[], length: number): (number | null)[] {
     const n = closes.length;
     const out = new Array(n);
     for (let i = 0; i < n; i++) out[i] = null;
@@ -102,7 +89,10 @@ function partialRsi(closes, length) {
  * @param {{rsiLength?: number, rocLength?: number, shortRsiLength?: number, momentumLength?: number, fastSmaLength?: number, slowSmaLength?: number}} [params]
  * @returns {CBCISeries}
  */
-export function calcConstanceBrownCompositeIndex(candles, params) {
+export function calcConstanceBrownCompositeIndex(
+    candles: CandlePoint[],
+    params?: IndicatorParams,
+): { composite: IndicatorPoint[]; fastSma: IndicatorPoint[]; slowSma: IndicatorPoint[] } {
     const rsiLength = params && Number.isFinite(params.rsiLength) ? (params.rsiLength | 0) : 14;
     const rocLength = params && Number.isFinite(params.rocLength) ? (params.rocLength | 0) : 9;
     const shortRsiLength = params && Number.isFinite(params.shortRsiLength) ? (params.shortRsiLength | 0) : 3;

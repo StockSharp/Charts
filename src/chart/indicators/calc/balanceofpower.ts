@@ -11,26 +11,14 @@
 // still aligns). Same applies to bars with non-finite OHLC. Result
 // length always equals `candles.length`.
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
  * @param {CandlePoint[]} candles
  * @param {object} [_params] No tunables — accepted for registry uniformity.
  * @returns {IndicatorPoint[]}
  */
-export function calcBalanceOfPower(candles, _params) {
+export function calcBalanceOfPower(candles: CandlePoint[], _params?: IndicatorParams) {
     if (!Array.isArray(candles) || candles.length === 0) return [];
 
     const n = candles.length;

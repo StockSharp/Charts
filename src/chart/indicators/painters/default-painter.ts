@@ -9,7 +9,9 @@ import { applyMappedRuntimePatch, valuePoint } from './runtime-patch.js';
 /** Plain-line fallback. It is deliberately not registered under a catalog name. */
 export class DefaultIndicatorPainter implements IndicatorPainter {
     paint(context: IndicatorPainterContext): IndicatorPaintResult {
-        const outputs = context.entry.outputNames?.length ? context.entry.outputNames : ['value'];
+        // `context.entry` is the shell-owned catalog entry (typed `any` on the painter contract),
+        // so the output-name list has to be pinned here or `.map` callbacks below infer implicit any.
+        const outputs: string[] = context.entry.outputNames?.length ? context.entry.outputNames : ['value'];
         const colors: string[] = [];
         const series: any[] = [];
 
@@ -51,14 +53,14 @@ export class DefaultIndicatorPainter implements IndicatorPainter {
     }
 
     update(context: IndicatorPainterContext, series: any[]): void {
-        const outputs = context.entry.outputNames?.length ? context.entry.outputNames : ['value'];
+        const outputs: string[] = context.entry.outputNames?.length ? context.entry.outputNames : ['value'];
         for (let i = 0; i < outputs.length && i < series.length; i++) {
             series[i].setData(context.output(outputs[i]));
         }
     }
 
     applyPatch(context: IndicatorPainterPatchContext, series: any[]): boolean {
-        const outputs = context.entry.outputNames?.length
+        const outputs: string[] = context.entry.outputNames?.length
             ? context.entry.outputNames
             : ['value'];
         return applyMappedRuntimePatch(context, series, outputs.map((output, seriesIndex) => ({

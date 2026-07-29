@@ -43,19 +43,7 @@
 // `IsFormed` only flips after Buffer fills, but the .cs returns the value
 // regardless of formation).
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
  * @param {CandlePoint[]} candles
@@ -64,7 +52,7 @@
  *   Values <= 1 are clamped to 1 (per .cs setter).
  * @returns {IndicatorPoint[]}
  */
-export function calcNickRypockTrailingReverse(candles, params) {
+export function calcNickRypockTrailingReverse(candles: CandlePoint[], params?: IndicatorParams) {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 50;
     let multipleRaw = params && Number.isFinite(params.multiple) ? params.multiple : 100;
     if (multipleRaw <= 1) multipleRaw = 1;

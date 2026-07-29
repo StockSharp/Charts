@@ -6,16 +6,10 @@
 // close[i] verbatim. Default Length = 1.
 // Deviations from .cs: none — .cs really just gates output by counting down
 // `_left` and emits the current input once `_left <= 0`.
-//
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
-// @typedef {{time:number|string,value:number|null}} Point
 
-/**
- * @param {Candle[]} candles
- * @param {{length?: number}} [params]
- * @returns {Point[]}
- */
-export function calcShift(candles, params) {
+import type { CandlePoint, IndicatorParams } from './types.js';
+
+export function calcShift(candles: CandlePoint[], params?: IndicatorParams) {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 1;
 
     if (!Array.isArray(candles) || candles.length === 0) return [];

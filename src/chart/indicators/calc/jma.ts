@@ -38,26 +38,9 @@
 //   prevMa2 = close[length-1]. So there is NO leading-null block — the first
 //   `length` outputs are the close prices themselves.
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
-
-/**
- * @param {CandlePoint[]} candles
- * @param {{length?: number, phase?: number}} [params]
- * @returns {IndicatorPoint[]}
- */
-export function calcJurikMovingAverage(candles, params) {
+export function calcJurikMovingAverage(candles: CandlePoint[], params?: IndicatorParams): IndicatorPoint[] {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 20;
     let phase = params && Number.isFinite(params.phase) ? (params.phase | 0) : 0;
     // .cs throws on phase out of [-100, 100]. Clamp here defensively so a

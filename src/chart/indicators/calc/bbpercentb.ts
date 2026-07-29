@@ -14,27 +14,14 @@
 // band is 100. The textbook variant returns 0..1 — we follow the .cs.
 
 import { simpleMA } from './helpers.js';
-
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
  * @param {CandlePoint[]} candles
  * @param {{length?: number, stdDevMultiplier?: number}} [params]
  * @returns {IndicatorPoint[]}
  */
-export function calcBollingerPercentB(candles, params) {
+export function calcBollingerPercentB(candles: CandlePoint[], params?: IndicatorParams) {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 20;
     const k = params && Number.isFinite(params.stdDevMultiplier)
         ? +params.stdDevMultiplier : 2;

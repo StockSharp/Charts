@@ -5,26 +5,13 @@
 // is the triangular number length*(length+1)/2 (constant per call).
 // First (length-1) outputs are null (warm-up).
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
-
-/**
- * @param {CandlePoint[]} candles
  * @param {{length?: number}} [params]
  * @returns {IndicatorPoint[]}
  */
-export function calcWMA(candles, params) {
+export function calcWMA(candles: CandlePoint[], params?: IndicatorParams) {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 20;
     if (!Array.isArray(candles) || candles.length === 0) return [];
 

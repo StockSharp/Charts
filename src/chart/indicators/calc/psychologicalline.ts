@@ -11,16 +11,10 @@
 //     push price into buffer
 //   Output once formed: upCount / length (a [0..1] ratio per the .cs's
 //   MinusOnePlusOne measure; not multiplied by 100).
-//
-// @typedef {{time:number|string,open:number,high:number,low:number,close:number,volume:number}} Candle
-// @typedef {{time:number|string,value:number|null}} Point
 
-/**
- * @param {Candle[]} candles
- * @param {{length?: number}} [params]
- * @returns {Point[]}
- */
-export function calcPsychologicalLine(candles, params) {
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
+
+export function calcPsychologicalLine(candles: CandlePoint[], params?: IndicatorParams): IndicatorPoint[] {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 20;
     if (!Array.isArray(candles) || candles.length === 0) return [];
     const n = candles.length;
@@ -28,7 +22,6 @@ export function calcPsychologicalLine(candles, params) {
     for (let i = 0; i < n; i++) out[i] = { time: candles[i].time, value: null };
     if (length <= 0) return out;
 
-    /** @type {number[]} */
     const buffer: number[] = [];
     let upCount = 0;
 

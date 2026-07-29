@@ -29,26 +29,9 @@
 // (c) `IsFinal=false` (intra-bar) branch from the .cs is ignored: this
 //     calculator only processes a homogenous batch of closed bars.
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
+import type { CandlePoint, IndicatorParams, IndicatorPoint } from './types.js';
 
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
-
-/**
- * @param {CandlePoint[]} candles
- * @param {{length?: number}} [params]
- * @returns {IndicatorPoint[]}
- */
-export function calcFractalDimension(candles, params) {
+export function calcFractalDimension(candles: CandlePoint[], params?: IndicatorParams): IndicatorPoint[] {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 30;
 
     if (!Array.isArray(candles) || candles.length === 0) return [];

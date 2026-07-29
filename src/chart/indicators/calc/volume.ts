@@ -5,26 +5,17 @@
 // original candle stream. Missing/non-finite volume → value:null,
 // up defaults to true (matches StockSharp's default neutral colouring).
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
  * @typedef {{time: string|number, value: number|null, up: boolean}} VolumePoint
  */
 
 /**
- * @param {CandlePoint[]} candles
- * @param {object} [_params] No tunables — accepted for registry uniformity.
+ * @param _params No tunables — accepted for registry uniformity.
  * @returns {VolumePoint[]}
  */
-export function calcVolume(candles, _params) {
+export function calcVolume(candles: CandlePoint[], _params?: IndicatorParams) {
     if (!Array.isArray(candles) || candles.length === 0) return [];
     const n = candles.length;
     const out = new Array(n);

@@ -12,27 +12,14 @@
 
 import { simpleMA } from './helpers.js';
 import { calcAwesomeOscillator } from './awesomeoscillator.js';
-
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
  * @param {CandlePoint[]} candles
  * @param {{shortLength?: number, longLength?: number, smaLength?: number}} [params]
  * @returns {IndicatorPoint[]}
  */
-export function calcAcceleration(candles, params) {
+export function calcAcceleration(candles: CandlePoint[], params?: IndicatorParams) {
     const shortLength = params && Number.isFinite(params.shortLength) ? (params.shortLength | 0) : 5;
     const longLength = params && Number.isFinite(params.longLength) ? (params.longLength | 0) : 34;
     const smaLength = params && Number.isFinite(params.smaLength) ? (params.smaLength | 0) : 5;

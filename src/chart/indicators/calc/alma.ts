@@ -24,26 +24,14 @@
 // mapping inverted, which produced opposite-direction lag/lead.
 // First (length-1) outputs are null (warm-up).
 
-/**
- * @typedef {object} CandlePoint
- * @property {string|number} time
- * @property {number} open
- * @property {number} high
- * @property {number} low
- * @property {number} close
- * @property {number} [volume]
- */
-
-/**
- * @typedef {{time: string|number, value: number|null}} IndicatorPoint
- */
+import type { CandlePoint, IndicatorParams } from './types.js';
 
 /**
  * @param {CandlePoint[]} candles
  * @param {{length?: number, offset?: number, sigma?: number}} [params]
  * @returns {IndicatorPoint[]}
  */
-export function calcALMA(candles, params) {
+export function calcALMA(candles: CandlePoint[], params?: IndicatorParams) {
     const length = params && Number.isFinite(params.length) ? (params.length | 0) : 9;
     const offset = params && Number.isFinite(params.offset) ? params.offset : 0.85;
     const sigma = params && Number.isFinite(params.sigma) ? (params.sigma | 0) : 6;
