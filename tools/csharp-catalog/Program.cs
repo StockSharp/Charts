@@ -18,6 +18,17 @@ var excluded = new HashSet<string>
 var provider = new IndicatorProvider();
 provider.Init();
 
+// Build the input the way the platform does. An indicator declares what it consumes through
+// IndicatorInAttribute; BaseIndicator declares DecimalIndicatorValue, so anything that does not
+// override it is handed the CLOSE, not the candle. Forcing a candle into such an indicator makes
+// ToCandle() hand back that candle's own high/low and the dump silently agrees with a client that
+// makes the same mistake. Mirrors Tests/IndicatorTests.cs in the StockSharp repo.
+// DecimalIndicatorValue.IsFinal defaults to false, so it is always set explicitly here.
+static IIndicatorValue MakeInput(IndicatorType type, IIndicator indicator, ICandleMessage candle, bool isFinal)
+    => type.InputValue == typeof(DecimalIndicatorValue)
+        ? new DecimalIndicatorValue(indicator, candle.ClosePrice, candle.OpenTime) { IsFinal = isFinal }
+        : new CandleIndicatorValue(indicator, candle) { IsFinal = isFinal };
+
 // --values mode: run every single-output indicator (default params) over a fixed, deterministic
 // OHLCV series and print { input, indicators:[{ kind, params, values:(number|null)[] }] } so the
 // Charts numeric-parity test can compare the JS port bar-for-bar. The C# side is authoritative and
@@ -99,7 +110,7 @@ if (args.Contains("--values"))
             {
                 foreach (var candle in input)
                 {
-                    var res = ind.Process(new CandleIndicatorValue(ind, candle));
+                    var res = ind.Process(MakeInput(e, ind, candle, true));
                     var cv = res as IComplexIndicatorValue;
                     for (var li = 0; li < inners.Count; li++)
                     {
@@ -130,7 +141,7 @@ if (args.Contains("--values"))
         {
             foreach (var candle in input)
             {
-                var res = ind.Process(new CandleIndicatorValue(ind, candle));
+                var res = ind.Process(MakeInput(e, ind, candle, true));
                 values.Add(res.IsEmpty || !ind.IsFormed ? null : res.GetValue<decimal>());
             }
 
@@ -138,7 +149,7 @@ if (args.Contains("--values"))
             // so every probe reads off the same post-series state (final candle still "forming").
             foreach (var probe in probes)
             {
-                var res = ind.Process(new CandleIndicatorValue(ind, probe) { IsFinal = false });
+                var res = ind.Process(MakeInput(e, ind, probe, false));
                 previews.Add(res.IsEmpty || !ind.IsFormed ? null : res.GetValue<decimal>());
             }
         }
