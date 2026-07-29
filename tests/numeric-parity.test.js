@@ -30,9 +30,34 @@ const MULTI_LINE = {
     MovingAverageCrossover: 'signal',
 };
 
-// Genuinely non-scalar indicators: the C# exposes no single line (GetValue is null),
-// so they are out of scope for the scalar bar-for-bar parity.
-const NON_SCALAR = new Set(['VolumeProfileIndicator']);
+// Indicators deliberately left out of the scalar bar-for-bar comparison, each with the reason.
+// Asserted as an exact set below: a new exclusion cannot appear silently, and an entry that
+// stops applying fails too, so the list cannot rot.
+const NON_SCALAR = {
+    VolumeProfileIndicator: 'histogram over price levels — the C# exposes no single line (GetValue is null)',
+};
+
+// Indicators the platform ships that this port does not compute. Same exact-set rule: a new
+// StockSharp indicator lands here as a FAILURE rather than a line in the log nobody reads.
+const NO_JS_CALC = {
+    CandlePatternIndicator: 'pattern recognition, not a numeric series — no chart line to draw',
+};
+
+// Same, for the multi-line pass. Empty today: every complex indicator the platform dumps has a
+// JS calc. Kept as an explicit list so the first one that does not says so out loud.
+const COMPLEX_NO_JS_CALC = {};
+
+// Compare an observed set against an allow-list, failing on BOTH unexpected members and stale
+// entries. Reported separately because the two mean opposite things: something new drifted in,
+// versus something was fixed and the exemption should go.
+function assertAllowList(observed, allowed, what) {
+    const unexpected = observed.filter((k) => !(k in allowed));
+    const stale = Object.keys(allowed).filter((k) => !observed.includes(k));
+    const problems = [];
+    if (unexpected.length) problems.push(`${what} NOT in the allow-list: ${unexpected.join(', ')}`);
+    if (stale.length) problems.push(`${what} allow-list entries that no longer apply (remove them): ${stale.join(', ')}`);
+    assert.equal(problems.length, 0, problems.join('\n'));
+}
 
 // StockSharp kinds asserted bar-for-bar: single `Length` param, single output — the unambiguous core.
 const ASSERT_KINDS = [
@@ -152,7 +177,7 @@ describe('numeric parity: JS calc vs StockSharp C#', () => {
         const excluded = [];
         for (const cs of dump.data.indicators || []) {
             if (!Array.isArray(cs.values)) continue; // complex / multi-output: handled later
-            if (NON_SCALAR.has(cs.kind)) { excluded.push(cs.kind); continue; }
+            if (cs.kind in NON_SCALAR) { excluded.push(cs.kind); continue; }
             const fn = getCalcFn(cs.kind);
             if (!fn) { noFn.push(cs.kind); continue; }
             let jsOut;
@@ -186,6 +211,11 @@ describe('numeric parity: JS calc vs StockSharp C#', () => {
         console.log(`[numeric-parity] scalar coverage: ${matched.length} match, ${diverged.length} diverge, ${noFn.length} no-js-fn, ${excluded.length} non-scalar`);
         if (noFn.length) console.log('[numeric-parity] no-js-fn:', noFn.join(', '));
         assert.equal(diverged.length, 0, 'indicators diverging from the C# dump:\n' + diverged.join('\n'));
+        // Everything skipped above has to be skipped ON PURPOSE. Without this the two `continue`
+        // branches are a silent hole: a StockSharp indicator we never ported, or one whose calc
+        // stopped resolving, would just shrink the "match" count.
+        assertAllowList(noFn, NO_JS_CALC, 'scalar indicators with no JS calc fn');
+        assertAllowList(excluded, NON_SCALAR, 'scalar indicators excluded');
     });
 
     // Multi-line (complex) indicators: the C# dump carries one value array per inner indicator.
@@ -233,5 +263,6 @@ describe('numeric parity: JS calc vs StockSharp C#', () => {
         if (diverged.length) console.log('[numeric-parity] complex diverge:', diverged.join('  |  '));
         if (noFn.length) console.log('[numeric-parity] complex no-js-fn:', noFn.join(', '));
         assert.equal(diverged.length, 0, 'complex indicators diverging from the C# dump:\n' + diverged.join('\n'));
+        assertAllowList(noFn, COMPLEX_NO_JS_CALC, 'complex indicators with no JS calc fn');
     });
 });

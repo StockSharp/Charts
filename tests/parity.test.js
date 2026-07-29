@@ -42,6 +42,64 @@ for (const m of indexSrc.matchAll(/\{\s*fn:\s*(\w+),\s*aliases:\s*\[([^\]]*)\]/g
 // Indicators the client computes that the StockSharp catalog does not surface (client-only).
 const CLIENT_ONLY = new Set(['ChaikinOscillator', 'FastStochastic']);
 
+// Deliberate divergences from the StockSharp catalog. Both lists are asserted as exact sets, so
+// a new divergence fails and an entry that stops applying fails too — see assertAllowList.
+
+// The client puts the volume family on its own pane. StockSharp reports them as `main` because
+// its pane choice follows IndicatorMeasures, and a volume measure carries no "separate" hint;
+// drawn as an overlay they would be plotted against the price scale and be unreadable.
+const VOLUME_PANE = 'volume-measure indicator: overlaying it on the price scale is unreadable';
+const PANE_DELTAS = {
+    VolumeIndicator: VOLUME_PANE,
+    KlingerVolumeOscillator: VOLUME_PANE,
+    Sum: VOLUME_PANE,
+    PercentageVolumeOscillator: VOLUME_PANE,
+    PriceVolumeTrend: VOLUME_PANE,
+    WilliamsAccumulationDistribution: VOLUME_PANE,
+    WilliamsVariableAccumulationDistribution: VOLUME_PANE,
+};
+
+// Most of these are `cs=0`: a composite indicator keeps its settings on its inner indicators, and
+// the reflected catalog only sees settable scalar properties on the outer type. The client has to
+// surface those inner lengths for the settings dialog, so it declares them on the outer entry.
+const COMPOSITE_INNER_PARAMS = 'composite: StockSharp keeps these settings on the inner indicators, the client surfaces them on the outer entry';
+const PARAM_COUNT_DELTAS = {
+    MovingAverageConvergenceDivergence: COMPOSITE_INNER_PARAMS,
+    MovingAverageConvergenceDivergenceSignal: COMPOSITE_INNER_PARAMS,
+    StochasticOscillator: COMPOSITE_INNER_PARAMS,
+    Alligator: COMPOSITE_INNER_PARAMS,
+    Ichimoku: COMPOSITE_INNER_PARAMS,
+    AwesomeOscillator: COMPOSITE_INNER_PARAMS,
+    Acceleration: COMPOSITE_INNER_PARAMS,
+    ChaikinVolatility: COMPOSITE_INNER_PARAMS,
+    CompositeMomentum: COMPOSITE_INNER_PARAMS,
+    ElderImpulseSystem: COMPOSITE_INNER_PARAMS,
+    GatorOscillator: COMPOSITE_INNER_PARAMS,
+    KnowSureThing: COMPOSITE_INNER_PARAMS,
+    McClellanOscillator: COMPOSITE_INNER_PARAMS,
+    RelativeVigorIndex: COMPOSITE_INNER_PARAMS,
+    RangeActionVerificationIndex: COMPOSITE_INNER_PARAMS,
+    // The rest are genuine count differences rather than the composite pattern, left as-is
+    // because the client's parameter set is the one its settings dialog needs.
+    Trix: 'client exposes Length only; StockSharp also exposes the inner SMA length',
+    KasePeakOscillator: 'client exposes both cycle lengths plus a smoothing length',
+    OptimalTracking: 'client takes no parameters; StockSharp exposes one',
+    SchaffTrendCycle: 'client exposes the full MACD + stochastic parameter set',
+    PercentagePriceOscillator: 'client exposes both MA lengths plus the signal length',
+};
+
+// Compare an observed set against an allow-list, failing on BOTH unexpected members and stale
+// entries. The two mean opposite things: something new drifted in, versus something was fixed
+// and its exemption should be deleted.
+function assertAllowList(observed, allowed, what) {
+    const unexpected = observed.filter((k) => !(k in allowed));
+    const stale = Object.keys(allowed).filter((k) => !observed.includes(k));
+    const problems = [];
+    if (unexpected.length) problems.push(`${what} NOT in the allow-list: ${unexpected.join(', ')}`);
+    if (stale.length) problems.push(`${what} allow-list entries that no longer apply (remove them): ${stale.join(', ')}`);
+    assert.equal(problems.length, 0, problems.join('\n'));
+}
+
 const catalog = getClientCatalog();
 
 // Source of a calc file plus, one level deep, any calc it forwards `params` to wholesale (e.g.
@@ -82,7 +140,7 @@ describe('indicator catalog parity with StockSharp', () => {
         assert.equal(missing.length, 0, 'client kinds absent from StockSharp: ' + missing.map((e) => e.id).join(', '));
     });
 
-    it('reports pane / param-count deltas vs StockSharp (informational)', (t) => {
+    it('pane / param-count deltas vs StockSharp are all known ones', (t) => {
         if (!csharp) return t.skip(`StockSharp .NET dump unavailable: ${status.reason}`);
         const paneDiffs = [];
         const countDiffs = [];
@@ -90,10 +148,15 @@ describe('indicator catalog parity with StockSharp', () => {
             const cs = csByKind.get(e.serverKind.toLowerCase());
             if (!cs) continue;
             const csPane = cs.pane === 'main' ? 'overlay' : 'separate';
-            if (e.pane !== csPane) paneDiffs.push(`${e.id}: ts=${e.pane} cs=${csPane}`);
-            if (e.params.length !== cs.params.length) countDiffs.push(`${e.id}: ts=${e.params.length} cs=${cs.params.length}`);
+            if (e.pane !== csPane) paneDiffs.push(e.id);
+            if (e.params.length !== cs.params.length) countDiffs.push(e.id);
         }
-        if (paneDiffs.length) console.log(`[parity] pane deltas (${paneDiffs.length}):\n  ` + paneDiffs.join('\n  '));
-        if (countDiffs.length) console.log(`[parity] param-count deltas (${countDiffs.length}):\n  ` + countDiffs.join('\n  '));
+        if (paneDiffs.length) console.log(`[parity] pane deltas (${paneDiffs.length}): ` + paneDiffs.join(', '));
+        if (countDiffs.length) console.log(`[parity] param-count deltas (${countDiffs.length}): ` + countDiffs.join(', '));
+
+        // These used to be printed and forgotten, which meant a genuinely new divergence looked
+        // exactly like the twenty-seven we have decided to live with. Both lists are now exact.
+        assertAllowList(paneDiffs, PANE_DELTAS, 'pane placements differing from StockSharp');
+        assertAllowList(countDiffs, PARAM_COUNT_DELTAS, 'param counts differing from StockSharp');
     });
 });
