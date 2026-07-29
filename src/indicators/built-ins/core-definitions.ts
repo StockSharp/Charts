@@ -850,10 +850,13 @@ export class HighestProcessor extends SequentialIndicatorProcessor<
         input: IndicatorProcessInput<IndicatorCandle>,
         commit: boolean,
     ): IndicatorCalculationResult {
-        const high = input.value?.high;
+        // The close, not the bar high: StockSharp's Highest inherits
+        // [IndicatorIn(typeof(DecimalIndicatorValue))], so ToCandle().HighPrice
+        // hands back the scalar it was fed. See chart/indicators/calc/highest.ts.
+        const close = input.value?.close;
         const value = commit
-            ? this.maximum.push(high)
-            : this.maximum.preview(high);
+            ? this.maximum.push(close)
+            : this.maximum.preview(close);
         return {
             isFormed: this.maximum.isFormed || value !== null,
             values: [this.output('line', value, input.index)],
@@ -882,10 +885,11 @@ export class LowestProcessor extends SequentialIndicatorProcessor<
         input: IndicatorProcessInput<IndicatorCandle>,
         commit: boolean,
     ): IndicatorCalculationResult {
-        const low = input.value?.low;
+        // The close, not the bar low — mirror of HighestProcessor.
+        const close = input.value?.close;
         const value = commit
-            ? this.minimum.push(low)
-            : this.minimum.preview(low);
+            ? this.minimum.push(close)
+            : this.minimum.preview(close);
         return {
             isFormed: this.minimum.isFormed || value !== null,
             values: [this.output('line', value, input.index)],
@@ -1608,7 +1612,7 @@ export const HighestIndicator: IndicatorDefinition<
 > = registerIndicator({
     id: 'Highest',
     name: 'Highest',
-    description: 'Highest candle high in the configured trailing window.',
+    description: 'Highest candle close in the configured trailing window.',
     category: IndicatorCategory.SupportResistance,
     input: CandlestickIndicatorInput,
     parameters: [{
@@ -1633,7 +1637,7 @@ export const LowestIndicator: IndicatorDefinition<
 > = registerIndicator({
     id: 'Lowest',
     name: 'Lowest',
-    description: 'Lowest candle low in the configured trailing window.',
+    description: 'Lowest candle close in the configured trailing window.',
     category: IndicatorCategory.SupportResistance,
     input: CandlestickIndicatorInput,
     parameters: [{

@@ -1,10 +1,17 @@
-// Highest — trailing maximum of the candle HIGH over `length` bars.
-// Port of StockSharp Algo.Indicators Highest.cs, which reads
-// `input.ToCandle().HighPrice`. On the chart's candle feed that is the bar
-// HIGH (not the close). The indicator is a DecimalLengthIndicator: it is
-// IsFormed only once `length` values are buffered, so nothing is emitted
-// before index `length - 1` (StockSharp reports the pre-form values as
-// not-formed, i.e. null on the wire).
+// Highest — trailing maximum of the candle CLOSE over `length` bars.
+//
+// Port of StockSharp Algo.Indicators Highest.cs. That source reads
+// `input.ToCandle().HighPrice`, which looks like the bar high but is not:
+// Highest inherits [IndicatorIn(typeof(DecimalIndicatorValue))] from
+// BaseIndicator and never overrides it, so the platform hands it a decimal.
+// SingleIndicatorValue<decimal>.GetValue<ICandleMessage>() expands that decimal
+// into a candle whose open/high/low/close are all the same number, so
+// .HighPrice returns it unchanged — the close on a candle feed. The one
+// expression serves both input shapes, which is what makes the C# misleading.
+//
+// LengthIndicator.CalcIsFormed() is `Buffer.Count >= Length`, so nothing is
+// emitted before index `length - 1`; StockSharp reports the pre-form values as
+// not-formed, i.e. null on the wire.
 
 /**
  * @typedef {object} CandlePoint
@@ -34,17 +41,17 @@ export function calcHighest(candles, params) {
     for (let i = 0; i < n; i++) out[i] = { time: candles[i].time, value: null };
     if (length <= 0) return out;
 
-    // O(n*length) window scan of the bar HIGH; emit only once formed (i >= length-1).
+    // O(n*length) window scan of the bar CLOSE; emit only once formed (i >= length-1).
     for (let i = length - 1; i < n; i++) {
         let mx = -Infinity;
         let bad = false;
         for (let k = i - length + 1; k <= i; k++) {
-            const h = candles[k] && candles[k].high;
-            if (typeof h !== 'number' || !Number.isFinite(h)) {
+            const c = candles[k] && candles[k].close;
+            if (typeof c !== 'number' || !Number.isFinite(c)) {
                 bad = true;
                 break;
             }
-            if (h > mx) mx = h;
+            if (c > mx) mx = c;
         }
         if (bad) continue;
         out[i] = { time: candles[i].time, value: mx };

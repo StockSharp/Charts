@@ -1,10 +1,15 @@
 // Lowest indicator (Algo.Indicators/Lowest.cs).
-// Trailing minimum of the input price stream over `length` bars. Mirror
-// of Highest. Aligned 1:1 with input candles.
+// Trailing minimum of the candle CLOSE over `length` bars. Mirror of Highest.
+// Aligned 1:1 with input candles.
 //
-// Lowest.cs reads `input.ToCandle().LowPrice` — on the chart's candle feed that
-// is the bar LOW (not the close). DecimalLengthIndicator: IsFormed only once
-// `length` values are buffered, so nothing is emitted before index `length - 1`.
+// Lowest.cs reads `input.ToCandle().LowPrice`, but the class inherits
+// [IndicatorIn(typeof(DecimalIndicatorValue))] from BaseIndicator and does not
+// override it, so the platform feeds it a decimal that ToCandle() expands into
+// a candle with open == high == low == close — the close on a candle feed. See
+// highest.ts for the full mechanism.
+//
+// DecimalLengthIndicator: IsFormed only once `length` values are buffered, so
+// nothing is emitted before index `length - 1`.
 //
 // Default length: 5 (matches the .cs default).
 
@@ -42,7 +47,7 @@ export function calcLowest(candles, params) {
         let bad = false;
         for (let j = i - length + 1; j <= i; j++) {
             const c = candles[j];
-            const cl = c && c.low;
+            const cl = c && c.close;
             if (typeof cl !== 'number' || !Number.isFinite(cl)) { bad = true; break; }
             if (cl < lo) lo = cl;
         }
