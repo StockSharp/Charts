@@ -104,7 +104,7 @@
     "typecheck:core": "tsc -p tsconfig.typecheck.json",
     "api:check": "node tools/check-public-api.mjs",
     "api:update": "node tools/check-public-api.mjs --update",
-    "test": "npm run typecheck:core && npm run api:check && node build-tests.mjs && node --test \"tests/_dist/**/*.test.cjs\"",
+    "test": "npm run typecheck:core && npm run api:check && node build-tests.mjs && node tools/parity-dump.mjs && node --test \"tests/_dist/**/*.test.cjs\"",
     "test:browser": "npm run build && npm run build:browser-fixtures && playwright test",
     "test:browser:update": "npm run build && npm run build:browser-fixtures && playwright test --update-snapshots",
     "test:performance": "npm run build && npm run build:browser-fixtures && playwright test tests/browser/chart.performance.spec.ts tests/browser/orderflow.performance.spec.ts --project=chromium-dpr1",

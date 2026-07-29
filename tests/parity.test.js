@@ -13,27 +13,18 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
-const { execFileSync } = require('node:child_process');
 const { join } = require('node:path');
 
 const { getClientCatalog } = require('../src/chart/indicators/calc/index.js');
+const { loadDumpStatus, readDump } = require('./csharp-dump.js');
 
 const calcDir = join(__dirname, '..', '..', 'src', 'chart', 'indicators', 'calc');
-const dumperProj = join(__dirname, '..', '..', 'tools', 'csharp-catalog');
 
-// Pull the StockSharp indicator catalog live from .NET. Best-effort: if the SDK or the package is
-// unavailable (or it errors), the C#-dependent checks skip rather than fail the suite.
-function loadCsharpCatalog() {
-    try {
-        execFileSync('dotnet', ['build', dumperProj, '-c', 'Release', '--nologo', '-v', 'q'], { stdio: 'ignore', timeout: 600000 });
-        const out = execFileSync('dotnet', ['run', '--project', dumperProj, '-c', 'Release', '--no-build'], { encoding: 'utf8', timeout: 120000 });
-        return JSON.parse(out);
-    } catch {
-        return null;
-    }
-}
-
-const csharp = loadCsharpCatalog();
+// The dump is still read live from .NET — no committed fixture — but it is produced once by
+// tools/parity-dump.mjs before node:test starts, not by this file racing the other parity file
+// over the same build. `status.reason` names why it is absent when it is.
+const status = loadDumpStatus();
+const csharp = status.available ? readDump('catalog.json') : null;
 const csByKind = new Map((csharp || []).map((e) => [e.kind.toLowerCase(), e]));
 
 // Parse calc/index.ts for canon -> calc source file (imports + IMPLEMENTATIONS aliases).
@@ -86,13 +77,13 @@ describe('indicator catalog parity with StockSharp', () => {
     });
 
     it('every client indicator kind exists in the StockSharp catalog', (t) => {
-        if (!csharp) return t.skip('StockSharp .NET dump unavailable (no dotnet SDK / package)');
+        if (!csharp) return t.skip(`StockSharp .NET dump unavailable: ${status.reason}`);
         const missing = catalog.filter((e) => !csByKind.has(e.serverKind.toLowerCase()) && !CLIENT_ONLY.has(e.id));
         assert.equal(missing.length, 0, 'client kinds absent from StockSharp: ' + missing.map((e) => e.id).join(', '));
     });
 
     it('reports pane / param-count deltas vs StockSharp (informational)', (t) => {
-        if (!csharp) return t.skip('StockSharp .NET dump unavailable');
+        if (!csharp) return t.skip(`StockSharp .NET dump unavailable: ${status.reason}`);
         const paneDiffs = [];
         const countDiffs = [];
         for (const e of catalog) {

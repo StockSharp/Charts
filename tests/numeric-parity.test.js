@@ -7,17 +7,16 @@
 //     indicators: [{ kind, params, values: (number|null)[] }, ...] }
 // (single-output indicators only for now; multi-output lines come later and are skipped here).
 //
-// If the .NET SDK / StockSharp source is unavailable the whole suite skips (like parity.test.js).
-// Otherwise every indicator in ASSERT_KINDS must match bar-for-bar within TOL; the rest are logged.
+// tools/parity-dump.mjs runs that dumper once before node:test starts and caches the output;
+// this file only reads the cache. The suite skips only for one of the three reasons that script
+// detects on purpose (StockSharp checkout absent, dotnet missing, no SDK), and the reason is
+// named in the skip message. A build that fails for any other cause fails `npm test`.
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { execFileSync } = require('node:child_process');
-const { join } = require('node:path');
 
 const { getCalcFn } = require('../src/chart/indicators/calc/index.js');
-
-const dumperProj = join(__dirname, '..', '..', 'tools', 'csharp-catalog');
+const { loadDumpStatus, readDump } = require('./csharp-dump.js');
 
 // Relative + absolute tolerance for decimal (C#) vs double (JS).
 const TOL = 1e-6;
@@ -45,19 +44,12 @@ const ASSERT_KINDS = [
     'AverageTrueRange',
 ];
 
-// Pull the StockSharp per-bar indicator values live from .NET. Best-effort: if the SDK or the
-// StockSharp source is unavailable (or it errors), the checks skip rather than fail the suite.
-function loadNumeric() {
-    try {
-        execFileSync('dotnet', ['build', dumperProj, '-c', 'Release', '--nologo', '-v', 'q'], { stdio: 'ignore', timeout: 600000 });
-        const out = execFileSync('dotnet', ['run', '--project', dumperProj, '-c', 'Release', '--no-build', '--', '--values'], { encoding: 'utf8', timeout: 120000, maxBuffer: 64 * 1024 * 1024 });
-        return { ran: true, data: JSON.parse(out) };
-    } catch {
-        return { ran: false, data: null };
-    }
-}
-
-const dump = loadNumeric();
+// The StockSharp per-bar values are read live from .NET — no committed fixture — but the dump is
+// produced once by tools/parity-dump.mjs before node:test starts. This file no longer builds
+// anything itself, so it cannot race the other parity file over the same project, and a build
+// that genuinely fails now fails the suite instead of masquerading as "no dotnet SDK".
+const status = loadDumpStatus();
+const dump = { ran: status.available, data: status.available ? readDump('values.json') : null };
 
 // C# param keys are PascalCase (`Length`); the client calc fns read lowercase (`length`).
 // The single-`Length` subset maps by a plain lower-case fold.
@@ -85,7 +77,7 @@ function close(js, cs) {
 
 describe('numeric parity: JS calc vs StockSharp C#', () => {
     it('C# dumper provides a numeric --values dump (input + per-bar values)', (t) => {
-        if (!dump.ran) return t.skip('StockSharp .NET dump unavailable (no dotnet SDK / source)');
+        if (!dump.ran) return t.skip(`StockSharp .NET dump unavailable: ${status.reason}`);
         assert.ok(dump.data && Array.isArray(dump.data.input) && dump.data.input.length > 30,
             'expected { input: [...] } with a non-trivial series from --values');
         assert.ok(Array.isArray(dump.data.indicators) && dump.data.indicators.some((e) => Array.isArray(e.values)),
@@ -93,7 +85,7 @@ describe('numeric parity: JS calc vs StockSharp C#', () => {
     });
 
     it('single-output core indicators match StockSharp bar-for-bar', (t) => {
-        if (!dump.ran) return t.skip('StockSharp .NET dump unavailable');
+        if (!dump.ran) return t.skip(`StockSharp .NET dump unavailable: ${status.reason}`);
         assert.ok(dump.data && Array.isArray(dump.data.input), 'no numeric dump (--values not implemented)');
 
         const candles = dump.data.input.map((b) => ({ time: b.t, open: b.o, high: b.h, low: b.l, close: b.c, volume: b.v }));
@@ -123,7 +115,7 @@ describe('numeric parity: JS calc vs StockSharp C#', () => {
     // a non-final value that never commits. For each perturbed forming bar the JS port — re-running its
     // calc over series + that bar — must land on the same preview the C# indicator yields non-finally.
     it('single-output core indicators match StockSharp on a changing (non-final) last candle', (t) => {
-        if (!dump.ran) return t.skip('StockSharp .NET dump unavailable');
+        if (!dump.ran) return t.skip(`StockSharp .NET dump unavailable: ${status.reason}`);
         assert.ok(dump.data && Array.isArray(dump.data.probes) && dump.data.probes.length > 0,
             'expected { probes: [...] } from --values for the changing-candle check');
 
@@ -152,7 +144,7 @@ describe('numeric parity: JS calc vs StockSharp C#', () => {
     // multi-output ones) through its JS calc fn over the final series and assert none diverge.
     // This locks in the whole port against StockSharp; non-scalar indicators are excluded explicitly.
     it('every scalar indicator matches StockSharp bar-for-bar', (t) => {
-        if (!dump.ran) return t.skip('StockSharp .NET dump unavailable');
+        if (!dump.ran) return t.skip(`StockSharp .NET dump unavailable: ${status.reason}`);
         const candles = dump.data.input.map((b) => ({ time: b.t, open: b.o, high: b.h, low: b.l, close: b.c, volume: b.v }));
         const matched = [];
         const diverged = [];
@@ -201,7 +193,7 @@ describe('numeric parity: JS calc vs StockSharp C#', () => {
     // line reproduces it bar-for-bar, so field-name differences don't matter; every C# line must
     // be reproduced by some JS line.
     it('every complex indicator line matches StockSharp bar-for-bar', (t) => {
-        if (!dump.ran) return t.skip('StockSharp .NET dump unavailable');
+        if (!dump.ran) return t.skip(`StockSharp .NET dump unavailable: ${status.reason}`);
         const candles = dump.data.input.map((b) => ({ time: b.t, open: b.o, high: b.h, low: b.l, close: b.c, volume: b.v }));
 
         const asLine = (arr) => arr.map((p) => (p && typeof p === 'object' && !Array.isArray(p)) ? p.value : p);
